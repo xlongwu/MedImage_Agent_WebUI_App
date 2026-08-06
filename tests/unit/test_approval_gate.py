@@ -149,7 +149,7 @@ def test_high_risk_warning():
 def test_manual_required_blocked():
     v = _valid_validation(
         approval_required_nodes=["spm_realign_subject"],
-        manual_required_nodes=["gui_acpc_location"],
+        manual_required_nodes=["manual_intervention_required"],
     )
     a = _approval(approved_nodes=["*"])
     result = check_approval_gate({}, v, a)
@@ -389,10 +389,10 @@ def test_rejected_blocks_even_with_backend_approval():
 
 
 def test_manual_required_still_blocks():
-    v = _valid_validation(manual_required_nodes=["gui_acpc_location"])
+    v = _valid_validation(manual_required_nodes=["manual_intervention_required"])
     plan = _hr_plan()
     a = _hr_approval(
-        approved_nodes=["spm_realign_subject", "gui_acpc_location"],
+        approved_nodes=["spm_realign_subject", "manual_intervention_required"],
         approved_backends=["matlab-spm"],
     )
     result = check_approval_gate(plan, v, a)

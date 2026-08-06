@@ -23,6 +23,12 @@ if _library_bin.is_dir():
 
 # Runtime data files collected by reviewed optional backends.
 _datas = []
+_acpc_reference_dir = repo_root / "src" / "backend" / "app" / "native_preproc" / "resources" / "acpc_reference"
+for _reference_file in ("avg152T1.nii", "spm12_avg152_t1_ras.json"):
+    _reference_path = _acpc_reference_dir / _reference_file
+    if not _reference_path.is_file():
+        raise RuntimeError(f"Required ACPC reference resource is missing: {_reference_path}")
+    _datas.append((str(_reference_path), "src/backend/app/native_preproc/resources/acpc_reference"))
 
 # Native preprocessing only imports these reviewed SciPy surfaces.  Collecting
 # every SciPy submodule pulls test, plotting, astronomy, and optional-array
@@ -31,6 +37,7 @@ _datas = []
 _scipy_hiddenimports = [
     "scipy",
     "scipy.ndimage",
+    "scipy.optimize",
     "scipy.signal",
 ]
 _scipy_binaries = collect_dynamic_libs("scipy")
@@ -119,7 +126,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        "pywinauto",
         "torch",
         "safetensors",
         # The backend sidecar has no Qt UI.  Conda environments may expose

@@ -26,6 +26,19 @@ NATIVE_FULL_STAGE_GRAPH: tuple[NativeFullStageSpec, ...] = (
         produced_outputs=("input_inventory",),
     ),
     NativeFullStageSpec(
+        "auto_acpc_align",
+        "Automatic ACPC alignment",
+        "native_auto_acpc_align",
+        depends_on=("input_validation",),
+        required_inputs=("t1w",),
+        produced_outputs=("acpc_t1w", "transform_matrix", "acpc_landmarks", "qc_json"),
+        capability_level="computed",
+        enabled_by_default=False,
+        notes=(
+            "Template-rigid estimated landmarks only; independent manual-landmark validation is pending.",
+        ),
+    ),
+    NativeFullStageSpec(
         "dicom_to_nifti",
         "DICOM to NIfTI",
         "native_preproc_dicom_to_nifti",

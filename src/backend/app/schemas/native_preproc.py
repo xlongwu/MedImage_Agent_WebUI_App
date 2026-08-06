@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 NativePreprocStageId = Literal[
     "input_validation",
+    "auto_acpc_align",
     "dicom_to_nifti",
     "bids_sidecar_validation",
     "dummy_scan_removal",
@@ -86,6 +87,8 @@ NativePreprocBackend = Literal[
 ]
 
 NativePreprocArtifactType = Literal[
+    "acpc_t1w",
+    "acpc_landmarks",
     "bold_4d",
     "t1w",
     "sidecar_json",
@@ -133,6 +136,7 @@ NativePreprocReuseStrategy = Literal[
 
 NATIVE_PREPROC_STAGE_IDS: tuple[NativePreprocStageId, ...] = (
     "input_validation",
+    "auto_acpc_align",
     "dicom_to_nifti",
     "bids_sidecar_validation",
     "dummy_scan_removal",
@@ -185,6 +189,8 @@ NATIVE_PREPROC_CAPABILITY_LEVEL_VALUES: tuple[NativePreprocCapabilityLevel, ...]
 )
 
 NATIVE_PREPROC_ARTIFACT_TYPES: tuple[NativePreprocArtifactType, ...] = (
+    "acpc_t1w",
+    "acpc_landmarks",
     "bold_4d",
     "t1w",
     "sidecar_json",

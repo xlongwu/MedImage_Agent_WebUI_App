@@ -61,6 +61,17 @@ class ApprovalSummaryService:
             project_config_path=reviewed_plan.project_config_path,
         )
         external = tuple(value for value in backends if value.startswith("matlab") or value == "dpabi")
+        acpc_node = next(
+            (
+                node for node in plan.get("nodes", [])
+                if isinstance(node, dict) and node.get("id") == "native_auto_acpc_align"
+            ),
+            None,
+        )
+        acpc_params = acpc_node.get("params", {}) if isinstance(acpc_node, dict) and isinstance(acpc_node.get("params"), dict) else {}
+        acpc_limitations = (
+            "AC/PC coordinates are template-back-projected estimates, not manually detected anatomical landmarks; independent manual-reference validation is pending.",
+        ) if acpc_node else ()
         confirmations = self._confirmations(plan=plan, node_ids=nodes, backend_ids=backends)
         memory_context = (
             payload.get("memory_context")
@@ -100,7 +111,7 @@ class ApprovalSummaryService:
             "node_ids": nodes,
             "backend_ids": backends,
             "external_tools": external,
-            "limitations": tuple(str(item) for item in payload.get("limitations", []) if str(item)),
+            "limitations": tuple(str(item) for item in payload.get("limitations", []) if str(item)) + acpc_limitations,
             "science_changes": (
                 (f"Subject scope: {', '.join(selected_subjects)}",)
                 if selected_subjects
@@ -129,6 +140,23 @@ class ApprovalSummaryService:
                         ),
                     )
                     if "native_dicom_conversion_execute" in nodes
+                    else ()
+                ),
+                *(
+                    (
+                        ApprovalSummarySection(
+                            id="acpc-estimation",
+                            title="Automatic ACPC estimation",
+                            summary=(
+                                "Use registered T1w artifact "
+                                f"{str(acpc_params.get('source_t1_artifact_id') or 'unknown')} with template "
+                                f"{str(acpc_params.get('template_id') or 'unknown')}; write only ACPC derivatives. "
+                                "QC failure stops and requires human review."
+                            ),
+                            warnings=acpc_limitations,
+                        ),
+                    )
+                    if acpc_node
                     else ()
                 ),
             ),
@@ -185,7 +213,7 @@ class ApprovalSummaryService:
     def _confirmations(
         *, plan: dict[str, Any], node_ids: tuple[str, ...], backend_ids: tuple[str, ...]
     ) -> dict[str, object]:
-        native = "native_preproc_full_execute" in node_ids
+        native = "native_preproc_full_execute" in node_ids or "native_auto_acpc_align" in node_ids
         native_conversion = "native_dicom_conversion_execute" in node_ids
         high_risk = tuple(b for b in backend_ids if b in {"matlab", "matlab-spm", "matlab-dpabi", "dpabi"})
         return {
@@ -202,6 +230,7 @@ class ApprovalSummaryService:
             "native_preprocessing_acknowledgement": native,
             "no_external_tools_confirmed": (native or native_conversion) and not high_risk,
             "conversion_scope_confirmed": native_conversion,
+            "estimated_landmarks_acknowledgement": "native_auto_acpc_align" in node_ids,
         }
 
     def _portable_write_roots(

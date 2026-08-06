@@ -1787,10 +1787,10 @@ def test_m5t016_dpabi_no_executor(monkeypatch, tmp_path):
     assert resp.json()["execution"]["executor_called"] is False
 
 
-# ── 89. manual_required node → executor not called ──
+# ── 89. removed legacy GUI node → executor not called ──
 
 
-def test_m5t016_manual_required_no_executor(monkeypatch, tmp_path):
+def test_m5t016_legacy_gui_node_no_executor(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(
         "src.backend.app.runtime.execution_gateway.PIPELINE_EXECUTOR",
@@ -1805,7 +1805,6 @@ def test_m5t016_manual_required_no_executor(monkeypatch, tmp_path):
                 "nodes": [
                     {
                         "id": "gui_acpc_manual",
-                        "backend": "gui-agent",
                         "depends_on": [],
                         "params": {},
                     }

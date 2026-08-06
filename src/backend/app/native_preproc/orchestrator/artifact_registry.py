@@ -15,6 +15,7 @@ from src.backend.app.schemas.native_preproc import (
 )
 
 _NIFTI_ARTIFACTS = {
+    "acpc_t1w",
     "bold_4d",
     "t1w",
     "mean_functional",

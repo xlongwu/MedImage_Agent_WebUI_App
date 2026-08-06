@@ -11,6 +11,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 PREPROCESSING_ARTIFACT_TYPES: tuple[str, ...] = (
+    "acpc_t1w",
+    "acpc_landmarks",
     "converted_bold",
     "converted_t1w",
     "sidecar_json",

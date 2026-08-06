@@ -24,6 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def test_stage_ids_match_native_preproc_contract_order() -> None:
     assert NATIVE_PREPROC_STAGE_IDS == (
         "input_validation",
+        "auto_acpc_align",
         "dicom_to_nifti",
         "bids_sidecar_validation",
         "dummy_scan_removal",

@@ -610,6 +610,21 @@ TOOL_METADATA.update(
                 "rawdata-readonly",
             ],
         },
+        "native_auto_acpc_align": {
+            "name": "Automatic ACPC alignment",
+            "backend": "native_python",
+            "parallel_level": "project",
+            "description": (
+                "Deterministic template-rigid T1w ACPC alignment. It writes estimated, "
+                "not manually detected, AC/PC landmarks; any QC failure stops without final artifacts."
+            ),
+            "requires_approval": True,
+            "manual_required": False,
+            "risk_level": "medium",
+            "inputs": ["registered T1w artifact ID", "approved SPM avg152 T1 template"],
+            "outputs": ["ACPC T1w", "rigid transform", "estimated landmarks JSON", "QC JSON"],
+            "tags": ["native-preproc", "acpc", "t1w", "requires-approval", "no-external-tools", "estimated-landmarks"],
+        },
     }
 )
 
@@ -694,12 +709,6 @@ def _fallback(node_id: str) -> dict[str, Any]:
         requires_approval = False
         risk_level = "low"
         tags = ["contract"]
-    elif node_id.startswith("gui_"):
-        requires_approval = True
-        manual_required = True
-        risk_level = "high"
-        tags = ["gui"]
-
     return {
         "name": node_id.replace("_", " ").title(),
         "backend": backend,

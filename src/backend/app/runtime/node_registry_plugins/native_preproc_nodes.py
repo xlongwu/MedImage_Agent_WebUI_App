@@ -6,7 +6,7 @@ from typing import Any
 
 from src.backend.app.native_preproc.orchestrator.stage_graph import iter_native_full_stage_specs
 from src.backend.app.runtime.node_registry_plugins.base import NodeExecutionContext, NodeRunner
-from src.backend.app.schemas.native_preproc_api import NativeFullPreprocRequest
+from src.backend.app.schemas.native_preproc_api import AcpcRequest, NativeFullPreprocRequest
 from src.backend.app.schemas.pipeline_schema import PipelineNode
 from src.backend.app.services.mock_store import mock_store
 from src.backend.app.services.native_preproc_full import (
@@ -14,6 +14,7 @@ from src.backend.app.services.native_preproc_full import (
     run_native_full_execute,
 )
 from src.backend.app.services.native_preproc_request import build_native_full_request
+from src.backend.app.services.native_acpc import execute_acpc_request
 from src.backend.app.services.reviewed_native_conversion_handoff import (
     ensure_reviewed_native_conversion_handoff,
 )
@@ -163,6 +164,38 @@ def run_native_full_execute_node(
     return payload
 
 
+def run_native_auto_acpc_align_node(
+    context: NodeExecutionContext,
+    node: PipelineNode,
+) -> dict[str, Any]:
+    """Execute the standalone, reviewed T1w-only ACPC node."""
+
+    if context.tool_execution_context is None:
+        return {
+            "ok": False,
+            "status": "blocked",
+            "backend": "native_python",
+            "node_id": node.id,
+            "errors": ["REVIEWED_EXECUTION_CONTEXT_REQUIRED"],
+            "warnings": [],
+        }
+
+    payload = dict(node.params)
+    payload.setdefault("project_id", str(context.project_config.get("project_id") or ""))
+    payload.setdefault("project_dir", str(context.project_config.get("project_dir") or ""))
+    payload.setdefault("output_root", str(context.derivatives_dir or ""))
+    result = execute_acpc_request(AcpcRequest.model_validate(payload), run_id=context.run_id)
+    response = result.model_dump(mode="json")
+    response["node_id"] = node.id
+    response["backend"] = "native_python"
+    response["safety_flags"] = {
+        "rawdata_not_modified": True,
+        "no_external_tools_executed": True,
+        "no_matlab_spm_dpabi": True,
+    }
+    return response
+
+
 def _run_native_stage_boundary_node(
     context: NodeExecutionContext,
     node: PipelineNode,
@@ -189,6 +222,7 @@ def _run_native_stage_boundary_node(
 REGISTRY: dict[str, NodeRunner] = {
     "native_preproc_full_dry_run": run_native_full_dry_run_node,
     "native_preproc_full_execute": run_native_full_execute_node,
+    "native_auto_acpc_align": run_native_auto_acpc_align_node,
 }
 
 for _spec in iter_native_full_stage_specs():

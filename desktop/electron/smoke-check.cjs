@@ -95,7 +95,6 @@ check(
 );
 check("main denies new windows", main.includes("setWindowOpenHandler") && main.includes('action: "deny"'));
 check("main restricts dev URLs to localhost", main.includes("isAllowedDevUrl") && main.includes("127.0.0.1"));
-check("main keeps GUI provider mock", main.includes('MEDIMAGE_GUI_AGENT_PROVIDER: "mock"'));
 check(
   "main keeps execution gates disabled by default",
   !main.includes("resolveDcm2niixPath") &&
@@ -114,7 +113,6 @@ check(
     !main.includes("MEDIMAGE_MATLAB_ENABLED") &&
     !main.includes("MEDIMAGE_SPM_SMOKE_ENABLED")
 );
-check("main does not reference PyWinAuto", !/pywinauto/i.test(main));
 check("main does not reference model inference", !/inference|weights|torch|safetensors/i.test(main));
 check("BrowserWindow uses contextIsolation", main.includes("contextIsolation: true"));
 check("BrowserWindow disables nodeIntegration", main.includes("nodeIntegration: false"));

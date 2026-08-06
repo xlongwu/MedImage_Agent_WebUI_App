@@ -188,8 +188,51 @@ class NativeFullPreprocResponse(BaseModel):
     runtime_seconds: float | None = None
 
 
+class AcpcRequest(BaseModel):
+    """Reviewed request for template-rigid ACPC estimation."""
+
+    project_id: str = ""
+    project_dir: str = ""
+    source_t1_artifact_id: str = Field(min_length=1)
+    output_root: str = ""
+    template_id: Literal["spm12_avg152_t1_ras"] = "spm12_avg152_t1_ras"
+    interpolation: Literal["linear", "cubic"] = "linear"
+
+
+class AcpcLandmarks(BaseModel):
+    estimated_ac_mm: list[float] = Field(min_length=3, max_length=3)
+    estimated_pc_mm: list[float] = Field(min_length=3, max_length=3)
+    msp_normal: list[float] = Field(min_length=3, max_length=3)
+    coordinate_system: str = "RAS+ mm"
+
+
+class AcpcQc(BaseModel):
+    converged: bool = False
+    cost: float | None = None
+    checks: dict[str, bool] = Field(default_factory=dict)
+    review_required: bool = True
+    failure_code: str = ""
+
+
+class AcpcResult(BaseModel):
+    ok: bool = False
+    status: Literal["computed", "partial", "failed", "blocked"] = "blocked"
+    transform_artifact_id: str = ""
+    aligned_t1_artifact_id: str = ""
+    landmarks_artifact_id: str = ""
+    landmarks: AcpcLandmarks | None = None
+    qc: AcpcQc = Field(default_factory=AcpcQc)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    registry_path: str = ""
+    errors: list[str] = Field(default_factory=list)
+
+
 __all__ = [
     "NativeFullPreprocConfirmations",
+    "AcpcLandmarks",
+    "AcpcQc",
+    "AcpcRequest",
+    "AcpcResult",
     "NativeCpuExecutionPolicy",
     "NativeComputePolicy",
     "NativeFullPreprocRequest",

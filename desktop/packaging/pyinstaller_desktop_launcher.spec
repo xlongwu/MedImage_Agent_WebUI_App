@@ -34,7 +34,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        "pywinauto",
         "torch",
         "safetensors",
     ],

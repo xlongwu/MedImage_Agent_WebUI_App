@@ -204,7 +204,6 @@ def run_launcher(config: DesktopLauncherConfig) -> int:
     os.environ.setdefault("MEDIMAGE_DESKTOP", "1")
     os.environ["MEDIMAGE_DESKTOP_BACKEND_HOST"] = config.host
     os.environ["MEDIMAGE_DESKTOP_BACKEND_PORT"] = str(port)
-    os.environ["MEDIMAGE_GUI_AGENT_PROVIDER"] = "mock"
 
     app = create_desktop_app()
     server = uvicorn.Server(

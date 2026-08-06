@@ -617,6 +617,7 @@ def append_stage_output_artifacts(
     provenance_path: str = "",
     qc_path: str = "",
     metadata: dict[str, Any] | None = None,
+    source_artifact_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Append stage output references to a run registry."""
     path = Path(registry_path)
@@ -637,6 +638,10 @@ def append_stage_output_artifacts(
         }
     project_root = Path(project_dir).expanduser().resolve() if project_dir else None
     source_ids = _latest_source_artifacts(data, stage_id)
+    for artifact_id in source_artifact_ids or []:
+        value = str(artifact_id).strip()
+        if value and value not in source_ids:
+            source_ids.append(value)
     created_at = _now_iso()
     appended: list[PreprocessingArtifactRef] = []
     for artifact_type, paths in output_paths_by_type.items():

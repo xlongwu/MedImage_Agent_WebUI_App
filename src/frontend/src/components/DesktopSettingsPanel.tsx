@@ -21,10 +21,6 @@ type Settings = {
     api_key?: string;
     api_key_set?: boolean;
   };
-  gui_agent: {
-    provider: string;
-    approved: boolean;
-  };
 };
 
 const EMPTY_SETTINGS: Settings = {
@@ -40,10 +36,6 @@ const EMPTY_SETTINGS: Settings = {
     model: "",
     api_key: "",
     api_key_set: false,
-  },
-  gui_agent: {
-    provider: "mock",
-    approved: false,
   },
 };
 
@@ -168,20 +160,6 @@ export default function DesktopSettingsPanel({ baseUrl }: Props) {
             onChange={(event) => update("llm", { ...settings.llm, api_key: event.target.value })}
           />
         </label>
-        <label>
-          {t("settings.desktop.guiProvider")}
-          <select
-            value={settings.gui_agent.provider}
-            onChange={(event) =>
-              update("gui_agent", { ...settings.gui_agent, provider: event.target.value })
-            }
-          >
-            <option value="mock">{t("settings.desktop.mockDefault")}</option>
-            <option value="pywinauto" disabled>
-              {t("settings.desktop.pywinautoBlocked")}
-            </option>
-          </select>
-        </label>
       </div>
       <div className="row">
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -191,16 +169,6 @@ export default function DesktopSettingsPanel({ baseUrl }: Props) {
             onChange={(event) => update("llm", { ...settings.llm, enabled: event.target.checked })}
           />
           {t("settings.desktop.enableLlm")}
-        </label>
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input
-            type="checkbox"
-            checked={settings.gui_agent.approved}
-            onChange={(event) =>
-              update("gui_agent", { ...settings.gui_agent, approved: event.target.checked })
-            }
-          />
-          {t("settings.desktop.enableGui")}
         </label>
         <button onClick={save} disabled={saving}>
           {saving ? t("settings.desktop.saving") : t("settings.desktop.save")}

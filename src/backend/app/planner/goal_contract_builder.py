@@ -148,6 +148,7 @@ def build_goal_contract_semantics(
     requested_goal_kind = str(plan_metadata.get("goal_kind") or "")
     requested_artifacts = plan_metadata.get("goal_artifact_types")
     native_goal_artifacts = {
+        "acpc_alignment": {"acpc_t1w", "transform_matrix", "acpc_landmarks", "qc_json"},
         "reho": {"reho_map"},
         "alff_falff": {"alff_map", "falff_map"},
         "functional_connectivity": {"fc_matrix"},
@@ -158,7 +159,7 @@ def build_goal_contract_semantics(
         else set()
     )
     trusted_native_goal = (
-        "native_preproc_full_execute" in node_set
+        ("native_preproc_full_execute" in node_set or "native_auto_acpc_align" in node_set)
         and requested_goal_kind in native_goal_artifacts
         and requested_artifact_set == native_goal_artifacts.get(requested_goal_kind)
     )
@@ -227,7 +228,7 @@ def build_goal_contract_semantics(
     criteria: list[GoalCriterion] = []
     allowed_limitation_flags = (
         ["simplified"]
-        if not plan_only and "native_preproc_full_execute" in node_set
+        if not plan_only and ("native_preproc_full_execute" in node_set or "native_auto_acpc_align" in node_set)
         else []
     )
     forbidden_limitation_flags = [

@@ -84,68 +84,6 @@ class PlannerExecuteRequest(BaseModel):
     approved: bool = Field(default=False)
 
 
-class GuiAgentSessionRequest(BaseModel):
-    # ── Original fields (backward compatible) ──
-    session_id: str | None = Field(default=None)
-    target_app: str = Field(default="spm")
-    objective: str = Field(default="assist SPM/DPABI GUI operation")
-    provider: str = Field(default="mock")
-    approved: bool = Field(default=False)
-
-    # ── M9-GUI-GUARD-T003: session declaration fields ──
-    # All have safe defaults so existing mock-only calls continue to work.
-    target_window: str = Field(default="declared_window")
-    gui_sandbox_mode: bool = Field(default=True)
-    allowed_action_tiers: list[int] = Field(default_factory=lambda: [0])
-    file_scope: list[str] = Field(
-        default_factory=lambda: ["outputs/work/gui_agent/"]
-    )
-    allow_rawdata_access: bool = Field(default=False)
-    allow_derivatives_write: bool = Field(default=False)
-    screenshot_policy: str = Field(default="disabled")
-    clipboard_policy: str = Field(default="disabled")
-    network_policy: str = Field(default="disabled")
-    external_app_policy: str = Field(default="declared_target_only")
-    duration_limit_seconds: int = Field(default=300, ge=1, le=300)
-    step_limit: int = Field(default=20, ge=1, le=20)
-    human_present: bool = Field(default=True)
-    emergency_abort_enabled: bool = Field(default=True)
-    audit_log_required: bool = Field(default=True)
-    redaction_policy: str = Field(default="required_for_persistence")
-
-
-class GuiAgentStepRequest(BaseModel):
-    # ── Original fields (backward compatible) ──
-    action: str = Field(default="record_observation")
-    parameters: dict = Field(default_factory=dict)
-
-    # ── M9-GUI-GUARD-T004: action declaration fields ──
-    # All have safe defaults so existing mock record_observation calls continue to work.
-    action_tier: int | None = Field(default=0)
-    read_only: bool = Field(default=True)
-    uses_screenshot: bool = Field(default=False)
-    uses_clipboard: bool = Field(default=False)
-    uses_keyboard: bool = Field(default=False)
-    uses_mouse: bool = Field(default=False)
-    network_access: bool = Field(default=False)
-    input_paths: list[str] = Field(default_factory=list)
-    output_paths: list[str] = Field(default_factory=list)
-    expected_side_effects: str = Field(default="none")
-    requires_per_action_confirmation: bool = Field(default=False)
-    rollback_plan: str = Field(default="none")
-    stop_conditions: list[str] = Field(default_factory=lambda: ["unexpected_window"])
-
-
-# ── M10-GUI-AGENT-MOCK-T003: mock adapter API ──
-
-class MockAdapterStepRequest(BaseModel):
-    """Request to process a mock model fixture through the adapter and guard."""
-    session_id: str | None = Field(default=None)
-    fixture_id: str = Field(default="safe_observe_current_state")
-    submit_to_guard: bool = Field(default=True)
-    dry_run: bool = Field(default=False)
-
-
 class DesktopConfigSaveRequest(BaseModel):
     project_dir: str | None = Field(default=None)
     python_path: str | None = Field(default=None)
@@ -154,7 +92,6 @@ class DesktopConfigSaveRequest(BaseModel):
     dpabi_dir: str | None = Field(default=None)
     gpu_mode: str | None = Field(default=None)
     llm: dict = Field(default_factory=dict)
-    gui_agent: dict = Field(default_factory=dict)
 
 
 class ExternalSmokeRunRequest(BaseModel):

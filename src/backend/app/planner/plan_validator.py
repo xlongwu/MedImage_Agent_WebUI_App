@@ -26,6 +26,19 @@ from src.backend.app.runtime.node_contract_registry import (
 from src.backend.app.schemas.goal_contract import GoalContract
 from src.backend.app.services.spm_realign_params import validate_spm_realign_params
 
+
+# These historical node IDs belonged to the removed GUI Agent surface.  Keep a
+# narrow validator-level tombstone so old reviewed-plan drafts fail clearly and
+# never reach catalog lookup or a runner.
+LEGACY_GUI_NODE_IDS = frozenset(
+    {
+        "gui_acpc_manual",
+        "gui_acpc_location",
+        "gui_spm_assist",
+        "gui_open_batch",
+    }
+)
+
 # ── Output dataclasses ────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -177,6 +190,17 @@ def validate_plan(plan: dict[str, Any]) -> PlanValidationResult:
 
     unknown_nodes: list[str] = []
     for nid in node_ids:
+        if nid in LEGACY_GUI_NODE_IDS:
+            unknown_nodes.append(nid)
+            errors.append(PlanValidationIssue(
+                code="LEGACY_GUI_AGENT_NODE_REMOVED",
+                message=(
+                    f"Node id '{nid}' was removed with the GUI Agent. "
+                    "Use native_auto_acpc_align for automatic ACPC alignment."
+                ),
+                node_id=nid,
+            ))
+            continue
         if nid not in catalog_ids:
             unknown_nodes.append(nid)
             errors.append(PlanValidationIssue(

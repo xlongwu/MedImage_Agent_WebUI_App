@@ -34,6 +34,12 @@ def test_native_stage_boundary_nodes_do_not_use_fallback_metadata() -> None:
     for spec in iter_native_full_stage_specs():
         item = catalog[spec.node_id]
         assert item.backend == "native_python"
+        if spec.node_id == "native_auto_acpc_align":
+            assert item.requires_approval is True
+            assert item.risk_level == "medium"
+            assert "acpc" in item.tags
+            assert "stage-boundary" not in item.tags
+            continue
         assert item.risk_level == "low"
         assert "uncataloged" not in item.tags
         assert "stage-boundary" in item.tags

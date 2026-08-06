@@ -86,7 +86,7 @@ EXPECTED_NODE_IDS = {
 
 def test_plugin_registry_preserves_exact_node_ids():
     assert set(node_registry.NODE_REGISTRY) == EXPECTED_NODE_IDS
-    assert len(node_registry.NODE_REGISTRY) == 93
+    assert len(node_registry.NODE_REGISTRY) == 94
 
 
 def test_get_node_runner_returns_registered_runner_identity():

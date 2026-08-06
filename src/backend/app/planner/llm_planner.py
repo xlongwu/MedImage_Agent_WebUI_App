@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from src.backend.app.planner.goal_contract_builder import build_goal_contract_semantics
@@ -95,6 +96,10 @@ _NATIVE_FULL_CONFIRMATIONS: dict[str, bool] = {
     "confirm_research_use_only": True,
     "confirm_no_clinical_use": True,
 }
+
+_ACPC_GOAL_TERMS = (
+    "acpc", "ac-pc", "anterior commissure", "posterior commissure", "前后连合", "前后联合", "前连合", "后连合",
+)
 
 _PLAN_ONLY_TERMS = (
     "plan only",
@@ -400,6 +405,53 @@ def _matches_native_reho_goal(goal_lower: str) -> bool:
         term in goal_lower
         for term in ("compute", "calculate", "execute", "run ", "计算", "执行", "生成")
     )
+
+
+def _matches_acpc_goal(goal_lower: str) -> bool:
+    return any(term in goal_lower for term in _ACPC_GOAL_TERMS) and any(
+        term in goal_lower
+        for term in ("align", "alignment", "locat", "reorient", "对齐", "定位", "校正", "重定向")
+    )
+
+
+def _build_acpc_plan(*, goal: str, provider: str, project_context: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    diagnostics = _diagnostics_from_context(project_context)
+    artifact_ids = [str(value) for value in diagnostics.get("registered_t1_artifact_ids") or [] if str(value)]
+    if len(artifact_ids) != 1:
+        return {}, [
+            "REGISTERED_T1_ARTIFACT_REQUIRED: ACPC alignment requires exactly one selected registered T1w artifact."
+        ]
+    project_dir = str(diagnostics.get("project_dir") or "")
+    return {
+        "pipeline_id": "native_auto_acpc_alignment",
+        "project_context": {"project_id": None, "project_config_path": None, "rawdata_dir": None, "dataset_index_path": None, "source": "planner_rule_based_policy" if provider == "rule_based" else "planner_minimal_mock", "diagnostics": {}},
+        "goal": goal,
+        "nodes": [{
+            "id": "native_auto_acpc_align",
+            "backend": "native_python",
+            "depends_on": [],
+            "params": {
+                "project_id": str(project_context.get("project_id") or ""),
+                "project_dir": project_dir,
+                "source_t1_artifact_id": artifact_ids[0],
+                "output_root": str(Path(project_dir) / "derivatives") if project_dir else "",
+                "template_id": "spm12_avg152_t1_ras",
+                "interpolation": "linear",
+            },
+        }],
+        "metadata": {
+            "planner": "deterministic_acpc_policy",
+            "provider": provider,
+            "capability_level": "computed",
+            "goal_kind": "acpc_alignment",
+            "goal_artifact_types": ["acpc_t1w", "transform_matrix", "acpc_landmarks", "qc_json"],
+            "execution_enabled": False,
+            "execution_requires_approval_gate": True,
+            "rawdata_read_only": True,
+            "estimated_landmarks": True,
+            "review_required_on_qc_failure": True,
+        },
+    }, []
 
 
 def _normalize_subject_id(value: object) -> str:
@@ -738,6 +790,23 @@ def generate_plan_from_goal(
     # ── Rule matching ──
     goal_lower = stripped.lower()
     project_context = _project_context_from_constraints(constraints)
+    if _matches_acpc_goal(goal_lower):
+        plan, missing = _build_acpc_plan(goal=stripped, provider=provider, project_context=project_context)
+        if missing:
+            return PlannerResponse(
+                ok=False, provider=provider, goal=goal, plan={}, validation={},
+                missing_prerequisites=missing, clarification_required=True,
+                errors=missing, warnings=["ACPC planning did not create an executable node without a selected registered T1w artifact."],
+            )
+        validation = validate_plan(plan)
+        goal_contract = build_goal_contract_semantics(plan, goal)
+        return PlannerResponse(
+            ok=validation.ok and goal_contract.ok, provider=provider, goal=goal, plan=plan,
+            validation=validation.to_dict(), messages=["Prepared a reviewed ACPC alignment plan using a registered T1w artifact."],
+            warnings=["AC/PC outputs are template-back-projected estimates and require independent manual-reference validation."],
+            errors=[] if goal_contract.ok else [goal_contract.reason or "GOAL_CONTRACT_INVALID"],
+            clarification_required=goal_contract.clarification_required, goal_contract_candidate=goal_contract.semantics,
+        )
     if _matches_plan_only_preprocessing_goal(goal_lower):
         plan = _build_plan_only_preprocessing_plan(goal=stripped, provider=provider)
         validation = validate_plan(plan)

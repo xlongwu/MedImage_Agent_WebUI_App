@@ -103,7 +103,6 @@ def test_electron_main_contract():
     assert "MEDIMAGE_FRONTEND_DICOM_EXECUTE_UI_ENABLED" not in main
     assert "MEDIMAGE_MATLAB_ENABLED" not in main
     assert "MEDIMAGE_SPM_SMOKE_ENABLED" not in main
-    assert "pywinauto" not in main.lower()
     assert "inference" not in main.lower()
     assert "safetensors" not in main.lower()
 
@@ -148,7 +147,7 @@ def test_desktop_package_contract():
     assert "electron-builder" in package_json["devDependencies"]
 
 
-def test_pyinstaller_spec_excludes_blocked_gui_and_model_modules():
+def test_pyinstaller_spec_excludes_blocked_model_modules():
     spec = read("desktop/packaging/pyinstaller_backend.spec")
     launcher_spec = read("desktop/packaging/pyinstaller_desktop_launcher.spec")
 
@@ -171,7 +170,6 @@ def test_pyinstaller_spec_excludes_blocked_gui_and_model_modules():
     assert '"pydicom"' in spec
     assert "dcm2niix" not in spec.lower()
     assert "resources/tools" not in spec
-    assert '"pywinauto"' in spec
     assert '"torch"' in spec
     assert '"safetensors"' in spec
     assert "desktop_launcher_entry.py" in launcher_spec
@@ -179,7 +177,6 @@ def test_pyinstaller_spec_excludes_blocked_gui_and_model_modules():
     assert "upx=False" in launcher_spec
     assert 'runtime_tmpdir="."' in launcher_spec
     assert '"src" / "frontend" / "dist"' in launcher_spec
-    assert '"pywinauto"' in launcher_spec
     assert '"torch"' in launcher_spec
     assert '"safetensors"' in launcher_spec
 
@@ -193,10 +190,7 @@ def test_desktop_launcher_contract():
     assert "MEDIMAGE_DESKTOP_WORKSPACE" in launcher
     assert "_default_packaged_workspace" in launcher
     assert "_find_repository_root" in launcher
-    assert "MEDIMAGE_GUI_AGENT_PROVIDER" in launcher
-    assert '"mock"' in launcher
     assert "server.should_exit = True" in launcher
-    assert "pywinauto" not in launcher.lower()
     assert "inference" not in launcher.lower()
     assert "safetensors" not in launcher.lower()
 
@@ -317,14 +311,10 @@ def test_desktop_docs_record_safety_boundaries():
     docs = read("docs/桌面与前端/桌面应用打包.md")
 
     required = [
-        "does not enable real GUI automation",
-        "does not enable PyWinAuto",
         "does not connect a real model",
         "does not call inference",
         "does not load model weights",
         "does not change the reviewed execution allowlist",
-        "does not add GUI/manual reviewed execution nodes",
-        "record_observation",
     ]
     for phrase in required:
         assert phrase in docs

@@ -251,15 +251,14 @@ ApprovalGateResult:
 
 ---
 
-## 六、GUI / Manual_Required 策略
+## 六、Manual_Required 策略
 
 | 节点/条件 | 策略 |
 |-----------|------|
 | `manual_required == True` | ✅ M5 已阻断 |
-| future `gui_acpc_manual` | ❌ GUI Agent 未接入 → 必须继续阻断 |
-| `gui_*` 节点 | ❌ 继续阻断 |
+| `manual_required == True` | ❌ 必须继续阻断 |
 
-**结论**: GUI/Manual 策略维持不变 — GUI Agent 接入前不开放。
+**结论**: Manual 策略维持不变 — 不存在普通执行器旁路。
 
 ---
 
@@ -330,15 +329,6 @@ SPM/DPABI execution safety review.
 | **M6-T009** | `dpabi_subject_*` execution | very high |
 | → 独立安全审查 + sandbox | |
 | → 可能需 license 校验 | |
-
-### Phase 8: GUI Agent
-
-| Task | 内容 | 风险 |
-|------|------|:---:|
-| **M6-T010** | GUI Agent manual_required 设计 | high |
-| → 不一键开放 | |
-
----
 
 ## 八、结论
 

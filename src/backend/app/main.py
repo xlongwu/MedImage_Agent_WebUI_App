@@ -24,7 +24,6 @@ from src.backend.app.api.execution_ticket_routes import router as execution_tick
 from src.backend.app.api.experiment_routes import router as experiment_router
 from src.backend.app.api.external_smoke_routes import router as external_smoke_router
 from src.backend.app.api.gpu_routes import router as gpu_router
-from src.backend.app.api.gui_agent_routes import router as gui_agent_router
 from src.backend.app.api.image_routes import router as image_router
 from src.backend.app.api.llm_planner_routes import router as llm_planner_router
 from src.backend.app.api.middleware import (
@@ -180,7 +179,6 @@ def create_app() -> FastAPI:
     app.include_router(agent_task_router)
     app.include_router(memory_router)
     app.include_router(audit_record_router)
-    app.include_router(gui_agent_router)
     app.include_router(desktop_router)
     app.include_router(external_smoke_router)
     app.include_router(preset_router)

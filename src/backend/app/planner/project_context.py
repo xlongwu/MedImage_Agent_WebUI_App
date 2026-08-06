@@ -178,6 +178,38 @@ def _augment_diagnostics_with_registered_outputs(
         if handoff.get("conversion_run_id") and not enriched.get("preprocessing_conversion_run_id"):
             enriched["preprocessing_conversion_run_id"] = handoff["conversion_run_id"]
 
+    # ACPC is intentionally restricted to an already registered T1w artifact.
+    # Do not discover an arbitrary NIfTI by path: reviewed planning must bind a
+    # stable registry identifier before it can request an output write.
+    if project_dir is not None:
+        try:
+            from src.backend.app.services.preprocessing_artifact_registry import (
+                REGISTRY_FILENAME,
+                load_artifact_registry,
+            )
+
+            candidates: list[Path] = []
+            for directory_name in ("data", "work", "derivatives"):
+                directory = project_dir / directory_name
+                if directory.is_dir():
+                    candidates.extend(directory.rglob(REGISTRY_FILENAME))
+            t1_artifact_ids: list[str] = []
+            for registry_path in sorted({path.resolve() for path in candidates}):
+                for artifact in load_artifact_registry(registry_path).get("artifacts", []):
+                    if not isinstance(artifact, dict):
+                        continue
+                    if str(artifact.get("artifact_type") or "") not in {"converted_t1w", "t1w", "coregistered_t1w"}:
+                        continue
+                    artifact_id = str(artifact.get("artifact_id") or "")
+                    if artifact_id and artifact_id not in t1_artifact_ids:
+                        t1_artifact_ids.append(artifact_id)
+            if t1_artifact_ids:
+                enriched["registered_t1_artifact_ids"] = t1_artifact_ids
+        except Exception:
+            # Context discovery remains read-only and must not fail unrelated
+            # planning if an older registry is malformed.
+            pass
+
     return enriched
 
 
@@ -362,6 +394,7 @@ def apply_project_context_to_plan(
             "native_dicom_conversion_execute",
             "native_preproc_full_dry_run",
             "native_preproc_full_execute",
+            "native_auto_acpc_align",
         }:
             if context.project_id:
                 params.setdefault("project_id", context.project_id)
@@ -384,6 +417,8 @@ def apply_project_context_to_plan(
                 )
                 if output_dir:
                     params.setdefault("output_dir", output_dir)
+            if node_id == "native_auto_acpc_align" and context.project_dir is not None:
+                params.setdefault("output_root", str(context.project_dir / "derivatives"))
 
         is_subject_level = (
             node_id in subject_nodes or node.get("parallel_level") == "subject"

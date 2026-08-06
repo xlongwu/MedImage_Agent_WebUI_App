@@ -403,7 +403,6 @@ async function startBackendOnce() {
       MEDIMAGE_BACKEND_HOST: API_HOST,
       MEDIMAGE_BACKEND_PORT: String(port),
       MEDIMAGE_DESKTOP_SESSION_TOKEN: backendSessionToken,
-      MEDIMAGE_GUI_AGENT_PROVIDER: "mock",
       MEDIMAGE_AGENT_STARTUP_RECONCILE: "1",
       MEDIMAGE_AGENT_APPROVAL_TOKEN: agentApprovalToken,
       MEDIMAGE_AGENT_APPROVAL_ACTOR: agentApprovalActor,

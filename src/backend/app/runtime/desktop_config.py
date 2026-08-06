@@ -28,10 +28,6 @@ DEFAULT_DESKTOP_CONFIG: dict[str, Any] = {
         "model": "",
         "api_key_set": False,
     },
-    "gui_agent": {
-        "provider": "mock",
-        "approved": False,
-    },
     "dicom_conversion": {
         "enabled": False,
         "dcm2niix_path": "",
@@ -63,6 +59,8 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
 
 def get_desktop_config(redacted: bool = True) -> dict[str, Any]:
     config = _merge(DEFAULT_DESKTOP_CONFIG, _read_config())
+    # Do not expose the retired configuration key retained in older local files.
+    config.pop("gui_agent", None)
     config["llm"] = _merge(
         config.get("llm", {}),
         {
@@ -79,7 +77,9 @@ def get_desktop_config(redacted: bool = True) -> dict[str, Any]:
 
 def save_desktop_config(payload: dict[str, Any]) -> dict[str, Any]:
     existing = get_desktop_config(redacted=False)
+    existing.pop("gui_agent", None)
     clean = dict(payload)
+    clean.pop("gui_agent", None)
     llm = dict(clean.get("llm", {}))
     if llm.get("api_key"):
         llm["api_key_set"] = True
@@ -127,18 +127,7 @@ def get_desktop_health() -> dict[str, Any]:
     except Exception as exc:
         gpu = {"ok": False, "gpu_available": False, "errors": [str(exc)]}
 
-    gui_provider = config.get("gui_agent", {}).get("provider", "mock")
-    gui_ok = gui_provider == "mock"
-    if gui_provider == "pywinauto":
-        try:
-            import pywinauto  # noqa: F401
-
-            gui_ok = True
-        except ImportError:
-            gui_ok = False
-
     checks.append({"name": "llm_config", "ok": bool(config.get("llm", {}).get("api_key_set")) or not config.get("llm", {}).get("enabled"), "enabled": config.get("llm", {}).get("enabled"), "api_key_set": config.get("llm", {}).get("api_key_set")})
-    checks.append({"name": "gui_agent_provider", "ok": gui_ok, "provider": gui_provider})
     checks.append(_websocket_runtime_check())
     checks.append(_desktop_store_check())
     checks.append(_pipeline_adapters_check())

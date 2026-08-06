@@ -581,7 +581,6 @@ def classify_plan_nodes(plan: dict[str, Any]) -> dict[str, list[str]]:
         "blocked_spm_nodes": [],
         "blocked_dpabi_execution_nodes": [],
         "blocked_native_preproc_nodes": [],
-        "blocked_gui_nodes": [],
         "blocked_manual_required_nodes": [],
         "blocked_unknown_nodes": [],
         "blocked_uncataloged_nodes": [],
@@ -682,11 +681,6 @@ def classify_plan_nodes(plan: dict[str, Any]) -> dict[str, list[str]]:
             result["blocked_native_preproc_nodes"].append(nid)
             continue
 
-        # GUI
-        if nid.startswith("gui_") or cat.backend == "gui-agent":
-            result["blocked_gui_nodes"].append(nid)
-            continue
-
         # GPU synthetic smoke — M8-T006d: sandbox-gated allowlist
         if nid == "gpu_nuisance_regression_subject" and _satisfies_gpu_nuisance_regression_sandbox(
             node
@@ -751,7 +745,6 @@ def adapt_reviewed_plan(
         policy.get("blocked_spm_nodes", [])
         + policy.get("blocked_dpabi_execution_nodes", [])
         + policy.get("blocked_native_preproc_nodes", [])
-        + policy.get("blocked_gui_nodes", [])
         + policy.get("blocked_manual_required_nodes", [])
         + policy.get("blocked_unknown_nodes", [])
         + policy.get("blocked_uncataloged_nodes", [])

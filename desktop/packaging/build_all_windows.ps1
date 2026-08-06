@@ -83,8 +83,6 @@ try {
     $FocusedTests = @(
         "tests/unit/test_desktop_backend_entry.py",
         "tests/unit/test_desktop_packaging_contract.py",
-        "tests/unit/test_gui_reviewed_execution_blocklist.py",
-        "tests/unit/test_gui_model_mock_real_boundary.py",
         "tests/unit/test_execute_reviewed_api.py",
         "-v",
         "--basetemp=.pytest_tmp_packaging_focused"

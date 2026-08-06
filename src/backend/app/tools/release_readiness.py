@@ -133,7 +133,6 @@ def build_release_readiness():
         Path("src/backend/app/api/artifact_routes.py"),
         Path("src/backend/app/api/realdata_routes.py"),
         Path("src/backend/app/api/planner_routes.py"),
-        Path("src/backend/app/api/gui_agent_routes.py"),
         Path("src/backend/app/api/desktop_routes.py"),
         Path("src/backend/app/api/external_smoke_routes.py"),
     ]
@@ -144,7 +143,6 @@ def build_release_readiness():
             "/api/rsfmri/report-export",
             "/api/rsfmri/report-validation",
             "/api/planner/draft",
-            "/api/gui-agent/sessions",
             "/api/desktop/config",
             "/api/external-smoke/status",
             "/api/external-smoke/run",

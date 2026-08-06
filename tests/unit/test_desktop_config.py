@@ -33,4 +33,4 @@ def test_desktop_health_reports_required_checks(tmp_path: Path, monkeypatch):
 
     assert result["ok"] is True
     assert any(item["name"] == "project_dir" for item in result["checks"])
-    assert any(item["name"] == "gui_agent_provider" for item in result["checks"])
+    assert all(item["name"] != "gui_agent_provider" for item in result["checks"])

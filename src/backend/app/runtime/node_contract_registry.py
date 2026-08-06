@@ -96,6 +96,14 @@ _STRICT_PARAMETERS: dict[str, dict[str, ParameterContract]] = {
         "conversion_run_id": _parameter("string", required=True, path_access="non_path"),
         "output_dir": _parameter("string", nullable=True, path_access="write"),
     },
+    "native_auto_acpc_align": {
+        "project_id": _parameter("string", nullable=True, path_access="non_path"),
+        "project_dir": _parameter("string", required=True, path_access="non_path"),
+        "source_t1_artifact_id": _parameter("string", required=True, path_access="non_path"),
+        "output_root": _parameter("string", required=True, path_access="write"),
+        "template_id": _parameter("string", default="spm12_avg152_t1_ras", enum=("spm12_avg152_t1_ras",)),
+        "interpolation": _parameter("string", default="linear", enum=("linear", "cubic")),
+    },
     "native_preproc_full_execute": {
         "project_id": _parameter("string", nullable=True, path_access="non_path"),
         "project_dir": _parameter("string", nullable=True, path_access="write"),
@@ -129,6 +137,7 @@ _STRICT_PARAMETERS: dict[str, dict[str, ParameterContract]] = {
 # reachability and Observation matching must use the same canonical artifact
 # types that the runners persist.
 _STRICT_OUTPUT_ARTIFACT_TYPES: dict[str, tuple[str, ...]] = {
+    "native_auto_acpc_align": ("acpc_t1w", "transform_matrix", "acpc_landmarks", "qc_json"),
     "native_dicom_conversion_execute": (
         "converted_nifti",
         "bids_sidecar",

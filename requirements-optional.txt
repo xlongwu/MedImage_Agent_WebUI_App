@@ -9,7 +9,3 @@ cupy-cuda12x>=13.0.0,<14.0.0
 
 # Optional PyTorch CUDA backend for ALFF experiments.
 # torch>=2.2.0
-
-# Future GUI Agent providers. The default provider is mock and needs none.
-# pywinauto>=0.6.8
-# pyautogui>=0.9.54
