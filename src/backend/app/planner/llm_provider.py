@@ -301,6 +301,55 @@ def call_openai_compatible_provider(
     )
 
 
+def call_openai_compatible_action_provider(
+    *, snapshot: dict[str, Any], repair: bool = False, http_post: Callable[..., Any] | None = None
+) -> LLMProviderResult:
+    """Request one strict Harness ActionEnvelope from the configured provider.
+
+    This intentionally has no Tool Catalog in its prompt. The returned action
+    is validated by both Pydantic and the capability catalog before use.
+    """
+    config = _get_config()
+    if not config.api_key_set:
+        return LLMProviderResult(ok=False, content="", errors=["AGENT_HARNESS_PROVIDER_UNAVAILABLE"])
+    from src.backend.app.planner.agent_model_adapter import build_action_prompt
+    from src.backend.app.schemas.agent_harness import ActionEnvelope
+
+    body = {
+        "model": config.model,
+        "messages": [
+            {"role": "system", "content": "Return strictly valid JSON. Never execute or approve anything."},
+            {"role": "user", "content": build_action_prompt(snapshot, repair=repair)},
+        ],
+        "temperature": 0,
+        "max_tokens": 1024,
+        "response_format": {"type": "json_object"},
+    }
+    try:
+        if http_post is None:
+            import httpx  # noqa: E402
+            response = httpx.post(
+                f"{config.base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {os.environ['MEDIMAGE_LLM_API_KEY']}", "Content-Type": "application/json"},
+                json=body,
+                timeout=60.0,
+            )
+            response.raise_for_status()
+            raw = response.json()
+        else:
+            response = http_post(
+                f"{config.base_url.rstrip('/')}/chat/completions", {}, body, 60.0
+            )
+            if hasattr(response, "raise_for_status"):
+                response.raise_for_status()
+            raw = response.json() if hasattr(response, "json") else response
+        content = ((raw.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+        envelope = ActionEnvelope.model_validate_json(content)
+        return LLMProviderResult(ok=True, content=envelope.model_dump_json(), raw=raw)
+    except Exception as exc:
+        return LLMProviderResult(ok=False, content="", errors=[f"AGENT_HARNESS_MODEL_OUTPUT_INVALID: {exc}"])
+
+
 # ── Backward-compat stubs (used by pipeline_planner.py) ──────────────────────
 
 class PlannerProviderError(Exception):

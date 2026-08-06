@@ -114,10 +114,42 @@ class MemoryConfig(BaseModel):
         )
 
 
+class AgentHarnessConfig(BaseModel):
+    """Installation-level limits for the optional advice-only Harness.
+
+    Invalid environment values always resolve to the conservative defaults;
+    enabling the feature never enables any execution capability.
+    """
+
+    enabled: bool = False
+    max_model_calls: int = Field(default=6, ge=1, le=6)
+    max_tool_proposals: int = Field(default=8, ge=1, le=8)
+    max_wall_seconds: int = Field(default=300, ge=1, le=300)
+    lease_seconds: int = Field(default=30, ge=5, le=300)
+
+    @classmethod
+    def from_env(cls) -> "AgentHarnessConfig":
+        def bounded(name: str, default: int, minimum: int, maximum: int) -> int:
+            try:
+                value = int(os.environ.get(name, str(default)))
+            except ValueError:
+                return default
+            return value if minimum <= value <= maximum else default
+
+        return cls(
+            enabled=_env_bool("MEDIMAGE_AGENT_HARNESS_ENABLED"),
+            max_model_calls=bounded("MEDIMAGE_AGENT_HARNESS_MAX_MODEL_CALLS", 6, 1, 6),
+            max_tool_proposals=bounded("MEDIMAGE_AGENT_HARNESS_MAX_TOOL_PROPOSALS", 8, 1, 8),
+            max_wall_seconds=bounded("MEDIMAGE_AGENT_HARNESS_MAX_WALL_SECONDS", 300, 1, 300),
+            lease_seconds=bounded("MEDIMAGE_AGENT_HARNESS_LEASE_SECONDS", 30, 5, 300),
+        )
+
+
 class AppConfig(BaseModel):
     """Top-level configuration snapshot exposed by ConfigService."""
 
     server: ServerConfig
     memory: MemoryConfig
+    harness: AgentHarnessConfig = Field(default_factory=AgentHarnessConfig)
     project: dict[str, Any] | None = None
     project_config_path: str | None = None

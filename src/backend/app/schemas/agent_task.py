@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.backend.app.schemas.agent_harness import AgentHarnessSummary
+
 from src.backend.app.schemas.node_contract import CapabilityLevel
 
 AgentTaskPublicState = Literal[
@@ -253,6 +255,7 @@ class AgentTaskResponse(BaseModel):
     recovery: AgentTaskRecoverySummary | None = None
     evidence_links: tuple[AgentTaskEvidenceLink, ...] = ()
     technical_details: AgentTaskTechnicalDetails | None = None
+    harness_summary: AgentHarnessSummary | None = None
     created_at: datetime
     updated_at: datetime
 

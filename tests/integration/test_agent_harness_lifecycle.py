@@ -1,0 +1,40 @@
+from __future__ import annotations
+
+from src.backend.app.core.config_schema import AgentHarnessConfig
+from src.backend.app.schemas.agent_harness import ActionEnvelope
+from src.backend.app.schemas.desktop import ProjectDetail
+from src.backend.app.services.agent_harness_service import AgentHarnessService
+from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
+from src.backend.app.services.mock_store import SQLiteDesktopStore
+
+
+class DraftAdapter:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def propose_action(self, **_kwargs):
+        self.calls += 1
+        return ActionEnvelope(kind="draft_plan", reason="Build the reviewed plan", expected_state="CREATED")
+
+
+def test_enabled_harness_persists_step_and_falls_into_existing_input_gate(tmp_path) -> None:
+    """The Harness only reaches the existing planning service; it cannot execute."""
+    store = SQLiteDesktopStore(tmp_path / "lifecycle.sqlite")
+    store.add_project(ProjectDetail(
+        id="project-1", name="project", study_id="study", modality="rs-fMRI", created_date="today",
+        subjects_count=0, current_pipeline_id="pipeline", sequences=[], scans_count=0, total_size="0", current_model_id="none",
+    ), health_status="ready", rawdata_dir="")
+    adapter = DraftAdapter()
+    harness = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter)
+    service = AgentTaskCommandService(store, harness_service=harness)
+
+    lifecycle = service.create(project_id="project-1", goal="Plan preprocessing", command_id="create-1", actor="researcher")
+
+    attempt = store.get_agent_harness_attempt(lifecycle.lifecycle_id)
+    steps = store.list_agent_harness_steps(attempt.attempt_id)
+    assert lifecycle.state == "WAITING_FOR_INPUT"  # existing project-config prerequisite
+    assert attempt.status == "WAITING_FOR_USER"
+    assert [step.kind for step in steps] == ["draft_plan"]
+    assert adapter.calls == 1
+    assert lifecycle.execution_ticket_id is None
+    assert store.list_execution_tickets("project-1") == []

@@ -162,6 +162,17 @@ export const messagesEn = {
   "agent.connectionProblem": "Agent Task service is unavailable",
   "agent.actionProblem": "The task action was not completed",
   "agent.loading": "Loading Agent Task",
+  "agent.harness.eyebrow": "Controlled Agent Harness",
+  "agent.harness.title": "Planning trace",
+  "agent.harness.budget":
+    "Model calls: {calls}/{callLimit}; proposed actions: {proposals}/{proposalLimit}.",
+  "agent.harness.stopped": "Stopped safely: {reason}",
+  "agent.harness.status.READY": "Ready",
+  "agent.harness.status.RUNNING": "Working",
+  "agent.harness.status.WAITING_FOR_USER": "Waiting for you",
+  "agent.harness.status.FINISHED": "Finished",
+  "agent.harness.status.STOPPED": "Stopped safely",
+  "agent.harness.status.FAILED": "Failed safely",
   "agent.advancedMode": "Advanced Mode",
   "agent.technical.title": "Technical evidence",
   "agent.technical.description":

@@ -7,6 +7,7 @@ import type { ProjectInventory } from "../../lib/projectWorkflow";
 import type { LegacyWorkspace } from "../navigation/workspaceModel";
 import styles from "./AgentWorkspace.module.css";
 import { CurrentAction } from "./components/CurrentAction";
+import { HarnessStatusCard } from "./components/HarnessStatusCard";
 import { GoalComposer } from "./components/GoalComposer";
 import { MacroProgress } from "./components/MacroProgress";
 import { NextActionCard } from "./components/NextActionCard";
@@ -201,6 +202,7 @@ export function AgentWorkspaceView({
       ) : (
         <>
           <CurrentAction action={task.current_action} outcome={task.outcome} state={task.state} />
+          {task.harness_summary ? <HarnessStatusCard summary={task.harness_summary} /> : null}
           <MacroProgress
             outcome={task.outcome}
             planOnly={planOnlyResult}

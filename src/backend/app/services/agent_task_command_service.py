@@ -22,6 +22,7 @@ from src.backend.app.schemas.goal_contract import GoalContractCandidate
 from src.backend.app.schemas.memory import MemoryContext, MemoryDecisionSuggestion
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
+from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.goal_planning_service import GoalPlanningService
 from src.backend.app.services.memory_repository import MemoryRepository
@@ -120,6 +121,7 @@ class AgentTaskCommandService:
         monitor_scheduler: Callable[..., bool] | None = None,
         memory_context_service: MemoryRetrievalService | None = None,
         memory_influence_guard: MemoryInfluenceGuard | None = None,
+        harness_service: AgentHarnessService | None = None,
     ) -> None:
         self.store = store
         self.orchestrator = AgentOrchestrator(store)
@@ -134,6 +136,8 @@ class AgentTaskCommandService:
         self.monitor_scheduler = monitor_scheduler or reconciler.start_bounded_monitor
         self.memory_influence_guard = memory_influence_guard or MemoryInfluenceGuard()
         self.memory_context_service = memory_context_service
+        self.harness_service = harness_service
+        self.harness_config = ConfigService().harness
         self.memory_initialization_warning: str | None = None
         if self.memory_context_service is None:
             config = ConfigService().memory
@@ -161,7 +165,7 @@ class AgentTaskCommandService:
             goal_text=goal,
             goal_hash=stable_hash({"goal": goal}),
         )
-        return self._plan(lifecycle=lifecycle, command_id=command_id, actor=actor)
+        return self._harness_or_plan(lifecycle=lifecycle, command_id=command_id, actor=actor)
 
     def answer(
         self,
@@ -216,7 +220,7 @@ class AgentTaskCommandService:
             updates=updates,
             details={"decision_id": decision_id, "answer": answer},
         )
-        return self._plan(lifecycle=resumed, command_id=command_id, actor=actor, resume=True)
+        return self._harness_or_plan(lifecycle=resumed, command_id=command_id, actor=actor, resume=True)
 
     def approve(
         self,
@@ -327,13 +331,20 @@ class AgentTaskCommandService:
         replay = self._command_replay(project_id, command_id)
         if replay is not None:
             return replay
-        return self.orchestrator.cancel(
+        canceled = self.orchestrator.cancel(
             project_id=project_id,
             lifecycle_id=lifecycle_id,
             command_id=command_id,
             actor=actor,
             reason=reason,
         )
+        if self.harness_service is not None:
+            self.harness_service.stop(lifecycle_id=lifecycle_id, reason="LIFECYCLE_CANCELED")
+        elif self.harness_config.enabled:
+            AgentHarnessService(self.store, config=self.harness_config).stop(
+                lifecycle_id=lifecycle_id, reason="LIFECYCLE_CANCELED"
+            )
+        return canceled
 
     def approve_recovery(
         self,
@@ -380,6 +391,40 @@ class AgentTaskCommandService:
             actor=actor,
         )
         return lifecycle
+
+    def _harness_or_plan(self, *, lifecycle, command_id: str, actor: str, resume: bool = False):
+        """Use the optional Harness without changing the legacy path when disabled.
+
+        The callback deliberately points back to ``_plan``: candidate-plan
+        construction, validation, reviewed-plan persistence, and the Approval
+        Summary remain single-owner existing services.
+        """
+        project = self.store.get_project(lifecycle.project_id)
+        metadata = project.metadata if project is not None and isinstance(project.metadata, dict) else {}
+        provider = str(metadata.get("agent_planner_provider") or "rule_based")
+        if not self.harness_config.enabled and self.harness_service is None:
+            return self._plan(lifecycle=lifecycle, command_id=command_id, actor=actor, resume=resume)
+        harness = self.harness_service or AgentHarnessService(
+            self.store,
+            config=self.harness_config,
+            draft_plan=lambda **kwargs: self._plan(resume=resume, **kwargs),
+        )
+        # An injected Harness receives the same canonical draft callback.
+        if harness.draft_plan is None:
+            harness.draft_plan = lambda **kwargs: self._plan(resume=resume, **kwargs)
+        result = (
+            harness.resume(lifecycle=lifecycle, provider_ref=provider, actor=actor)
+            if resume
+            else self._start_harness(harness=harness, lifecycle=lifecycle, provider=provider, actor=actor)
+        )
+        if result.fallback_required:
+            return self._plan(lifecycle=lifecycle, command_id=command_id, actor=actor, resume=resume)
+        return result.lifecycle
+
+    @staticmethod
+    def _start_harness(*, harness: AgentHarnessService, lifecycle, provider: str, actor: str):
+        harness.ensure_attempt(lifecycle=lifecycle, provider_ref=provider)
+        return harness.run_one(lifecycle=lifecycle, actor=actor)
 
     def _plan(self, *, lifecycle, command_id: str, actor: str, resume: bool = False):
         project = self.store.get_project(lifecycle.project_id)

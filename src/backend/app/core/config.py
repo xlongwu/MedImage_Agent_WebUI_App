@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.backend.app.config.settings import ProjectSettings
-from src.backend.app.core.config_schema import AppConfig, MemoryConfig, ServerConfig
+from src.backend.app.core.config_schema import AgentHarnessConfig, AppConfig, MemoryConfig, ServerConfig
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,7 @@ class ConfigService:
     def __init__(self, project_config_path: str | Path | None = None) -> None:
         self.server = ServerConfig.from_env()
         self.memory = MemoryConfig.from_env()
+        self.harness = AgentHarnessConfig.from_env()
         self.project = (
             ProjectSettings.from_yaml(project_config_path)
             if project_config_path is not None
@@ -48,6 +49,7 @@ class ConfigService:
         return AppConfig(
             server=self.server,
             memory=self.memory,
+            harness=self.harness,
             project=project_payload,
             project_config_path=self.project_config_path,
         )

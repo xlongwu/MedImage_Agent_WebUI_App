@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
+from src.backend.app.schemas.agent_harness import AgentHarnessAttempt, AgentHarnessContext, AgentHarnessStep
 from src.backend.app.schemas.desktop import (
     ApprovalRecord,
     DatasetImportRequest,
@@ -205,6 +206,42 @@ class SQLiteDesktopStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_lifecycle_events_lifecycle_time
                     ON agent_lifecycle_events(lifecycle_id, occurred_at);
+                CREATE TABLE IF NOT EXISTS agent_harness_attempts (
+                    attempt_id TEXT PRIMARY KEY,
+                    lifecycle_id TEXT NOT NULL UNIQUE,
+                    project_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(lifecycle_id) REFERENCES agent_lifecycles(lifecycle_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_harness_attempts_project_status
+                    ON agent_harness_attempts(project_id, status, updated_at);
+                CREATE TABLE IF NOT EXISTS agent_harness_contexts (
+                    context_hash TEXT PRIMARY KEY,
+                    lifecycle_id TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(lifecycle_id) REFERENCES agent_lifecycles(lifecycle_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_harness_contexts_lifecycle
+                    ON agent_harness_contexts(lifecycle_id, created_at);
+                CREATE TABLE IF NOT EXISTS agent_harness_steps (
+                    step_id TEXT PRIMARY KEY,
+                    attempt_id TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    step_no INTEGER NOT NULL,
+                    idempotency_key TEXT NOT NULL UNIQUE,
+                    payload TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    FOREIGN KEY(attempt_id) REFERENCES agent_harness_attempts(attempt_id),
+                    UNIQUE(attempt_id, step_no)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_harness_steps_attempt_no
+                    ON agent_harness_steps(attempt_id, step_no);
                 CREATE TABLE IF NOT EXISTS observations (
                     observation_id TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL,
@@ -1134,6 +1171,9 @@ class SQLiteDesktopStore:
             conn.execute("DELETE FROM reviewed_plans WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM execution_ticket_events WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM execution_tickets WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_harness_steps WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_harness_contexts WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_harness_attempts WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_lifecycle_events WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_lifecycles WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM observations WHERE project_id = ?", (project_id,))
@@ -2155,6 +2195,123 @@ class SQLiteDesktopStore:
                 (lifecycle_id,),
             ).fetchone()
         return AgentLifecycleRecord(**json.loads(row["payload"])) if row else None
+
+    def create_agent_harness_attempt(self, record: AgentHarnessAttempt) -> AgentHarnessAttempt:
+        """Create the one Harness attempt bound to a lifecycle.
+
+        The unique lifecycle key makes duplicate command delivery fail closed
+        instead of starting a second control loop.
+        """
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO agent_harness_attempts
+                    (attempt_id, lifecycle_id, project_id, status, payload, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.attempt_id, record.lifecycle_id, record.project_id, record.status,
+                    json.dumps(record.model_dump(mode="json"), ensure_ascii=False),
+                    record.created_at.isoformat(), record.updated_at.isoformat(),
+                ),
+            )
+        return record
+
+    def get_agent_harness_attempt(self, lifecycle_id: str) -> AgentHarnessAttempt | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM agent_harness_attempts WHERE lifecycle_id=?", (lifecycle_id,)
+            ).fetchone()
+        return AgentHarnessAttempt(**json.loads(row["payload"])) if row else None
+
+    def update_agent_harness_attempt(
+        self, record: AgentHarnessAttempt, *, expected_status: str
+    ) -> AgentHarnessAttempt:
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE agent_harness_attempts
+                SET status=?, payload=?, updated_at=?
+                WHERE attempt_id=? AND project_id=? AND status=?
+                """,
+                (
+                    record.status, json.dumps(record.model_dump(mode="json"), ensure_ascii=False),
+                    record.updated_at.isoformat(), record.attempt_id, record.project_id, expected_status,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_HARNESS_ATTEMPT_CONCURRENT_UPDATE")
+        return record
+
+    def add_agent_harness_context(self, record: AgentHarnessContext) -> AgentHarnessContext:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO agent_harness_contexts
+                    (context_hash, lifecycle_id, project_id, payload, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    record.context_hash, record.lifecycle_id, record.project_id,
+                    json.dumps(record.model_dump(mode="json"), ensure_ascii=False), record.created_at.isoformat(),
+                ),
+            )
+        return record
+
+    def get_agent_harness_context(self, context_hash: str) -> AgentHarnessContext | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM agent_harness_contexts WHERE context_hash=?", (context_hash,)
+            ).fetchone()
+        return AgentHarnessContext(**json.loads(row["payload"])) if row else None
+
+    def add_agent_harness_step(self, record: AgentHarnessStep) -> AgentHarnessStep:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO agent_harness_steps
+                    (step_id, attempt_id, project_id, step_no, idempotency_key, payload, started_at, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.step_id, record.attempt_id, record.project_id, record.step_no,
+                    record.idempotency_key, json.dumps(record.model_dump(mode="json"), ensure_ascii=False),
+                    record.started_at.isoformat(),
+                    record.completed_at.isoformat() if record.completed_at else None,
+                ),
+            )
+        return record
+
+    def get_agent_harness_step_by_idempotency(self, idempotency_key: str) -> AgentHarnessStep | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM agent_harness_steps WHERE idempotency_key=?", (idempotency_key,)
+            ).fetchone()
+        return AgentHarnessStep(**json.loads(row["payload"])) if row else None
+
+    def update_agent_harness_step(self, record: AgentHarnessStep) -> AgentHarnessStep:
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE agent_harness_steps SET payload=?, completed_at=?
+                WHERE step_id=? AND attempt_id=? AND project_id=?
+                """,
+                (
+                    json.dumps(record.model_dump(mode="json"), ensure_ascii=False),
+                    record.completed_at.isoformat() if record.completed_at else None,
+                    record.step_id, record.attempt_id, record.project_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_HARNESS_STEP_CONCURRENT_UPDATE")
+        return record
+
+    def list_agent_harness_steps(self, attempt_id: str) -> list[AgentHarnessStep]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload FROM agent_harness_steps WHERE attempt_id=? ORDER BY step_no", (attempt_id,)
+            ).fetchall()
+        return [AgentHarnessStep(**json.loads(row["payload"])) for row in rows]
 
     def list_agent_lifecycles(self, project_id: str) -> list[AgentLifecycleRecord]:
         with self._lock, self._connect() as conn:

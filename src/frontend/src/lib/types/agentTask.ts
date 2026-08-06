@@ -196,6 +196,26 @@ export type AgentTaskTechnicalDetails = {
   memory_use_enabled?: boolean | null;
 };
 
+export type AgentHarnessStatus =
+  | "READY"
+  | "RUNNING"
+  | "WAITING_FOR_USER"
+  | "FINISHED"
+  | "STOPPED"
+  | "FAILED";
+
+export type AgentHarnessSummary = {
+  status: AgentHarnessStatus;
+  model_calls_used: number;
+  model_calls_limit: number;
+  tool_proposals_used: number;
+  tool_proposals_limit: number;
+  next_step: string | null;
+  terminal_reason: string | null;
+  latest_step_id: string | null;
+  latest_step_summary: string | null;
+};
+
 export type AgentTaskResponse = {
   schema_version: 1;
   task_id: string;
@@ -212,6 +232,7 @@ export type AgentTaskResponse = {
   recovery: AgentTaskRecoverySummary | null;
   evidence_links: AgentTaskEvidenceLink[];
   technical_details: AgentTaskTechnicalDetails | null;
+  harness_summary?: AgentHarnessSummary | null;
   created_at: string;
   updated_at: string;
 };

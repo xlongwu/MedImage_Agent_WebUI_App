@@ -28,6 +28,8 @@ from src.backend.app.schemas.agent_task import (
     AgentTaskResultSummary,
     AgentTaskTechnicalDetails,
 )
+from src.backend.app.core.config import ConfigService
+from src.backend.app.schemas.agent_harness import AgentHarnessSummary
 from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
 
 
@@ -52,6 +54,8 @@ class AgentTaskReadStore(Protocol):
     def list_recovery_proposals(self, project_id: str, **filters): ...
     def list_recovery_approvals(self, project_id: str, **filters): ...
     def list_recovery_attempts(self, project_id: str, **filters): ...
+    def get_agent_harness_attempt(self, lifecycle_id: str): ...
+    def list_agent_harness_steps(self, attempt_id: str): ...
 
 
 _STATE_MAP: dict[str, str] = {
@@ -245,6 +249,7 @@ class AgentTaskReadModel:
         )
         goal = self._goal_summary(plan, lifecycle)
         technical = self._technical_details(lifecycle, plan, ticket, observation, evaluation)
+        harness_summary = self._harness_summary(lifecycle)
         return AgentTaskResponse(
             task_id=lifecycle.lifecycle_id,
             project_id=lifecycle.project_id,
@@ -260,8 +265,31 @@ class AgentTaskReadModel:
             recovery=recovery,
             evidence_links=self._evidence_links(lifecycle, observation, evaluation),
             technical_details=technical,
+            harness_summary=harness_summary,
             created_at=lifecycle.created_at,
             updated_at=lifecycle.updated_at,
+        )
+
+    def _harness_summary(self, lifecycle) -> AgentHarnessSummary | None:
+        getter = getattr(self.store, "get_agent_harness_attempt", None)
+        if getter is None:
+            return None
+        attempt = getter(lifecycle.lifecycle_id)
+        if attempt is None or attempt.project_id != lifecycle.project_id:
+            return None
+        steps = self.store.list_agent_harness_steps(attempt.attempt_id)
+        latest = steps[-1] if steps else None
+        config = ConfigService().harness
+        return AgentHarnessSummary(
+            status=attempt.status,
+            model_calls_used=attempt.model_calls_used,
+            model_calls_limit=config.max_model_calls,
+            tool_proposals_used=attempt.tool_proposals_used,
+            tool_proposals_limit=config.max_tool_proposals,
+            next_step=(f"step {attempt.next_step_no}" if attempt.status in {"READY", "RUNNING"} else None),
+            terminal_reason=attempt.terminal_reason,
+            latest_step_id=latest.step_id if latest else None,
+            latest_step_summary=latest.summary if latest else None,
         )
 
     def _project(self, project_id: str):
