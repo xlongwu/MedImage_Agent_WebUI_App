@@ -193,6 +193,11 @@ their tag state.
   package evidence, checksum/rollback checks, and safe output roots.
 - Agent-first visibility and a single approval card do not relax any execution
   gate. Advanced mode affects navigation only.
+- The optional Harness action catalog is fail-closed at A0/A1. It cannot expose
+  A2 execution or A3 scope changes to a model; approval identity binds the
+  evidence snapshot, science answers, MemoryContext, provider/prompt and
+  actual Skill inputs when present, so any binding drift requires a new plan
+  and current approval before dry-run.
 - Reviewed preprocessing uses in-project Python kernels. MATLAB, SPM, and
   DPABI executables are outside the supported execution path.
 - Run artifact discovery accepts managed evidence under project `data/` in

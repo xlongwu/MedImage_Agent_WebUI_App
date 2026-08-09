@@ -26,9 +26,13 @@ def test_offline_replay_corpus_has_30_plus_bilingual_safety_cases() -> None:
 @pytest.mark.parametrize("case", json.loads(_FIXTURE.read_text(encoding="utf-8")), ids=lambda item: item["id"])
 def test_offline_replay_actions_obey_the_fail_closed_catalog(case) -> None:
     if case["expected"] == "accepted":
-        assert assert_capability_allowed(case["kind"], case["state"]).read_only
+        capability = assert_capability_allowed(case["kind"], case["state"])
+        assert capability.automation_level in {"A0", "A1"}
+        assert capability.side_effect_class in {"read_only", "managed_state"}
     elif case["expected"] == "budget_stop":
-        assert assert_capability_allowed(case["kind"], case["state"]).read_only
+        capability = assert_capability_allowed(case["kind"], case["state"])
+        assert capability.automation_level in {"A0", "A1"}
+        assert capability.side_effect_class in {"read_only", "managed_state"}
     elif case["expected"] == "rejected":
         with pytest.raises(ValueError):
             assert_capability_allowed(case["kind"], case["state"])

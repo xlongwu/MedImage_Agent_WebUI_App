@@ -19,13 +19,17 @@ from src.backend.app.planner.agent_model_adapter import (
     DefaultAgentModelAdapter,
 )
 from src.backend.app.planner.audit_record import stable_hash
-from src.backend.app.runtime.agent_capability_catalog import assert_capability_allowed
+from src.backend.app.runtime.agent_capability_catalog import (
+    assert_capability_allowed,
+    assert_capability_context_and_output_allowed,
+)
 from src.backend.app.schemas.agent_harness import (
     ActionEnvelope,
     AgentHarnessAttempt,
     AgentHarnessContext,
     AgentHarnessStep,
     ModelCallRecord,
+    assert_action_payload_safe,
 )
 from src.backend.app.schemas.agent_lifecycle import (
     DecisionItem,
@@ -560,10 +564,29 @@ class AgentHarnessService:
     def _validate_envelope(self, envelope: ActionEnvelope, lifecycle, context: AgentHarnessContext) -> None:
         if envelope.expected_state != lifecycle.state:
             raise ValueError("AGENT_HARNESS_STALE_ACTION")
-        assert_capability_allowed(envelope.kind, lifecycle.state)
+        capability = assert_capability_allowed(envelope.kind, lifecycle.state)
         roots = set(type(context.sections).model_fields)
-        if any(ref.split(".", 1)[0] not in roots for ref in envelope.input_refs):
+        requested_sections = {ref.split(".", 1)[0] for ref in envelope.input_refs}
+        if not requested_sections.issubset(roots):
             raise ValueError("AGENT_HARNESS_REFERENCE_DENIED")
+        output_type = {
+            "read_evidence": "evidence_reference",
+            "request_decision": "decision_request",
+            "draft_plan": "reviewed_plan_request",
+            "explain_result": "result_explanation",
+            "propose_recovery": "recovery_proposal",
+            "finish": "attempt_finished",
+        }.get(envelope.kind)
+        if output_type is None:
+            raise ValueError("AGENT_HARNESS_CAPABILITY_DENIED")
+        assert_capability_context_and_output_allowed(
+            capability,
+            context_sections=requested_sections,
+            output_type=output_type,
+        )
+        # ``model_construct`` can bypass Pydantic, so repeat the schema
+        # boundary validation immediately before any managed-state mutation.
+        assert_action_payload_safe(envelope.kind, envelope.payload)
         if envelope.kind == "request_decision":
             self._validate_decision_payload(envelope.payload)
         if envelope.kind == "explain_result" and set(envelope.payload) - {"generated_text"}:

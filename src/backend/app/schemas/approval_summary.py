@@ -25,6 +25,13 @@ class ApprovalSummary(BaseModel):
     reviewed_plan_id: str
     plan_hash: str
     planning_inputs_hash: str
+    evidence_snapshot_hash: str | None = None
+    science_answers_hash: str
+    planner_provider_ref: str
+    planner_prompt_version: str
+    planner_skill_hashes: tuple[str, ...] = ()
+    normalized_plan_hash: str
+    plan_payload_hash: str
     revision_no: int
     parent_reviewed_plan_id: str | None = None
     parent_plan_hash: str | None = None

@@ -27,6 +27,17 @@ class ApprovalSummaryService:
         payload = reviewed_plan.payload
         plan = payload.get("plan") if isinstance(payload.get("plan"), dict) else {}
         contract = payload.get("goal_contract") if isinstance(payload.get("goal_contract"), dict) else {}
+        planning_request = (
+            payload.get("planning_request")
+            if isinstance(payload.get("planning_request"), dict)
+            else {}
+        )
+        science_answers = planning_request.get("science_answers")
+        if not isinstance(science_answers, dict):
+            science_answers = {}
+        skill_hashes = planning_request.get("skill_hashes")
+        if not isinstance(skill_hashes, list | tuple):
+            skill_hashes = ()
         goal_hash = str(contract.get("goal_contract_hash") or contract.get("contract_hash") or "")
         if not goal_hash:
             goal_hash = stable_hash(contract)
@@ -100,6 +111,20 @@ class ApprovalSummaryService:
             "reviewed_plan_id": reviewed_plan.reviewed_plan_id,
             "plan_hash": reviewed_plan.plan_hash,
             "planning_inputs_hash": str(reviewed_plan.planning_inputs_hash or ""),
+            "evidence_snapshot_hash": (
+                str(planning_request.get("evidence_snapshot_hash") or "")
+                or getattr(reviewed_plan, "evidence_snapshot_hash", None)
+            ),
+            "science_answers_hash": stable_hash(science_answers),
+            "planner_provider_ref": str(
+                planning_request.get("provider_ref") or payload.get("provider") or ""
+            ),
+            "planner_prompt_version": str(planning_request.get("prompt_version") or ""),
+            "planner_skill_hashes": tuple(sorted({item for item in skill_hashes if isinstance(item, str) and item})),
+            "normalized_plan_hash": str(payload.get("normalized_plan_hash") or stable_hash(plan)),
+            # Bind the actual persisted normalized plan as well as its saved
+            # identity. This catches a stale/mutated payload before dry-run.
+            "plan_payload_hash": stable_hash(plan),
             "revision_no": reviewed_plan.revision_no,
             "parent_reviewed_plan_id": reviewed_plan.parent_reviewed_plan_id,
             "parent_plan_hash": reviewed_plan.parent_plan_hash,

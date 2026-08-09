@@ -6,10 +6,11 @@ They carry no execution ticket, approval, runner, filesystem, or shell fields.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.backend.app.agent_skills.schemas import SkillContextRef
 
@@ -43,6 +44,55 @@ AgentHarnessContextSectionName = Literal[
 ]
 
 ModelCallStatus = Literal["started", "succeeded", "failed", "invalid_output", "unknown"]
+
+_ACTION_PAYLOAD_FORBIDDEN_KEY = re.compile(
+    r"(?:command|shell|exec(?:ute)?|script|path|dir(?:ectory)?|root|url|uri|"
+    r"ticket|approval|credential|token|secret|password|header)",
+    re.IGNORECASE,
+)
+_ACTION_PAYLOAD_PATH_OR_URL = re.compile(
+    r"(?:^[A-Za-z]:[\\/]|^\\\\|^/|://|(?:^|\s)(?:curl|powershell|cmd(?:\.exe)?|bash|python(?:\.exe)?)(?:\s|$))",
+    re.IGNORECASE,
+)
+_ACTION_PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
+    "read_evidence": frozenset(),
+    "request_decision": frozenset({"kind", "question", "impact", "options", "recommended_option"}),
+    "draft_plan": frozenset(),
+    "explain_result": frozenset({"generated_text"}),
+    "propose_recovery": frozenset(),
+    "finish": frozenset(),
+}
+
+
+def assert_action_payload_safe(kind: str, payload: object) -> None:
+    """Reject model payloads that could smuggle capability or path authority."""
+    if kind not in _ACTION_PAYLOAD_FIELDS or not isinstance(payload, dict):
+        raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
+    if set(payload) - _ACTION_PAYLOAD_FIELDS[kind]:
+        raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
+    if kind == "request_decision" and not {"kind", "question", "impact"} <= set(payload):
+        raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
+    if kind == "explain_result":
+        text = payload.get("generated_text")
+        if not isinstance(text, str) or len(text) > 2048:
+            raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
+
+    def visit(value: object) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if not isinstance(key, str) or _ACTION_PAYLOAD_FORBIDDEN_KEY.search(key):
+                    raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_FORBIDDEN")
+                visit(child)
+        elif isinstance(value, list | tuple):
+            for child in value:
+                visit(child)
+        elif isinstance(value, str):
+            if "\x00" in value or _ACTION_PAYLOAD_PATH_OR_URL.search(value):
+                raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_FORBIDDEN")
+        elif not isinstance(value, int | float | bool) and value is not None:
+            raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
+
+    visit(payload)
 
 
 class ModelCallRecord(BaseModel):
@@ -106,6 +156,11 @@ class ActionEnvelope(BaseModel):
             if not value or len(value) > 256 or "://" in value or ".." in value:
                 raise ValueError("HARNESS_REFERENCE_INVALID")
         return values
+
+    @model_validator(mode="after")
+    def safe_payload(self) -> ActionEnvelope:
+        assert_action_payload_safe(self.kind, self.payload)
+        return self
 
 
 class AgentHarnessAttempt(BaseModel):

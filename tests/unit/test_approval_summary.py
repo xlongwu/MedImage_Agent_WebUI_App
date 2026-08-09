@@ -122,6 +122,29 @@ def test_summary_hash_and_scope_change_when_write_root_changes(tmp_path) -> None
     assert changed.write_roots != first.write_roots
 
 
+def test_summary_rebuild_detects_mutated_input_payload_even_with_old_plan_hash(tmp_path) -> None:
+    service = ApprovalSummaryService()
+    reviewed = _reviewed(tmp_path)
+    first = service.build(project=_project(tmp_path), reviewed_plan=reviewed, now=NOW)
+    mutated = reviewed.model_copy(update={
+        "payload": {
+            **reviewed.payload,
+            "plan": {
+                "nodes": [{
+                    **reviewed.payload["plan"]["nodes"][0],
+                    "params": {"input_bold": "different-registered-source"},
+                }],
+            },
+        },
+    })
+
+    changed = service.build(project=_project(tmp_path), reviewed_plan=mutated, now=NOW)
+
+    assert changed.plan_hash == first.plan_hash
+    assert changed.plan_payload_hash != first.plan_payload_hash
+    assert changed.summary_hash != first.summary_hash
+
+
 def test_summary_identity_binds_planning_inputs_and_revision_lineage(tmp_path) -> None:
     service = ApprovalSummaryService()
     reviewed = _reviewed(tmp_path).model_copy(
@@ -217,4 +240,50 @@ def test_summary_binds_sanitized_memory_context_snapshot(tmp_path) -> None:
         reviewed_plan=reviewed.model_copy(update={"memory_context_hash": "context-hash-2"}),
         now=NOW,
     )
+    assert changed.summary_hash != first.summary_hash
+
+
+def test_summary_identity_binds_all_actual_planning_inputs(tmp_path) -> None:
+    service = ApprovalSummaryService()
+    reviewed = _reviewed(tmp_path).model_copy(
+        update={
+            "planning_inputs_hash": "planning-inputs-v1",
+            "evidence_snapshot_hash": "snapshot-v1",
+            "payload": {
+                **_reviewed(tmp_path).payload,
+                "normalized_plan_hash": "normalized-v1",
+                "planning_request": {
+                    "evidence_snapshot_hash": "snapshot-v1",
+                    "science_answers": {"atlas": "aal"},
+                    "provider_ref": "rule_based",
+                    "prompt_version": "planner-v1",
+                    "skill_hashes": [],
+                },
+            },
+        }
+    )
+    first = service.build(project=_project(tmp_path), reviewed_plan=reviewed, now=NOW)
+    changed = service.build(
+        project=_project(tmp_path),
+        reviewed_plan=reviewed.model_copy(update={
+            "payload": {
+                **reviewed.payload,
+                "planning_request": {
+                    **reviewed.payload["planning_request"],
+                    "evidence_snapshot_hash": "snapshot-v2",
+                    "science_answers": {"atlas": "schaefer-200"},
+                    "provider_ref": "openai_compatible",
+                    "prompt_version": "planner-v2",
+                    "skill_hashes": ["skill-hash-v2"],
+                },
+            },
+        }),
+        now=NOW,
+    )
+
+    assert first.evidence_snapshot_hash == "snapshot-v1"
+    assert first.planner_provider_ref == "rule_based"
+    assert first.planner_prompt_version == "planner-v1"
+    assert first.normalized_plan_hash == "normalized-v1"
+    assert first.plan_payload_hash
     assert changed.summary_hash != first.summary_hash
