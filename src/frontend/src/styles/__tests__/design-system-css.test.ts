@@ -301,4 +301,21 @@ describe("design system stylesheets", () => {
       expect(legacyStyles).not.toContain(selector);
     }
   });
+
+  it("keeps the desktop workspace collapse rules explicit at the supported widths", () => {
+    const appShellModule = readSource("layouts/AppShell/AppShell.module.css");
+    const viewerModule = readSource("features/app/MedicalImageViewer.module.css");
+
+    expect(appShellModule).toContain("grid-template-columns: var(--shell-context-sidebar-width)");
+    expect(appShellModule).toContain("@media (max-width: 1439px)");
+    expect(appShellModule).toContain("position: fixed");
+    expect(appShellModule).toContain("@media (max-width: 1179px)");
+    expect(appShellModule).toContain(".contextSidebarSlot {\n    display: none;");
+
+    expect(viewerModule).toContain("grid-template-columns: 248px minmax(420px, 1fr) 286px");
+    expect(viewerModule).toContain("@media (max-width: 1280px)");
+    expect(viewerModule).toContain("grid-column: 1 / -1");
+    expect(viewerModule).toContain("@media (max-width: 1080px)");
+    expect(viewerModule).toContain("grid-template-columns: 1fr");
+  });
 });
