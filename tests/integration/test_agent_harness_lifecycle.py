@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from src.backend.app.core.config_schema import AgentHarnessConfig
+from src.backend.app.runtime.agent_harness_scheduler import AgentHarnessScheduler
 from src.backend.app.schemas.agent_harness import ActionEnvelope
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_harness_service import AgentHarnessService
@@ -31,9 +32,17 @@ def test_enabled_harness_persists_step_and_falls_into_existing_input_gate(tmp_pa
     ), health_status="ready", rawdata_dir="")
     adapter = DraftAdapter()
     harness = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter)
-    service = AgentTaskCommandService(store, harness_service=harness)
+    scheduler = AgentHarnessScheduler(
+        store, config=harness.config, harness_service=harness, start_workers=False
+    )
+    service = AgentTaskCommandService(
+        store, harness_service=harness, harness_scheduler=scheduler
+    )
 
     lifecycle = service.create(project_id="project-1", goal="Plan preprocessing", command_id="create-1", actor="researcher")
+    assert lifecycle.state == "CREATED"
+    assert scheduler.run_pending_batch() == (lifecycle.lifecycle_id,)
+    lifecycle = store.get_agent_lifecycle(lifecycle.lifecycle_id)
 
     attempt = store.get_agent_harness_attempt(lifecycle.lifecycle_id)
     steps = store.list_agent_harness_steps(attempt.attempt_id)
@@ -56,7 +65,12 @@ def test_enabled_harness_provider_failure_stops_without_deterministic_plan_fallb
         config=AgentHarnessConfig(enabled=True),
         adapter=UnavailableAdapter(),
     )
-    service = AgentTaskCommandService(store, harness_service=harness)
+    scheduler = AgentHarnessScheduler(
+        store, config=harness.config, harness_service=harness, start_workers=False
+    )
+    service = AgentTaskCommandService(
+        store, harness_service=harness, harness_scheduler=scheduler
+    )
 
     lifecycle = service.create(
         project_id="project-1",
@@ -64,14 +78,18 @@ def test_enabled_harness_provider_failure_stops_without_deterministic_plan_fallb
         command_id="create-provider-failure",
         actor="researcher",
     )
+    assert scheduler.run_pending_batch() == (lifecycle.lifecycle_id,)
 
     attempt = store.get_agent_harness_attempt(lifecycle.lifecycle_id)
     steps = store.list_agent_harness_steps(attempt.attempt_id)
-    assert lifecycle.state == "CREATED"
+    assert store.get_agent_lifecycle(lifecycle.lifecycle_id).state == "WAITING_FOR_INPUT"
     assert lifecycle.reviewed_plan_id is None
     assert lifecycle.execution_ticket_id is None
     assert attempt.status == "STOPPED"
     assert attempt.terminal_reason == "AGENT_HARNESS_PROVIDER_UNAVAILABLE"
+    assert attempt.fallback_from == "rule_based"
+    assert attempt.fallback_to == "deterministic_goal_planner"
+    assert attempt.fallback_reason == "AGENT_HARNESS_PROVIDER_UNAVAILABLE"
     assert steps[0].error_code == "AGENT_HARNESS_PROVIDER_UNAVAILABLE"
     assert store.list_execution_tickets("project-1") == []
 
@@ -87,7 +105,12 @@ def test_cancel_stops_an_injected_harness_attempt(tmp_path) -> None:
         config=AgentHarnessConfig(enabled=True),
         adapter=DraftAdapter(),
     )
-    service = AgentTaskCommandService(store, harness_service=harness)
+    scheduler = AgentHarnessScheduler(
+        store, config=harness.config, harness_service=harness, start_workers=False
+    )
+    service = AgentTaskCommandService(
+        store, harness_service=harness, harness_scheduler=scheduler
+    )
 
     waiting = service.create(
         project_id="project-1", goal="Plan preprocessing", command_id="create-cancel", actor="researcher"

@@ -290,6 +290,11 @@ class AgentTaskReadModel:
             terminal_reason=attempt.terminal_reason,
             latest_step_id=latest.step_id if latest else None,
             latest_step_summary=latest.summary if latest else None,
+            last_wake_reason=attempt.last_wake_reason,
+            yield_count=attempt.yield_count,
+            fallback_from=attempt.fallback_from,
+            fallback_to=attempt.fallback_to,
+            fallback_reason=attempt.fallback_reason,
         )
 
     def _project(self, project_id: str):

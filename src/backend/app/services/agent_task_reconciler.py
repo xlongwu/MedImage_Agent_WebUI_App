@@ -32,9 +32,10 @@ class AgentTaskReconciler:
     MONITOR_INTERVAL_SECONDS = 1.0
     MONITOR_WALL_SECONDS = 900.0
 
-    def __init__(self, store) -> None:
+    def __init__(self, store, *, harness_waker=None) -> None:
         self.store = store
         self.orchestrator = AgentOrchestrator(store)
+        self.harness_waker = harness_waker
 
     def reconcile_once(self, *, project_id: str, lifecycle_id: str, actor: str = "system-reconciler"):
         lock = self._lock(lifecycle_id)
@@ -47,7 +48,7 @@ class AgentTaskReconciler:
                 return current
             base = f"reconcile:{current.lifecycle_id}:{current.run_id}"
             if evidence.conflicting or not evidence.complete:
-                return self.orchestrator.transition(
+                handed_off = self.orchestrator.transition(
                     project_id=project_id,
                     lifecycle_id=lifecycle_id,
                     to_state="HUMAN_HANDOFF",
@@ -56,6 +57,8 @@ class AgentTaskReconciler:
                     source_command="terminal_evidence_incomplete",
                     reason=f"Terminal evidence is {evidence.status.lower()} or conflicting.",
                 )
+                self._wake_harness(handed_off, reason="run_terminal")
+                return handed_off
             try:
                 observed = self.orchestrator.observe(
                     project_id=project_id,
@@ -76,6 +79,8 @@ class AgentTaskReconciler:
                         command_id=f"{base}:recovery:{evaluation.goal_evaluation_hash}",
                         actor=actor,
                     )
+                if evaluated.state != "RUNNING":
+                    self._wake_harness(evaluated, reason="run_terminal")
                 return evaluated
             except (SafetyError, StateStoreError):
                 latest = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
@@ -201,3 +206,16 @@ class AgentTaskReconciler:
     def _lock(lifecycle_id: str) -> Lock:
         with _LOCKS_GUARD:
             return _LOCKS.setdefault(lifecycle_id, Lock())
+
+    def _wake_harness(self, lifecycle, *, reason: str) -> bool:
+        """Wake only from the reconciler owner after terminal state persistence."""
+        if self.harness_waker is not None:
+            return bool(self.harness_waker(lifecycle=lifecycle, reason=reason))
+        from src.backend.app.runtime.agent_harness_scheduler import get_agent_harness_scheduler
+
+        scheduler = get_agent_harness_scheduler(self.store)
+        return scheduler.wake(
+            project_id=lifecycle.project_id,
+            lifecycle_id=lifecycle.lifecycle_id,
+            reason=reason,
+        )

@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.core.config import ConfigService
+from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.planner.goal_contract_builder import build_goal_contract_semantics
 from src.backend.app.planner.memory_influence_guard import (
@@ -19,10 +19,10 @@ from src.backend.app.planner.reviewed_plan_store import save_reviewed_plan
 from src.backend.app.schemas.agent_lifecycle import PendingDecision, PendingDecisionOption
 from src.backend.app.schemas.approval_summary import ApprovalSummary
 from src.backend.app.schemas.goal_contract import GoalContractCandidate
-from src.backend.app.schemas.memory import MemoryContext, MemoryDecisionSuggestion
+from src.backend.app.schemas.memory import MemoryContext
+from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
-from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.goal_planning_service import GoalPlanningService
 from src.backend.app.services.memory_repository import MemoryRepository, MemoryRepositoryError
@@ -30,7 +30,6 @@ from src.backend.app.services.memory_retrieval_service import MemoryRetrievalSer
 from src.backend.app.services.recovery_execution_service import RecoveryExecutionService
 from src.backend.app.services.reviewed_conversion_service import ReviewedConversionService
 from src.backend.app.services.reviewed_execution_service import ReviewedExecutionService
-
 
 _PREPROCESSED_INPUT_KEYS = frozenset(
     {
@@ -122,6 +121,7 @@ class AgentTaskCommandService:
         memory_context_service: MemoryRetrievalService | None = None,
         memory_influence_guard: MemoryInfluenceGuard | None = None,
         harness_service: AgentHarnessService | None = None,
+        harness_scheduler=None,
     ) -> None:
         self.store = store
         self.orchestrator = AgentOrchestrator(store)
@@ -137,6 +137,7 @@ class AgentTaskCommandService:
         self.memory_influence_guard = memory_influence_guard or MemoryInfluenceGuard()
         self.memory_context_service = memory_context_service
         self.harness_service = harness_service
+        self.harness_scheduler = harness_scheduler
         self.harness_config = ConfigService().harness
         self.memory_initialization_error: str | None = None
         if self.memory_context_service is None:
@@ -391,6 +392,7 @@ class AgentTaskCommandService:
             command_id=command_id,
             actor=actor,
         )
+        self._wake_harness(lifecycle=lifecycle, reason="recovery_executed")
         return lifecycle
 
     def _harness_or_plan(self, *, lifecycle, command_id: str, actor: str, resume: bool = False):
@@ -405,6 +407,9 @@ class AgentTaskCommandService:
         provider = str(metadata.get("agent_planner_provider") or "rule_based")
         if not self.harness_config.enabled and self.harness_service is None:
             return self._plan(lifecycle=lifecycle, command_id=command_id, actor=actor, resume=resume)
+        existing_attempt = self.store.get_agent_harness_attempt(lifecycle.lifecycle_id)
+        if existing_attempt is not None and existing_attempt.fallback_to is not None:
+            return self._plan(lifecycle=lifecycle, command_id=command_id, actor=actor, resume=resume)
         harness = self.harness_service or AgentHarnessService(
             self.store,
             config=self.harness_config,
@@ -413,17 +418,31 @@ class AgentTaskCommandService:
         # An injected Harness receives the same canonical draft callback.
         if harness.draft_plan is None:
             harness.draft_plan = lambda **kwargs: self._plan(resume=resume, **kwargs)
-        result = (
-            harness.resume(lifecycle=lifecycle, provider_ref=provider, actor=actor)
-            if resume
-            else self._start_harness(harness=harness, lifecycle=lifecycle, provider=provider, actor=actor)
-        )
-        return result.lifecycle
+        if resume:
+            harness.prepare_resume(lifecycle=lifecycle, provider_ref=provider)
+        else:
+            harness.ensure_attempt(lifecycle=lifecycle, provider_ref=provider)
+        self._wake_harness(lifecycle=lifecycle, reason="answer" if resume else "create", harness=harness)
+        return lifecycle
 
-    @staticmethod
-    def _start_harness(*, harness: AgentHarnessService, lifecycle, provider: str, actor: str):
-        harness.ensure_attempt(lifecycle=lifecycle, provider_ref=provider)
-        return harness.run_one(lifecycle=lifecycle, actor=actor)
+    def _wake_harness(self, *, lifecycle, reason: str, harness: AgentHarnessService | None = None) -> bool:
+        """Queue Harness work only from command paths; read projections stay pure."""
+        active_harness = harness or self.harness_service
+        config = active_harness.config if active_harness is not None else self.harness_config
+        if not config.enabled:
+            return False
+        from src.backend.app.runtime.agent_harness_scheduler import get_agent_harness_scheduler
+
+        scheduler = self.harness_scheduler or get_agent_harness_scheduler(
+            self.store, config=config
+        )
+        if active_harness is not None and scheduler.harness_service is None:
+            scheduler.harness_service = active_harness
+        return scheduler.wake(
+            project_id=lifecycle.project_id,
+            lifecycle_id=lifecycle.lifecycle_id,
+            reason=reason,
+        )
 
     def _plan(self, *, lifecycle, command_id: str, actor: str, resume: bool = False):
         project = self.store.get_project(lifecycle.project_id)

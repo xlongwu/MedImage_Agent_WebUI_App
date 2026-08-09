@@ -45,6 +45,14 @@ export function HarnessStatusCard({ summary }: { summary: AgentHarnessSummary })
         })}
       </p>
       {summary.next_step ? <p>{t("agent.harness.nextStep", { step: summary.next_step })}</p> : null}
+      {summary.yield_count > 0 ? (
+        <p>{t("agent.harness.yields", { count: summary.yield_count })}</p>
+      ) : null}
+      {summary.fallback_from && summary.fallback_to ? (
+        <p>
+          {t("agent.harness.fallback", { from: summary.fallback_from, to: summary.fallback_to })}
+        </p>
+      ) : null}
       {summary.latest_step_summary ? <p>{summary.latest_step_summary}</p> : null}
       {summary.terminal_reason ? (
         <p>

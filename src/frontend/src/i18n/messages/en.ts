@@ -179,6 +179,8 @@ export const messagesEn = {
   "agent.harness.budget":
     "Model calls: {calls}/{callLimit}; proposed actions: {proposals}/{proposalLimit}.",
   "agent.harness.nextStep": "Next step: {step}",
+  "agent.harness.yields": "Fairness yields: {count}.",
+  "agent.harness.fallback": "Planning path: {from} → {to}.",
   "agent.harness.stopped": "Stopped safely: {reason}",
   "agent.harness.reason.budgetExhausted": "the configured budget was exhausted",
   "agent.harness.reason.duplicateStep": "a duplicate step was rejected",

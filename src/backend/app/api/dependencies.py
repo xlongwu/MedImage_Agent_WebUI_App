@@ -115,7 +115,13 @@ class ProjectStore(Protocol):
     def get_agent_harness_attempt(self, lifecycle_id: str) -> AgentHarnessAttempt | None: ...
 
     def update_agent_harness_attempt(
-        self, record: AgentHarnessAttempt, *, expected_status: str
+        self,
+        record: AgentHarnessAttempt,
+        *,
+        expected_status: str,
+        expected_step_no: int | None = None,
+        expected_context_hash: str | None = None,
+        expected_lease_owner: str | None = None,
     ) -> AgentHarnessAttempt: ...
 
     def add_agent_harness_context(self, record: AgentHarnessContext) -> AgentHarnessContext: ...

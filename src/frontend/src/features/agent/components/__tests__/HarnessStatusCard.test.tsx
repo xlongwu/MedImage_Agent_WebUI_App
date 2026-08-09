@@ -19,6 +19,11 @@ describe("HarnessStatusCard", () => {
             terminal_reason: null,
             latest_step_id: "step-1",
             latest_step_summary: "需要确认图谱。",
+            last_wake_reason: "create",
+            yield_count: 0,
+            fallback_from: null,
+            fallback_to: null,
+            fallback_reason: null,
           }}
         />
       </I18nProvider>,
@@ -44,6 +49,11 @@ describe("HarnessStatusCard", () => {
             terminal_reason: "AGENT_HARNESS_PROVIDER_UNAVAILABLE",
             latest_step_id: "step-1",
             latest_step_summary: "The provider request stopped safely.",
+            last_wake_reason: "create",
+            yield_count: 1,
+            fallback_from: "openai_compatible",
+            fallback_to: "deterministic_goal_planner",
+            fallback_reason: "AGENT_HARNESS_PROVIDER_UNAVAILABLE",
           }}
         />
       </I18nProvider>,
@@ -54,5 +64,9 @@ describe("HarnessStatusCard", () => {
       screen.getByText("Stopped safely: the configured provider is unavailable"),
     ).toBeInTheDocument();
     expect(screen.queryByText("AGENT_HARNESS_PROVIDER_UNAVAILABLE")).not.toBeInTheDocument();
+    expect(screen.getByText("Fairness yields: 1.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Planning path: openai_compatible → deterministic_goal_planner."),
+    ).toBeInTheDocument();
   });
 });

@@ -126,9 +126,10 @@ class AgentHarnessConfig(BaseModel):
     max_tool_proposals: int = Field(default=8, ge=1, le=8)
     max_wall_seconds: int = Field(default=300, ge=1, le=300)
     lease_seconds: int = Field(default=30, ge=5, le=300)
+    max_steps_per_wakeup: int = Field(default=3, ge=1, le=6)
 
     @classmethod
-    def from_env(cls) -> "AgentHarnessConfig":
+    def from_env(cls) -> AgentHarnessConfig:
         def bounded(name: str, default: int, minimum: int, maximum: int) -> int:
             try:
                 value = int(os.environ.get(name, str(default)))
@@ -142,6 +143,7 @@ class AgentHarnessConfig(BaseModel):
             max_tool_proposals=bounded("MEDIMAGE_AGENT_HARNESS_MAX_TOOL_PROPOSALS", 8, 1, 8),
             max_wall_seconds=bounded("MEDIMAGE_AGENT_HARNESS_MAX_WALL_SECONDS", 300, 1, 300),
             lease_seconds=bounded("MEDIMAGE_AGENT_HARNESS_LEASE_SECONDS", 30, 5, 300),
+            max_steps_per_wakeup=bounded("MEDIMAGE_AGENT_HARNESS_MAX_STEPS_PER_WAKEUP", 3, 1, 6),
         )
 
 

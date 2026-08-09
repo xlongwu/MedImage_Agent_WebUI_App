@@ -155,6 +155,8 @@ export const messagesZhCn = {
   "agent.harness.title": "规划追踪",
   "agent.harness.budget": "模型调用：{calls}/{callLimit}；动作提议：{proposals}/{proposalLimit}。",
   "agent.harness.nextStep": "下一步：{step}",
+  "agent.harness.yields": "公平调度让出次数：{count}。",
+  "agent.harness.fallback": "实际规划路径：{from} → {to}。",
   "agent.harness.stopped": "已安全停止：{reason}",
   "agent.harness.reason.budgetExhausted": "已耗尽配置预算",
   "agent.harness.reason.duplicateStep": "重复步骤已被拒绝",

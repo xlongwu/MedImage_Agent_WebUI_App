@@ -86,6 +86,21 @@ def test_reconcile_success_is_bounded_and_idempotent() -> None:
     assert len(reconciler.orchestrator.calls) <= reconciler.MAX_TRANSITIONS
 
 
+def test_reconcile_wakes_harness_only_after_terminal_records_are_persisted() -> None:
+    store = ReconcileStore()
+    wakes = []
+    reconciler = AgentTaskReconciler(
+        store,
+        harness_waker=lambda *, lifecycle, reason: wakes.append((lifecycle.state, reason)) or True,
+    )
+    reconciler.orchestrator = FakeOrchestrator(store)
+
+    result = reconciler.reconcile_once(project_id="project-1", lifecycle_id="task-1")
+
+    assert result.state == "GOAL_SATISFIED"
+    assert wakes == [("GOAL_SATISFIED", "run_terminal")]
+
+
 def test_reconcile_failed_goal_stops_at_unapproved_recovery_proposal() -> None:
     store = ReconcileStore(status="FAILED")
     reconciler = AgentTaskReconciler(store)
@@ -101,13 +116,18 @@ def test_reconcile_failed_goal_stops_at_unapproved_recovery_proposal() -> None:
 
 def test_conflicting_terminal_evidence_hands_off_without_observation() -> None:
     store = ReconcileStore(payload={"terminal_conflict": True})
-    reconciler = AgentTaskReconciler(store)
+    wakes = []
+    reconciler = AgentTaskReconciler(
+        store,
+        harness_waker=lambda *, lifecycle, reason: wakes.append((lifecycle.state, reason)) or True,
+    )
     reconciler.orchestrator = FakeOrchestrator(store)
 
     result = reconciler.reconcile_once(project_id="project-1", lifecycle_id="task-1")
 
     assert result.state == "HUMAN_HANDOFF"
     assert reconciler.orchestrator.calls == ["HUMAN_HANDOFF"]
+    assert wakes == [("HUMAN_HANDOFF", "run_terminal")]
 
 
 def test_concurrent_reconcile_creates_one_observation_evaluation_chain() -> None:

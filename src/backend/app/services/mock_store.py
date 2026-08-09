@@ -11,8 +11,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from src.backend.app.planner.audit_record import stable_hash
+from src.backend.app.schemas.agent_harness import (
+    AgentHarnessAttempt,
+    AgentHarnessContext,
+    AgentHarnessStep,
+)
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
-from src.backend.app.schemas.agent_harness import AgentHarnessAttempt, AgentHarnessContext, AgentHarnessStep
 from src.backend.app.schemas.desktop import (
     ApprovalRecord,
     DatasetImportRequest,
@@ -2386,19 +2390,33 @@ class SQLiteDesktopStore:
         return AgentHarnessAttempt(**json.loads(row["payload"])) if row else None
 
     def update_agent_harness_attempt(
-        self, record: AgentHarnessAttempt, *, expected_status: str
+        self,
+        record: AgentHarnessAttempt,
+        *,
+        expected_status: str,
+        expected_step_no: int | None = None,
+        expected_context_hash: str | None = None,
+        expected_lease_owner: str | None = None,
     ) -> AgentHarnessAttempt:
+        predicates = ["attempt_id=?", "project_id=?", "status=?"]
+        parameters: list[object] = [record.attempt_id, record.project_id, expected_status]
+        if expected_step_no is not None:
+            predicates.append("json_extract(payload, '$.next_step_no')=?")
+            parameters.append(expected_step_no)
+        if expected_context_hash is not None:
+            predicates.append("json_extract(payload, '$.context_hash')=?")
+            parameters.append(expected_context_hash)
+        if expected_lease_owner is not None:
+            predicates.append("json_extract(payload, '$.lease_owner')=?")
+            parameters.append(expected_lease_owner)
         with self._lock, self._connect() as conn:
             cursor = conn.execute(
-                """
-                UPDATE agent_harness_attempts
-                SET status=?, payload=?, updated_at=?
-                WHERE attempt_id=? AND project_id=? AND status=?
-                """,
-                (
+                "UPDATE agent_harness_attempts SET status=?, payload=?, updated_at=? WHERE "
+                + " AND ".join(predicates),
+                [
                     record.status, json.dumps(record.model_dump(mode="json"), ensure_ascii=False),
-                    record.updated_at.isoformat(), record.attempt_id, record.project_id, expected_status,
-                ),
+                    record.updated_at.isoformat(), *parameters,
+                ],
             )
             if cursor.rowcount != 1:
                 raise RuntimeError("AGENT_HARNESS_ATTEMPT_CONCURRENT_UPDATE")

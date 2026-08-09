@@ -11,7 +11,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 AgentHarnessStatus = Literal[
     "READY",
     "RUNNING",
@@ -58,7 +57,7 @@ class ActionEnvelope(BaseModel):
 class AgentHarnessAttempt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     attempt_id: str
     lifecycle_id: str
     project_id: str
@@ -73,6 +72,12 @@ class AgentHarnessAttempt(BaseModel):
     lease_owner: str | None = None
     lease_expires_at: datetime | None = None
     lease_takeovers: int = Field(default=0, ge=0)
+    last_wake_reason: str | None = Field(default=None, max_length=128)
+    last_progress_at: datetime | None = None
+    yield_count: int = Field(default=0, ge=0)
+    fallback_from: str | None = Field(default=None, max_length=256)
+    fallback_to: str | None = Field(default=None, max_length=256)
+    fallback_reason: str | None = Field(default=None, max_length=128)
     terminal_reason: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -81,7 +86,7 @@ class AgentHarnessAttempt(BaseModel):
 class AgentHarnessStep(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     step_id: str
     attempt_id: str
     project_id: str
@@ -92,6 +97,7 @@ class AgentHarnessStep(BaseModel):
     output_hash: str | None = None
     requested_capability: str | None = None
     validation_result: Literal["accepted", "rejected", "error"]
+    model_call_count: int = Field(default=0, ge=0, le=2)
     state_before: str
     state_after: str | None = None
     summary: str = Field(default="", max_length=1024)
@@ -131,3 +137,8 @@ class AgentHarnessSummary(BaseModel):
     terminal_reason: str | None = None
     latest_step_id: str | None = None
     latest_step_summary: str | None = None
+    last_wake_reason: str | None = None
+    yield_count: int = Field(default=0, ge=0)
+    fallback_from: str | None = None
+    fallback_to: str | None = None
+    fallback_reason: str | None = None

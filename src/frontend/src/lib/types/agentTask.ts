@@ -217,6 +217,11 @@ export type AgentHarnessSummary = {
   terminal_reason: string | null;
   latest_step_id: string | null;
   latest_step_summary: string | null;
+  last_wake_reason: string | null;
+  yield_count: number;
+  fallback_from: string | null;
+  fallback_to: string | null;
+  fallback_reason: string | null;
 };
 
 export type AgentTaskResponse = {

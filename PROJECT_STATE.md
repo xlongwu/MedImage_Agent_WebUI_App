@@ -87,9 +87,13 @@ their tag state.
 - The optional controlled single-Agent Harness is default-disabled and bounded
   to six schema-validated advisory actions. It persists redacted context and
   ordered steps, processes one leased step at a time, and has no approval,
-  ticket, gateway, runner, shell, or file/database-write capability. Once
-  enabled, provider/config/schema/budget failures stop structurally and never
-  switch to a different planner. The 2026-08-09 source/entry/focused-test
+  ticket, gateway, runner, shell, or file/database-write capability. A
+  lifespan-owned scheduler now advances up to three persisted safe steps per
+  wake, yields fairly, recovers only ready/expired attempts on startup, and is
+  never invoked by read APIs. Provider-unavailable failures stop the model
+  attempt, expose the recorded fallback path, then use a fresh deterministic
+  planning hash without reusing an Approval Summary; config/schema/budget
+  failures still stop structurally. The 2026-08-09 source/entry/focused-test
   baseline is recorded in `specs/阶段记录/阶段十二/Agent改造/01_当前Agent基线与差距分析.md`;
   no Harness-specific packaged smoke or formal release evidence was located,
   so those two release surfaces remain `unknown` rather than inferred.
