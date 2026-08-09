@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -16,11 +16,12 @@ from src.backend.app.planner.memory_influence_guard import (
     MemoryInfluenceGuard,
 )
 from src.backend.app.planner.reviewed_plan_store import save_reviewed_plan
-from src.backend.app.schemas.agent_lifecycle import PendingDecision, PendingDecisionOption
+from src.backend.app.schemas.agent_lifecycle import DecisionItem, PendingDecisionBatch, PendingDecisionOption
 from src.backend.app.schemas.approval_summary import ApprovalSummary
 from src.backend.app.schemas.goal_contract import GoalContractCandidate
 from src.backend.app.schemas.memory import MemoryContext
 from src.backend.app.services.agent_harness_service import AgentHarnessService
+from src.backend.app.services.agent_evidence_service import AgentEvidenceService
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
@@ -122,6 +123,7 @@ class AgentTaskCommandService:
         memory_influence_guard: MemoryInfluenceGuard | None = None,
         harness_service: AgentHarnessService | None = None,
         harness_scheduler=None,
+        evidence_service: AgentEvidenceService | None = None,
     ) -> None:
         self.store = store
         self.orchestrator = AgentOrchestrator(store)
@@ -138,6 +140,7 @@ class AgentTaskCommandService:
         self.memory_context_service = memory_context_service
         self.harness_service = harness_service
         self.harness_scheduler = harness_scheduler
+        self.evidence_service = evidence_service or AgentEvidenceService(store)
         self.harness_config = ConfigService().harness
         self.memory_initialization_error: str | None = None
         if self.memory_context_service is None:
@@ -170,8 +173,8 @@ class AgentTaskCommandService:
         self,
         *, project_id: str,
         lifecycle_id: str,
-        decision_id: str,
-        answer: str,
+        batch_id: str,
+        answers: tuple | list,
         command_id: str,
         actor: str,
     ):
@@ -179,18 +182,48 @@ class AgentTaskCommandService:
         if replay is not None:
             return replay
         current = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
-        pending = current.pending_decision
+        pending = current.pending_decision_batch
         if current.state not in {"WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"} or pending is None:
             raise SafetyError("AGENT_DECISION_NOT_PENDING", code="AGENT_DECISION_NOT_PENDING")
-        if pending.decision_id != decision_id:
+        if pending.batch_id != batch_id:
             raise SafetyError("AGENT_DECISION_STALE", code="AGENT_DECISION_STALE")
-        allowed = {option.id for option in pending.options}
-        if allowed and answer not in allowed:
-            raise SafetyError("AGENT_DECISION_ANSWER_INVALID", code="AGENT_DECISION_ANSWER_INVALID")
+        if pending.expires_at <= datetime.now(UTC):
+            raise SafetyError("AGENT_DECISION_BATCH_EXPIRED", code="AGENT_DECISION_BATCH_EXPIRED")
+        if pending.plan_hash_before and current.command_context.get("pending_plan_hash") != pending.plan_hash_before:
+            raise SafetyError("AGENT_DECISION_PLAN_STALE", code="AGENT_DECISION_PLAN_STALE")
+        fresh = self.evidence_service.build_snapshot(
+            project_id=project_id, lifecycle_id=lifecycle_id,
+            memory_context=self._memory_context(current.command_context),
+        )
+        if fresh.snapshot_hash != pending.evidence_snapshot_hash:
+            raise SafetyError("AGENT_DECISION_EVIDENCE_STALE", code="AGENT_DECISION_EVIDENCE_STALE")
+        supplied: dict[str, str] = {}
+        errors: dict[str, str] = {}
+        for raw in answers:
+            item_id = str(getattr(raw, "item_id", raw.get("item_id") if isinstance(raw, dict) else ""))
+            value = str(getattr(raw, "value", raw.get("value") if isinstance(raw, dict) else "")).strip()
+            if not item_id or item_id in supplied:
+                errors[item_id or "answers"] = "duplicate_or_empty_item"
+            else:
+                supplied[item_id] = value
+        items = {item.item_id: item for item in pending.items}
+        for item_id, item in items.items():
+            value = supplied.get(item_id, "")
+            if item.required and not value:
+                errors[item_id] = "required"
+            elif item.answer_type == "option" and value not in {option.id for option in item.options}:
+                errors[item_id] = "invalid_option"
+        for item_id in supplied:
+            if item_id not in items:
+                errors[item_id] = "unknown_item"
+        if errors:
+            raise SafetyError("AGENT_DECISION_BATCH_INVALID", code="AGENT_DECISION_BATCH_INVALID", details={"fields": errors})
         context = dict(current.command_context)
-        updates: dict[str, Any] = {"pending_decision": None, "command_context": context}
-        if pending.kind == "goal_revision":
-            revised_goal = answer.strip()
+        updates: dict[str, Any] = {"pending_decision_batch": None, "command_context": context}
+        context.pop("pending_plan_hash", None)
+        goal_items = [item for item in pending.items if item.kind == "goal_revision"]
+        if goal_items:
+            revised_goal = supplied[goal_items[0].item_id]
             if not revised_goal:
                 raise SafetyError("AGENT_GOAL_REVISION_REQUIRED", code="AGENT_GOAL_REVISION_REQUIRED")
             context.pop("science_answers", None)
@@ -199,15 +232,18 @@ class AgentTaskCommandService:
                 goal_hash=stable_hash({"goal": revised_goal}),
                 command_context=context,
             )
-        elif answer == "__ignore_memory__" and pending.source == "memory_suggestion":
-            ignored = set(context.get("ignored_memory_ids") or [])
-            if pending.memory_id:
-                ignored.add(pending.memory_id)
-            context["ignored_memory_ids"] = sorted(ignored)
         else:
-            answers = dict(context.get("science_answers") or {})
-            answers[pending.kind] = answer
-            context["science_answers"] = answers
+            science_answers = dict(context.get("science_answers") or {})
+            for item in pending.items:
+                value = supplied.get(item.item_id, "")
+                if item.source == "memory_suggestion" and value == "__ignore_memory__":
+                    ignored = set(context.get("ignored_memory_ids") or [])
+                    if item.memory_id:
+                        ignored.add(item.memory_id)
+                    context["ignored_memory_ids"] = sorted(ignored)
+                else:
+                    science_answers[item.kind] = value
+            context["science_answers"] = science_answers
         target = "CONTEXT_READY" if current.state == "WAITING_FOR_INPUT" else "PLAN_DRAFTED"
         resumed = self.orchestrator.transition(
             project_id=project_id,
@@ -217,7 +253,7 @@ class AgentTaskCommandService:
             actor=actor,
             source_command="answer",
             updates=updates,
-            details={"decision_id": decision_id, "answer": answer},
+            details={"batch_id": batch_id, "item_ids": sorted(supplied)},
         )
         return self._harness_or_plan(lifecycle=resumed, command_id=command_id, actor=actor, resume=True)
 
@@ -499,17 +535,15 @@ class AgentTaskCommandService:
                 source_command="context_ready",
                 updates={"command_context": command_context},
             )
-        memory_decision = self._memory_decision(memory_context, command_context)
-        if memory_decision is not None:
-            return self.orchestrator.transition(
-                project_id=lifecycle.project_id,
-                lifecycle_id=lifecycle.lifecycle_id,
-                to_state="WAITING_FOR_SCIENCE_DECISION",
-                command_id=f"{command_id}:memory-decision:{memory_decision.kind}",
-                actor=actor,
-                source_command="memory_science_decision_required",
-                updates={"pending_decision": memory_decision},
-            )
+        evidence = self.evidence_service.build_snapshot(
+            project_id=lifecycle.project_id,
+            lifecycle_id=lifecycle.lifecycle_id,
+            memory_context=memory_context,
+        )
+        command_context["evidence_snapshot_hash"] = evidence.snapshot_hash
+        lifecycle = lifecycle.model_copy(
+            update={"command_context": command_context, "evidence_snapshot_hash": evidence.snapshot_hash}
+        )
         provider = str(metadata.get("agent_planner_provider") or "rule_based")
         planner_constraints = dict(memory_context.planner_constraints) if memory_context else {}
         planner_constraints["science_answers"] = lifecycle.command_context.get(
@@ -550,18 +584,22 @@ class AgentTaskCommandService:
                 command_id=f"{command_id}:draft",
                 actor=actor,
                 source_command="plan_drafted",
+                updates={"command_context": command_context, "evidence_snapshot_hash": evidence.snapshot_hash},
                 details={"plan_hash": stable_hash(plan), "provider": provider},
             )
-        decision = self._science_decision(plan, lifecycle.command_context, metadata)
+        decision = self._decision_batch(
+            plan, lifecycle.command_context, metadata, evidence, memory_context, lifecycle
+        )
         if decision is not None:
+            command_context["pending_plan_hash"] = decision.plan_hash_before
             return self.orchestrator.transition(
                 project_id=lifecycle.project_id,
                 lifecycle_id=lifecycle.lifecycle_id,
                 to_state="WAITING_FOR_SCIENCE_DECISION",
-                command_id=f"{command_id}:decision:{decision.kind}",
+                command_id=f"{command_id}:decision:{decision.batch_id}",
                 actor=actor,
                 source_command="science_decision_required",
-                updates={"pending_decision": decision},
+                updates={"pending_decision_batch": decision, "evidence_snapshot_hash": evidence.snapshot_hash, "command_context": command_context},
             )
         validation = result.get("validation") or {}
         if not validation.get("ok"):
@@ -700,12 +738,17 @@ class AgentTaskCommandService:
     def _wait_for_input(self, *, lifecycle, command_id: str, actor: str, reason: str):
         if lifecycle.state not in {"CREATED", "CONTEXT_READY", "PLAN_DRAFTED"}:
             raise SafetyError(reason, code="AGENT_PLANNING_BLOCKED")
-        decision = PendingDecision(
-            decision_id=f"decision_{uuid4().hex}",
+        evidence = self.evidence_service.build_snapshot(project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id)
+        decision = PendingDecisionBatch(
+            batch_id=f"decision_batch_{uuid4().hex}", lifecycle_id=lifecycle.lifecycle_id,
+            project_id=lifecycle.project_id, evidence_snapshot_hash=evidence.snapshot_hash,
+            expires_at=datetime.now(UTC) + timedelta(hours=24), items=(DecisionItem(
+            item_id="missing_input",
             kind="missing_input",
             question="Resolve the project input required to continue.",
             impact=reason,
-        )
+            answer_type="text",
+        ),))
         return self.orchestrator.transition(
             project_id=lifecycle.project_id,
             lifecycle_id=lifecycle.lifecycle_id,
@@ -714,18 +757,14 @@ class AgentTaskCommandService:
             actor=actor,
             source_command="input_required",
             reason=reason,
-            updates={"pending_decision": decision},
+            updates={"pending_decision_batch": decision, "evidence_snapshot_hash": evidence.snapshot_hash},
         )
 
     def _wait_for_goal_revision(self, *, lifecycle, command_id: str, actor: str, reason: str):
         if lifecycle.state not in {"CREATED", "CONTEXT_READY", "PLAN_DRAFTED"}:
             raise SafetyError(reason, code="AGENT_PLANNING_BLOCKED")
-        decision = PendingDecision(
-            decision_id=f"decision_{uuid4().hex}",
-            kind="goal_revision",
-            question="Revise the research goal to match a supported workflow.",
-            impact=reason,
-        )
+        evidence = self.evidence_service.build_snapshot(project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id)
+        decision = self._goal_revision_batch(lifecycle, evidence.snapshot_hash, reason)
         return self.orchestrator.transition(
             project_id=lifecycle.project_id,
             lifecycle_id=lifecycle.lifecycle_id,
@@ -734,7 +773,7 @@ class AgentTaskCommandService:
             actor=actor,
             source_command="goal_revision_required",
             reason=reason,
-            updates={"pending_decision": decision},
+            updates={"pending_decision_batch": decision, "evidence_snapshot_hash": evidence.snapshot_hash},
         )
 
     @staticmethod
@@ -821,14 +860,14 @@ class AgentTaskCommandService:
         return signals
 
     @staticmethod
-    def _science_decision(
+    def _science_decision_items(
         plan: dict[str, Any],
         context: dict[str, Any],
         project_metadata: dict[str, Any] | None = None,
-    ) -> PendingDecision | None:
+    ) -> list[DecisionItem]:
         answers = dict(context.get("science_answers") or {})
         signals = AgentTaskCommandService._science_signals(plan, project_metadata)
-        plan_hash = stable_hash(plan)
+        items: list[DecisionItem] = []
         if signals.get("subject_selection_required") and "subject_id" not in answers:
             candidates = signals.get("subject_candidates")
             options = tuple(
@@ -840,8 +879,8 @@ class AgentTaskCommandService:
                 for subject_id in candidates
                 if isinstance(subject_id, str) and subject_id.strip()
             ) if isinstance(candidates, list) else ()
-            return PendingDecision(
-                decision_id=f"decision_{uuid4().hex}",
+            items.append(DecisionItem(
+                item_id="subject_id",
                 kind="subject_id",
                 question="Which registered subject should enter the reviewed preprocessing scope?",
                 options=options,
@@ -849,15 +888,15 @@ class AgentTaskCommandService:
                     "The selected subject ID is bound into the reviewed node parameters, "
                     "Approval Summary, execution ticket hash, and output provenance."
                 ),
-                plan_hash_before=plan_hash,
-            )
+                evidence_refs=("project:subject_count",),
+            ))
         for node in plan.get("nodes", []):
             if not isinstance(node, dict):
                 continue
             params = node.get("params") if isinstance(node.get("params"), dict) else {}
             if node.get("id") == "functional_connectivity_subject" and not params.get("atlas") and "atlas" not in answers:
-                return PendingDecision(
-                    decision_id=f"decision_{uuid4().hex}",
+                items.append(DecisionItem(
+                    item_id="atlas",
                     kind="atlas",
                     question="Which registered atlas should define functional-connectivity regions?",
                     options=(
@@ -865,11 +904,11 @@ class AgentTaskCommandService:
                         PendingDecisionOption(id="aal", label="AAL", description="AAL anatomical parcellation."),
                     ),
                     impact="The atlas changes matrix dimensions and scientific comparability.",
-                    plan_hash_before=plan_hash,
-                )
+                    evidence_refs=("plan:functionality_connectivity_subject",),
+                ))
         if signals.get("global_signal_regression_required") and "global_signal_regression" not in answers:
-            return PendingDecision(
-                decision_id=f"decision_{uuid4().hex}",
+            items.append(DecisionItem(
+                item_id="global_signal_regression",
                 kind="global_signal_regression",
                 question="Should global-signal regression be included in nuisance regression?",
                 options=(
@@ -877,8 +916,8 @@ class AgentTaskCommandService:
                     PendingDecisionOption(id="exclude", label="Exclude GSR", description="Keep the global mean signal."),
                 ),
                 impact="GSR changes correlation structure and can introduce negative correlations.",
-                plan_hash_before=plan_hash,
-            )
+                evidence_refs=("plan:science_decisions",),
+            ))
         tr_conflict = signals.get("tr_conflict")
         if tr_conflict and "repetition_time" not in answers:
             options: list[PendingDecisionOption] = []
@@ -897,17 +936,17 @@ class AgentTaskCommandService:
                     PendingDecisionOption(id="bids", label="Use BIDS TR", description="Use the BIDS sidecar value."),
                     PendingDecisionOption(id="project", label="Use project TR", description="Use the registered project value."),
                 ]
-            return PendingDecision(
-                decision_id=f"decision_{uuid4().hex}",
+            items.append(DecisionItem(
+                item_id="repetition_time",
                 kind="repetition_time",
                 question="Conflicting repetition-time values were detected. Which source is authoritative?",
                 options=tuple(options),
                 impact="TR controls slice timing, filtering, and spectral frequency interpretation.",
-                plan_hash_before=plan_hash,
-            )
+                evidence_refs=("plan:science_decisions",),
+            ))
         if signals.get("template_required") and "template" not in answers:
-            return PendingDecision(
-                decision_id=f"decision_{uuid4().hex}",
+            items.append(DecisionItem(
+                item_id="template",
                 kind="template",
                 question="Which registered normalization template should be used?",
                 options=(
@@ -915,11 +954,11 @@ class AgentTaskCommandService:
                     PendingDecisionOption(id="MNI152NLin2009cAsym", label="MNI152NLin2009cAsym", description="2009c asymmetric MNI template."),
                 ),
                 impact="The template changes spatial correspondence and downstream comparability.",
-                plan_hash_before=plan_hash,
-            )
+                evidence_refs=("plan:science_decisions",),
+            ))
         if signals.get("existing_run_conflict") and "overwrite" not in answers:
-            return PendingDecision(
-                decision_id=f"decision_{uuid4().hex}",
+            items.append(DecisionItem(
+                item_id="overwrite",
                 kind="overwrite",
                 question="A prior run already occupies the proposed output scope. How should this run proceed?",
                 options=(
@@ -927,15 +966,15 @@ class AgentTaskCommandService:
                     PendingDecisionOption(id="write_new_run_directory", label="Create new run", description="Write to a distinct versioned run directory."),
                 ),
                 impact="Existing derivatives are never silently overwritten.",
-                plan_hash_before=plan_hash,
-            )
+                evidence_refs=("plan:science_decisions",),
+            ))
         has_gpu = any(
             isinstance(node, dict) and str(node.get("backend") or "").lower().startswith("gpu")
             for node in plan.get("nodes", [])
         )
         if (signals.get("experimental_gpu") or signals.get("experimental_backend")) and has_gpu and "experimental_backend" not in answers:
-            return PendingDecision(
-                decision_id=f"decision_{uuid4().hex}",
+            items.append(DecisionItem(
+                item_id="experimental_backend",
                 kind="experimental_backend",
                 question="This plan selects an experimental GPU backend. Which reviewed backend should be used?",
                 options=(
@@ -943,26 +982,27 @@ class AgentTaskCommandService:
                     PendingDecisionOption(id="allow_experimental_gpu", label="Keep experimental GPU", description="Keep the explicitly labeled experimental backend."),
                 ),
                 impact="Backend selection can change precision, reproducibility, and validation status.",
-                plan_hash_before=plan_hash,
-            )
-        return None
+                evidence_refs=("plan:backend",),
+            ))
+        return items
 
     @staticmethod
-    def _memory_decision(
+    def _memory_decision_items(
         memory_context: MemoryContext | None,
         command_context: dict[str, Any],
-    ) -> PendingDecision | None:
+    ) -> list[DecisionItem]:
         if memory_context is None:
-            return None
+            return []
         answers = dict(command_context.get("science_answers") or {})
         ignored = set(command_context.get("ignored_memory_ids") or [])
+        items: list[DecisionItem] = []
         for suggestion in memory_context.decision_suggestions:
             if suggestion.memory_id in ignored or suggestion.decision_kind in answers:
                 continue
             value = suggestion.typed_value.get("value")
             value_id = str(value).casefold() if isinstance(value, bool) else str(value)
-            return PendingDecision(
-                decision_id=f"decision_{uuid4().hex}",
+            items.append(DecisionItem(
+                item_id=f"memory_{suggestion.decision_kind}_{suggestion.memory_id}",
                 kind=(
                     suggestion.decision_kind
                     if suggestion.decision_kind
@@ -994,8 +1034,52 @@ class AgentTaskCommandService:
                 impact="Scientific memory is advisory and requires confirmation for every Agent Task.",
                 source="memory_suggestion",
                 memory_id=suggestion.memory_id,
+                recommendation_source=f"memory:{suggestion.memory_id}",
+                evidence_refs=tuple(suggestion.source_refs),
+            ))
+        return items
+
+    def _decision_batch(
+        self, plan: dict[str, Any], context: dict[str, Any], metadata: dict[str, Any],
+        evidence, memory_context: MemoryContext | None, lifecycle,
+    ) -> PendingDecisionBatch | None:
+        items = [
+            *self._memory_decision_items(memory_context, context),
+            *self._science_decision_items(plan, context, metadata),
+        ]
+        # A real project value resolves a known input; it never resolves a science choice.
+        requested = {item.kind for item in items}
+        if len(items) > 6:
+            return self._goal_revision_batch(
+                lifecycle, evidence.snapshot_hash,
+                "More than six required decisions indicate an ambiguous goal or project state.",
             )
-        return None
+        if not items:
+            return None
+        return PendingDecisionBatch(
+            batch_id=f"decision_batch_{uuid4().hex}", lifecycle_id=lifecycle.lifecycle_id,
+            project_id=lifecycle.project_id, evidence_snapshot_hash=evidence.snapshot_hash,
+            plan_hash_before=stable_hash(plan), items=tuple(items),
+            expires_at=datetime.now(UTC) + timedelta(hours=24),
+            source="memory_suggestion" if requested and all(item.source == "memory_suggestion" for item in items) else "planner",
+        )
+
+    @staticmethod
+    def _memory_context(context: dict[str, Any]) -> MemoryContext | None:
+        raw = context.get("memory_context") if isinstance(context, dict) else None
+        return MemoryContext.model_validate(raw) if isinstance(raw, dict) else None
+
+    @staticmethod
+    def _goal_revision_batch(lifecycle, evidence_snapshot_hash: str, reason: str) -> PendingDecisionBatch:
+        return PendingDecisionBatch(
+            batch_id=f"decision_batch_{uuid4().hex}", lifecycle_id=lifecycle.lifecycle_id,
+            project_id=lifecycle.project_id, evidence_snapshot_hash=evidence_snapshot_hash,
+            items=(DecisionItem(
+                item_id="goal_revision", kind="goal_revision", question="Revise the research goal to match a supported workflow.",
+                impact=reason, answer_type="text", evidence_refs=("evidence:decision_limit",),
+            ),),
+            expires_at=datetime.now(UTC) + timedelta(hours=24),
+        )
 
     def _conversion_readiness(self, plan: dict[str, Any]) -> dict[str, Any]:
         for node in plan.get("nodes", []):

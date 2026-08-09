@@ -71,10 +71,10 @@ describe("Agent Task API", () => {
       goal: "Run preprocessing and FC",
     });
     await answerAgentTask("http://api", "project-1", "task-1", {
-      answer: "schaefer-200",
+      answers: [{ item_id: "atlas", value: "schaefer-200" }],
       actor: "researcher",
       command_id: "command-answer",
-      decision_id: "decision-atlas",
+      batch_id: "batch-atlas",
     });
     await approveAgentTask("http://api", "project-1", "task-1", {
       approval_summary_hash: "sha256:approved",

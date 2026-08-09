@@ -17,7 +17,7 @@ from src.backend.app.schemas.agent_harness import (
     AgentHarnessContext,
     AgentHarnessStep,
 )
-from src.backend.app.schemas.agent_lifecycle import PendingDecision, PendingDecisionOption
+from src.backend.app.schemas.agent_lifecycle import DecisionItem, PendingDecisionBatch, PendingDecisionOption
 from src.backend.app.services.agent_harness_context_service import HarnessContextBuilder
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 
@@ -126,7 +126,9 @@ class AgentHarnessService:
         if self._budget_exhausted(claimed):
             return HarnessRunResult(lifecycle=lifecycle, attempt=self._stop_claimed(claimed, "AGENT_HARNESS_BUDGET_EXHAUSTED"))
         project = self.store.get_project(lifecycle.project_id)
-        context = self.context_builder.build(lifecycle=lifecycle, project=project)
+        evidence_hash = str((lifecycle.command_context or {}).get("evidence_snapshot_hash") or "")
+        evidence = self.store.get_agent_evidence_snapshot(evidence_hash) if evidence_hash and hasattr(self.store, "get_agent_evidence_snapshot") else None
+        context = self.context_builder.build(lifecycle=lifecycle, project=project, evidence_snapshot=evidence)
         self.store.add_agent_harness_context(context)
         claimed = self._with_attempt(claimed, context_hash=context.context_hash)
         claimed = self.store.update_agent_harness_attempt(
@@ -313,8 +315,8 @@ class AgentHarnessService:
                 status = "FINISHED"
             return result, status, None
         if envelope.kind == "request_decision":
-            decision = self._decision_from_payload(envelope.payload)
-            state = "WAITING_FOR_SCIENCE_DECISION" if decision.kind not in {"missing_input", "goal_revision"} else "WAITING_FOR_INPUT"
+            decision = self._decision_from_payload(envelope.payload, lifecycle)
+            state = "WAITING_FOR_SCIENCE_DECISION" if decision.items[0].kind not in {"missing_input", "goal_revision"} else "WAITING_FOR_INPUT"
             if lifecycle.state == "CREATED" and state == "WAITING_FOR_SCIENCE_DECISION":
                 lifecycle = self.orchestrator.transition(
                     project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id,
@@ -323,8 +325,8 @@ class AgentHarnessService:
                 )
             result = self.orchestrator.transition(
                 project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id, to_state=state,
-                command_id=f"harness:{lifecycle.lifecycle_id}:decision:{decision.kind}", actor=actor,
-                source_command="harness_decision_required", updates={"pending_decision": decision}, reason=decision.impact,
+                command_id=f"harness:{lifecycle.lifecycle_id}:decision:{decision.batch_id}", actor=actor,
+                source_command="harness_decision_required", updates={"pending_decision_batch": decision}, reason=decision.items[0].impact,
             )
             return result, "WAITING_FOR_USER", None
         if envelope.kind == "propose_recovery":
@@ -539,8 +541,7 @@ class AgentHarnessService:
         if len(str(payload["question"])) > 512 or len(str(payload["impact"])) > 512:
             raise ValueError("AGENT_HARNESS_DECISION_PAYLOAD_INVALID")
 
-    @staticmethod
-    def _decision_from_payload(payload: dict) -> PendingDecision:
+    def _decision_from_payload(self, payload: dict, lifecycle) -> PendingDecisionBatch:
         options = tuple(
             PendingDecisionOption(
                 id=str(item["id"])[:128], label=str(item["label"])[:256],
@@ -549,8 +550,14 @@ class AgentHarnessService:
             for item in payload.get("options", [])[:8]
             if isinstance(item, dict) and {"id", "label"} <= set(item)
         )
-        return PendingDecision(
-            decision_id=f"harness_decision_{uuid4().hex}", kind=str(payload["kind"]),
+        item = DecisionItem(
+            item_id=f"harness_{payload['kind']}", kind=str(payload["kind"]),
             question=str(payload["question"]), impact=str(payload["impact"]), options=options,
             recommended_option=(str(payload["recommended_option"]) if payload.get("recommended_option") else None),
+        )
+        evidence_hash = str((lifecycle.command_context or {}).get("evidence_snapshot_hash") or "harness-evidence-unavailable")
+        return PendingDecisionBatch(
+            batch_id=f"harness_decision_batch_{uuid4().hex}", lifecycle_id=lifecycle.lifecycle_id,
+            project_id=lifecycle.project_id, evidence_snapshot_hash=evidence_hash, items=(item,),
+            expires_at=self.now() + timedelta(hours=24), source="harness",
         )

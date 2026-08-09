@@ -4,6 +4,7 @@ from typing import Any, Protocol
 
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.agent_harness import AgentHarnessAttempt, AgentHarnessContext, AgentHarnessStep
+from src.backend.app.schemas.agent_evidence import EvidenceSnapshot
 from src.backend.app.schemas.desktop import (
     DatasetSummary,
     ProjectDetail,
@@ -109,6 +110,10 @@ class ProjectStore(Protocol):
         self,
         lifecycle_id: str,
     ) -> list[AgentLifecycleEvent]: ...
+
+    def add_agent_evidence_snapshot(self, record: EvidenceSnapshot) -> EvidenceSnapshot: ...
+
+    def get_agent_evidence_snapshot(self, snapshot_hash: str) -> EvidenceSnapshot | None: ...
 
     def create_agent_harness_attempt(self, record: AgentHarnessAttempt) -> AgentHarnessAttempt: ...
 

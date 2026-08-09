@@ -49,12 +49,12 @@ class PendingDecisionOption(BaseModel):
     recommended: bool = False
 
 
-class PendingDecision(BaseModel):
-    """Immutable question embedded in the canonical lifecycle context."""
+class DecisionItem(BaseModel):
+    """One explicit user choice within an atomic decision batch."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    decision_id: str
+    item_id: str
     kind: Literal[
         "missing_input",
         "goal_revision",
@@ -71,9 +71,34 @@ class PendingDecision(BaseModel):
     options: tuple[PendingDecisionOption, ...] = ()
     recommended_option: str | None = None
     impact: str
-    plan_hash_before: str | None = None
     source: Literal["planner", "memory_suggestion"] = "planner"
     memory_id: str | None = None
+    recommendation_source: str | None = None
+    answer_type: Literal["option", "text"] = "option"
+    required: bool = True
+    evidence_refs: tuple[str, ...] = ()
+
+
+class PendingDecisionBatch(BaseModel):
+    """The sole unresolved decision object for a lifecycle."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    batch_id: str
+    lifecycle_id: str
+    project_id: str
+    evidence_snapshot_hash: str
+    plan_hash_before: str | None = None
+    items: tuple[DecisionItem, ...] = Field(min_length=1, max_length=6)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime
+    source: Literal["planner", "memory_suggestion", "harness"] = "planner"
+
+    @model_validator(mode="after")
+    def unique_items(self) -> "PendingDecisionBatch":
+        if len({item.item_id for item in self.items}) != len(self.items):
+            raise ValueError("AGENT_DECISION_BATCH_DUPLICATE_ITEM")
+        return self
 
 
 class LifecycleObservation(BaseModel):
@@ -115,7 +140,7 @@ class RetryProposal(BaseModel):
 class AgentLifecycleRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    schema_version: int = 3
+    schema_version: Literal[4] = 4
     lifecycle_id: str
     project_id: str
     state: AgentLifecycleState = "CREATED"
@@ -123,7 +148,8 @@ class AgentLifecycleRecord(BaseModel):
     goal_hash: str | None = None
     created_actor: str | None = None
     command_context: dict[str, Any] = Field(default_factory=dict)
-    pending_decision: PendingDecision | None = None
+    pending_decision_batch: PendingDecisionBatch | None = None
+    evidence_snapshot_hash: str | None = None
     reviewed_plan_id: str | None = None
     execution_ticket_id: str | None = None
     parent_execution_ticket_id: str | None = None

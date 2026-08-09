@@ -116,7 +116,7 @@ artifact。运行时状态写入使用原子文件写入。Pipeline Runtime 是�
 -> 创建项目
 -> 生成 project_config.yaml 和 dataset_index.json
 -> 在项目 Agent 工作区描述目标
--> 回答必要的数据或科学决策
+-> 在一个有界表单中一次回答所有必要的数据或科学决策
 -> 审查一份带哈希的 Approval Summary
 -> 审批未发生变化的计划和执行范围
 -> 查看有界进度和结果

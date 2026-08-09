@@ -56,8 +56,8 @@ def answer_agent_task(
         lifecycle = AgentTaskCommandService(store).answer(
             project_id=project_id,
             lifecycle_id=task_id,
-            decision_id=request.decision_id,
-            answer=request.answer,
+            batch_id=request.batch_id,
+            answers=request.answers,
             command_id=request.command_id,
             actor=request.actor,
         )

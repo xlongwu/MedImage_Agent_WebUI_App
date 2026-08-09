@@ -40,7 +40,7 @@ function task(
       title: "No action needed",
       description: null,
       requires_user: false,
-      decision_id: null,
+      decision_batch_id: null,
       disabled_reason: null,
     },
     progress: {
@@ -52,6 +52,7 @@ function task(
       total_subjects: null,
     },
     decisions: [],
+    decision_batch: null,
     approval_summary: null,
     result_summary: null,
     recovery: null,
@@ -278,7 +279,7 @@ describe("useAgentTaskController", () => {
         title: "Approve recovery",
         description: null,
         requires_user: true,
-        decision_id: null,
+        decision_batch_id: null,
         disabled_reason: null,
       },
       recovery: {

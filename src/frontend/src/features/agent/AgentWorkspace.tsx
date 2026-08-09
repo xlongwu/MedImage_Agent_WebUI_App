@@ -249,7 +249,7 @@ export function AgentWorkspaceView({
             />
           ) : task.state === "completed" && planOnlyResult ? null : (
             <NextActionCard
-              key={task.next_action.decision_id ?? task.next_action.type}
+              key={task.next_action.decision_batch_id ?? task.next_action.type}
               mutating={controller.mutating}
               onAnswer={controller.answer}
               onApprove={controller.approve}

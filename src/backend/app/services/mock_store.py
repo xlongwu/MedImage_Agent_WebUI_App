@@ -16,6 +16,7 @@ from src.backend.app.schemas.agent_harness import (
     AgentHarnessContext,
     AgentHarnessStep,
 )
+from src.backend.app.schemas.agent_evidence import EvidenceSnapshot
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.desktop import (
     ApprovalRecord,
@@ -254,6 +255,15 @@ class SQLiteDesktopStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_harness_contexts_lifecycle
                     ON agent_harness_contexts(lifecycle_id, created_at);
+                CREATE TABLE IF NOT EXISTS agent_evidence_snapshots (
+                    snapshot_hash TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_evidence_snapshots_lifecycle
+                    ON agent_evidence_snapshots(lifecycle_id, created_at);
                 CREATE TABLE IF NOT EXISTS agent_harness_steps (
                     step_id TEXT PRIMARY KEY,
                     attempt_id TEXT NOT NULL,
@@ -1202,6 +1212,7 @@ class SQLiteDesktopStore:
             conn.execute("DELETE FROM agent_harness_steps WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_harness_contexts WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_harness_attempts WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_evidence_snapshots WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_lifecycle_events WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_lifecycles WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM observations WHERE project_id = ?", (project_id,))
@@ -2360,6 +2371,37 @@ class SQLiteDesktopStore:
                 (lifecycle_id,),
             ).fetchone()
         return AgentLifecycleRecord(**json.loads(row["payload"])) if row else None
+
+    def add_agent_evidence_snapshot(self, record: EvidenceSnapshot) -> EvidenceSnapshot:
+        """Persist immutable redacted evidence by its canonical hash."""
+        with self._lock, self._connect() as conn:
+            existing = conn.execute(
+                "SELECT payload FROM agent_evidence_snapshots WHERE snapshot_hash = ?",
+                (record.snapshot_hash,),
+            ).fetchone()
+            if existing:
+                current = EvidenceSnapshot(**json.loads(existing["payload"]))
+                if current.project_id != record.project_id or current.lifecycle_id != record.lifecycle_id:
+                    raise ValueError("AGENT_EVIDENCE_SNAPSHOT_HASH_COLLISION")
+                return current
+            conn.execute(
+                """
+                INSERT INTO agent_evidence_snapshots
+                    (snapshot_hash, project_id, lifecycle_id, payload, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (record.snapshot_hash, record.project_id, record.lifecycle_id,
+                 self._dump_model(record), record.created_at.isoformat()),
+            )
+        return record
+
+    def get_agent_evidence_snapshot(self, snapshot_hash: str) -> EvidenceSnapshot | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM agent_evidence_snapshots WHERE snapshot_hash = ?",
+                (snapshot_hash,),
+            ).fetchone()
+        return EvidenceSnapshot(**json.loads(row["payload"])) if row else None
 
     def create_agent_harness_attempt(self, record: AgentHarnessAttempt) -> AgentHarnessAttempt:
         """Create the one Harness attempt bound to a lifecycle.

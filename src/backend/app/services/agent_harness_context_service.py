@@ -17,7 +17,7 @@ class HarnessContextBuilder:
     _SECRET_KEY = re.compile(r"(?:api[_-]?key|token|secret|password|authorization)", re.I)
     _UNSAFE_KEY = re.compile(r"(?:rawdata|image|dicom|nifti|transcript|prompt|log)", re.I)
 
-    def build(self, *, lifecycle, project) -> AgentHarnessContext:
+    def build(self, *, lifecycle, project, evidence_snapshot=None) -> AgentHarnessContext:
         metadata = project.metadata if project is not None and isinstance(project.metadata, dict) else {}
         command_context = lifecycle.command_context if isinstance(lifecycle.command_context, dict) else {}
         memory = command_context.get("memory_context")
@@ -26,7 +26,7 @@ class HarnessContextBuilder:
             "goal": self._short_text(lifecycle.goal_text),
             "lifecycle_state": lifecycle.state,
             "confirmed_answers": self._safe_object(command_context.get("science_answers"), max_items=12),
-            "project_evidence": self._safe_project_evidence(metadata),
+            "project_evidence": self._safe_snapshot(evidence_snapshot) if evidence_snapshot is not None else self._safe_project_evidence(metadata),
             "reviewed_plan": {
                 "reviewed_plan_id": lifecycle.reviewed_plan_id,
                 "execution_ticket_id": lifecycle.execution_ticket_id,
@@ -87,6 +87,18 @@ class HarnessContextBuilder:
             "agent_science_decisions", "conversion_status", "preprocessing_status",
         }
         return self._safe_object({key: metadata.get(key) for key in allowed if key in metadata}, max_items=24)
+
+    def _safe_snapshot(self, snapshot) -> dict[str, Any]:
+        """Expose only bounded structured facts and stable source IDs to the model."""
+        return self._safe_object(
+            {
+                "snapshot_hash": snapshot.snapshot_hash,
+                "facts": [fact.model_dump(mode="json") for fact in snapshot.facts],
+                "missing": list(snapshot.missing),
+                "warnings": [warning.model_dump(mode="json") for warning in snapshot.warnings],
+            },
+            max_items=24,
+        )
 
     def _memory_fields(self, value: object) -> dict[str, Any]:
         if not isinstance(value, dict):

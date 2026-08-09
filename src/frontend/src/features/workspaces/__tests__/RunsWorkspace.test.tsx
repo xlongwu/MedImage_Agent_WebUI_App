@@ -37,7 +37,7 @@ function agentTaskEvidence(): AgentTaskResponse {
       title: "No action",
       description: null,
       requires_user: false,
-      decision_id: null,
+      decision_batch_id: null,
       disabled_reason: null,
     },
     progress: {
@@ -49,6 +49,7 @@ function agentTaskEvidence(): AgentTaskResponse {
       total_subjects: 3,
     },
     decisions: [],
+    decision_batch: null,
     approval_summary: null,
     result_summary: null,
     recovery: null,
@@ -389,7 +390,7 @@ describe("RunsWorkspace", () => {
         title: "Approve execution",
         description: null,
         requires_user: true,
-        decision_id: null,
+        decision_batch_id: null,
         disabled_reason: null,
       },
       approval_summary: {

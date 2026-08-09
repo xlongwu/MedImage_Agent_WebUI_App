@@ -160,7 +160,7 @@ class AgentOrchestrator:
             source_command="cancel",
             reason=reason,
             updates={
-                "pending_decision": None,
+                "pending_decision_batch": None,
                 "canceled_at": now,
                 "canceled_by": actor,
                 "cancellation_reason": reason,

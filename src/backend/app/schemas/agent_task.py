@@ -78,7 +78,7 @@ class AgentTaskNextAction(BaseModel):
     title: str
     description: str | None = None
     requires_user: bool
-    decision_id: str | None = None
+    decision_batch_id: str | None = None
     disabled_reason: str | None = None
 
 
@@ -105,7 +105,7 @@ class AgentTaskDecisionOption(BaseModel):
 class AgentTaskDecision(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    decision_id: str
+    item_id: str
     kind: Literal[
         "missing_input",
         "goal_revision",
@@ -122,9 +122,21 @@ class AgentTaskDecision(BaseModel):
     impact: str
     options: tuple[AgentTaskDecisionOption, ...] = ()
     recommended_option: str | None = None
-    plan_hash_before: str | None = None
     source: Literal["planner", "memory_suggestion"] = "planner"
     memory_id: str | None = None
+    recommendation_source: str | None = None
+    answer_type: Literal["option", "text"] = "option"
+    required: bool = True
+    evidence_refs: tuple[str, ...] = ()
+
+
+class AgentTaskDecisionBatch(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    batch_id: str
+    evidence_snapshot_hash: str
+    plan_hash_before: str | None = None
+    expires_at: datetime
 
 
 class AgentTaskApprovalSection(BaseModel):
@@ -253,6 +265,7 @@ class AgentTaskResponse(BaseModel):
     next_action: AgentTaskNextAction
     progress: AgentTaskProgress
     decisions: tuple[AgentTaskDecision, ...] = ()
+    decision_batch: AgentTaskDecisionBatch | None = None
     approval_summary: AgentTaskApprovalSummary | None = None
     result_summary: AgentTaskResultSummary | None = None
     recovery: AgentTaskRecoverySummary | None = None
@@ -301,11 +314,18 @@ class CreateAgentTaskRequest(BaseModel):
     actor: str = Field(min_length=1)
 
 
+class DecisionAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+
+
 class AnswerAgentTaskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    decision_id: str = Field(min_length=1)
-    answer: str = Field(min_length=1)
+    batch_id: str = Field(min_length=1)
+    answers: tuple[DecisionAnswer, ...] = Field(min_length=1, max_length=6)
     command_id: str = Field(min_length=1)
     actor: str = Field(min_length=1)
 

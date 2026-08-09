@@ -27,7 +27,7 @@ export type AgentTaskController = {
   mutating: boolean;
   error: string;
   create: (goal: string) => Promise<void>;
-  answer: (decisionId: string, answer: string) => Promise<void>;
+  answer: (batchId: string, answers: { item_id: string; value: string }[]) => Promise<void>;
   approve: () => Promise<void>;
   approveRecovery: () => Promise<void>;
   cancel: (reason?: string) => Promise<void>;
@@ -257,7 +257,7 @@ export function useAgentTaskController({
   );
 
   const answer = useCallback(
-    async (decisionId: string, value: string) => {
+    async (batchId: string, answers: { item_id: string; value: string }[]) => {
       if (!projectId || !task) return;
       await applyCommand((signal) =>
         answerAgentTask(
@@ -266,9 +266,9 @@ export function useAgentTaskController({
           task.task_id,
           {
             actor,
-            answer: value,
+            answers,
             command_id: commandId("answer"),
-            decision_id: decisionId,
+            batch_id: batchId,
           },
           { signal },
         ),

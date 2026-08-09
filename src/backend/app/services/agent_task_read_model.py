@@ -236,14 +236,14 @@ class AgentTaskReadModel:
             public_state=public_state,
             approval_summary=approval_summary,
             recovery=recovery,
-            decision_id=(
-                lifecycle.pending_decision.decision_id
-                if getattr(lifecycle, "pending_decision", None) is not None
+            decision_batch_id=(
+                lifecycle.pending_decision_batch.batch_id
+                if getattr(lifecycle, "pending_decision_batch", None) is not None
                 else None
             ),
             decision_kind=(
-                lifecycle.pending_decision.kind
-                if getattr(lifecycle, "pending_decision", None) is not None
+                lifecycle.pending_decision_batch.items[0].kind
+                if getattr(lifecycle, "pending_decision_batch", None) is not None
                 else None
             ),
         )
@@ -260,6 +260,7 @@ class AgentTaskReadModel:
             next_action=next_action,
             progress=progress,
             decisions=self._decisions(lifecycle),
+            decision_batch=self._decision_batch(lifecycle),
             approval_summary=approval_summary,
             result_summary=result_summary,
             recovery=recovery,
@@ -484,7 +485,7 @@ class AgentTaskReadModel:
         public_state: str,
         approval_summary,
         recovery,
-        decision_id: str | None,
+        decision_batch_id: str | None,
         decision_kind: str | None,
     ) -> AgentTaskNextAction:
         if state == "WAITING_FOR_INPUT":
@@ -494,14 +495,14 @@ class AgentTaskReadModel:
                     title="Revise the research goal",
                     description="The current goal did not match a supported bounded workflow.",
                     requires_user=True,
-                    decision_id=decision_id,
+                    decision_batch_id=decision_batch_id,
                 )
             return AgentTaskNextAction(
                 type="provide_input",
                 title="Provide the required project input",
                 description="Planning will resume after the missing project evidence is supplied.",
                 requires_user=True,
-                decision_id=decision_id,
+                decision_batch_id=decision_batch_id,
             )
         if state == "WAITING_FOR_SCIENCE_DECISION":
             return AgentTaskNextAction(
@@ -509,7 +510,7 @@ class AgentTaskReadModel:
                 title="Answer the scientific decision",
                 description="The answer changes the reviewed scientific plan and its hashes.",
                 requires_user=True,
-                decision_id=decision_id,
+                decision_batch_id=decision_batch_id,
             )
         if state == "CANCELED":
             return AgentTaskNextAction(
@@ -555,15 +556,15 @@ class AgentTaskReadModel:
 
     @staticmethod
     def _decisions(lifecycle) -> tuple[AgentTaskDecision, ...]:
-        pending = getattr(lifecycle, "pending_decision", None)
+        pending = getattr(lifecycle, "pending_decision_batch", None)
         if pending is None:
             return ()
-        return (
+        return tuple(
             AgentTaskDecision(
-                decision_id=pending.decision_id,
-                kind=pending.kind,
-                question=pending.question,
-                impact=pending.impact,
+                item_id=item.item_id,
+                kind=item.kind,
+                question=item.question,
+                impact=item.impact,
                 options=tuple(
                     AgentTaskDecisionOption(
                         id=option.id,
@@ -571,13 +572,31 @@ class AgentTaskReadModel:
                         description=option.description,
                         recommended=option.recommended,
                     )
-                    for option in pending.options
+                    for option in item.options
                 ),
-                recommended_option=pending.recommended_option,
-                plan_hash_before=pending.plan_hash_before,
-                source=pending.source,
-                memory_id=pending.memory_id,
-            ),
+                recommended_option=item.recommended_option,
+                source=item.source,
+                memory_id=item.memory_id,
+                recommendation_source=item.recommendation_source,
+                answer_type=item.answer_type,
+                required=item.required,
+                evidence_refs=item.evidence_refs,
+            )
+            for item in pending.items
+        )
+
+    @staticmethod
+    def _decision_batch(lifecycle):
+        from src.backend.app.schemas.agent_task import AgentTaskDecisionBatch
+
+        pending = getattr(lifecycle, "pending_decision_batch", None)
+        if pending is None:
+            return None
+        return AgentTaskDecisionBatch(
+            batch_id=pending.batch_id,
+            evidence_snapshot_hash=pending.evidence_snapshot_hash,
+            plan_hash_before=pending.plan_hash_before,
+            expires_at=pending.expires_at,
         )
 
     @staticmethod

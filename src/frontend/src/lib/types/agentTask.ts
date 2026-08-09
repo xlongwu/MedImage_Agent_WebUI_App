@@ -79,15 +79,25 @@ export type AgentTaskDecisionOption = {
 };
 
 export type AgentTaskDecision = {
-  decision_id: string;
+  item_id: string;
   kind: AgentTaskDecisionKind;
   question: string;
   impact: string;
   options: AgentTaskDecisionOption[];
   recommended_option: string | null;
-  plan_hash_before: string | null;
   source?: "planner" | "memory_suggestion";
   memory_id?: string | null;
+  recommendation_source?: string | null;
+  answer_type: "option" | "text";
+  required: boolean;
+  evidence_refs: string[];
+};
+
+export type AgentTaskDecisionBatch = {
+  batch_id: string;
+  evidence_snapshot_hash: string;
+  plan_hash_before: string | null;
+  expires_at: string;
 };
 
 export type AgentTaskNextAction = {
@@ -95,7 +105,7 @@ export type AgentTaskNextAction = {
   title: string;
   description: string | null;
   requires_user: boolean;
-  decision_id: string | null;
+  decision_batch_id: string | null;
   disabled_reason: string | null;
 };
 
@@ -235,6 +245,7 @@ export type AgentTaskResponse = {
   next_action: AgentTaskNextAction;
   progress: AgentTaskProgress;
   decisions: AgentTaskDecision[];
+  decision_batch: AgentTaskDecisionBatch | null;
   approval_summary: AgentTaskApprovalSummary | null;
   result_summary: AgentTaskResultSummary | null;
   recovery: AgentTaskRecoverySummary | null;
@@ -276,8 +287,8 @@ export type CreateAgentTaskRequest = {
 };
 
 export type AnswerAgentTaskRequest = {
-  decision_id: string;
-  answer: string;
+  batch_id: string;
+  answers: { item_id: string; value: string }[];
   command_id: string;
   actor: string;
 };

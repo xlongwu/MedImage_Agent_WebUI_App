@@ -14,17 +14,16 @@ export function NextActionCard({
   task,
 }: {
   mutating: boolean;
-  onAnswer: (decisionId: string, answer: string) => Promise<void>;
+  onAnswer: (batchId: string, answers: { item_id: string; value: string }[]) => Promise<void>;
   onApprove: () => Promise<void>;
   onCancel: (reason?: string) => Promise<void>;
   onOpenRuns: () => void;
   task: AgentTaskResponse;
 }) {
   const { t } = useI18n();
-  const decision =
-    task.decisions.find((item) => item.decision_id === task.next_action.decision_id) ??
-    task.decisions[0];
-  const [answer, setAnswer] = useState(decision?.recommended_option ?? "");
+  const [answers, setAnswers] = useState<Record<string, string>>(() =>
+    Object.fromEntries(task.decisions.map((item) => [item.item_id, item.recommended_option ?? ""])),
+  );
 
   const type = task.next_action.type;
   const needsAnswer =
@@ -58,18 +57,18 @@ export function NextActionCard({
         : type === "approve_execution"
           ? t("agent.next.approveExecution.description")
           : task.next_action.description;
-  const decisionQuestion =
-    decision?.kind === "goal_revision"
+  const decisionQuestion = (decision: (typeof task.decisions)[number]) =>
+    decision.kind === "goal_revision"
       ? t("agent.decision.goalRevision.question")
-      : decision?.kind === "missing_input"
+        : decision.kind === "missing_input"
         ? t("agent.decision.missingInput.question")
-        : decision?.question;
-  const decisionImpact =
-    decision?.kind === "goal_revision"
+        : decision.question;
+  const decisionImpact = (decision: (typeof task.decisions)[number]) =>
+    decision.kind === "goal_revision"
       ? t("agent.decision.goalRevision.impact")
-      : decision?.kind === "missing_input"
+        : decision.kind === "missing_input"
         ? t("agent.decision.missingInput.impact")
-        : decision?.impact;
+        : decision.impact;
   const datasetCountMatch = task.approval_summary?.dataset_summary.match(
     /^(\d+) registered subject\(s\)$/,
   );
@@ -99,20 +98,20 @@ export function NextActionCard({
         )}
       </div>
 
-      {decision && needsAnswer ? (
-        <fieldset className={styles.decisionOptions}>
-          <legend>{decisionQuestion}</legend>
+      {task.decisions.length && needsAnswer ? task.decisions.map((decision) => (
+        <fieldset className={styles.decisionOptions} key={decision.item_id}>
+          <legend>{decisionQuestion(decision)}</legend>
           {decision.source === "memory_suggestion" ? (
             <Badge tone="info">{t("agent.decision.memorySuggestion")}</Badge>
           ) : null}
-          <p>{decisionImpact}</p>
+          <p>{decisionImpact(decision)}</p>
           {decision.options.length ? (
             decision.options.map((option) => (
               <label key={option.id}>
                 <input
-                  checked={answer === option.id}
-                  name={decision.decision_id}
-                  onChange={() => setAnswer(option.id)}
+                  checked={answers[decision.item_id] === option.id}
+                  name={decision.item_id}
+                  onChange={() => setAnswers((current) => ({ ...current, [decision.item_id]: option.id }))}
                   type="radio"
                   value={option.id}
                 />
@@ -132,13 +131,13 @@ export function NextActionCard({
               aria-label={
                 type === "revise_goal" ? t("agent.goalRevisionLabel") : t("agent.answerLabel")
               }
-              onChange={(event) => setAnswer(event.target.value)}
+              onChange={(event) => setAnswers((current) => ({ ...current, [decision.item_id]: event.target.value }))}
               rows={3}
-              value={answer}
+              value={answers[decision.item_id] ?? ""}
             />
           )}
         </fieldset>
-      ) : null}
+      )) : null}
 
       {task.approval_summary && isApproval ? (
         <div className={styles.approvalSummary}>
@@ -205,11 +204,11 @@ export function NextActionCard({
               disabled={
                 mutating ||
                 Boolean(task.next_action.disabled_reason) ||
-                (needsAnswer && !answer.trim())
+                (needsAnswer && task.decisions.some((item) => item.required && !(answers[item.item_id] ?? "").trim()))
               }
               onClick={() => {
-                if (needsAnswer && decision)
-                  void onAnswer(decision.decision_id, answer).catch((): void => {});
+                if (needsAnswer && task.decision_batch)
+                  void onAnswer(task.decision_batch.batch_id, task.decisions.map((item) => ({ item_id: item.item_id, value: answers[item.item_id] ?? "" }))).catch((): void => {});
                 else if (isApproval) void onApprove().catch((): void => {});
                 else onOpenRuns();
               }}

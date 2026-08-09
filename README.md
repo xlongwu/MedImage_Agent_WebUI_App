@@ -123,7 +123,7 @@ Select BIDS/rawdata or converted BIDS
 -> Create project
 -> Generate project_config.yaml and dataset_index.json
 -> Describe the goal in the project Agent workspace
--> Answer any required data or scientific decision
+-> Answer all required data or scientific decisions together in one bounded form
 -> Review one hashed Approval Summary
 -> Approve the unchanged plan and execution scope
 -> Follow bounded progress and inspect the result
