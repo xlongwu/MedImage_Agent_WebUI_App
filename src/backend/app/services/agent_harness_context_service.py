@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from src.backend.app.agent_skills.schemas import SkillContextRef
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_harness import (
     AgentHarnessContext,
@@ -41,7 +42,8 @@ class HarnessContextSources:
     last_step: object | None = None
     attempt: object | None = None
     prompt_template_version: str = "agent-harness-prompt-v2"
-    skill_refs: tuple[str, ...] = ()
+    skill_refs: tuple[SkillContextRef, ...] = ()
+    skill_error_codes: tuple[str, ...] = ()
     policy_version: str = "agent-harness-policy-v2"
     redaction_policy_version: str = "agent-harness-redaction-v2"
 
@@ -117,7 +119,8 @@ class HarnessContextBuilder:
                 "policy_version": sources.policy_version,
                 "redaction_policy_version": sources.redaction_policy_version,
                 "prompt_template_version": sources.prompt_template_version,
-                "skill_refs": list(sources.skill_refs),
+                "skill_refs": [reference.model_dump(mode="json") for reference in sources.skill_refs],
+                "skill_error_codes": list(sources.skill_error_codes),
             }
         )
         return AgentHarnessContext(
@@ -131,14 +134,15 @@ class HarnessContextBuilder:
             policy_version=sources.policy_version,
             redaction_policy_version=sources.redaction_policy_version,
             prompt_template_version=sources.prompt_template_version,
-            skill_refs=tuple(sorted(set(sources.skill_refs))),
+            skill_refs=tuple(sorted(set(sources.skill_refs), key=lambda reference: reference.skill_id)),
+            skill_error_codes=tuple(sorted(set(sources.skill_error_codes))),
             omitted_fields=tuple(omitted),
         )
 
     def _sections(self, values: dict[str, tuple[dict[str, Any], tuple[str, ...]]]) -> AgentHarnessContextSections:
         sections = {
             name: AgentHarnessContextSection(
-                source_refs=tuple(sorted(set(ref for ref in refs if ref))),
+                source_refs=tuple(sorted({ref for ref in refs if ref})),
                 source_hash=stable_hash(data),
                 data=data,
             )
@@ -290,7 +294,7 @@ class HarnessContextBuilder:
 
     def _refs_from(self, refs: object) -> tuple[str, ...]:
         result: list[str] = []
-        for ref in refs if isinstance(refs, (list, tuple)) else ():
+        for ref in refs if isinstance(refs, list | tuple) else ():
             source_type = self._safe_ref(getattr(ref, "source_type", None))
             source_id = self._safe_ref(getattr(ref, "source_id", None))
             if source_type and source_id:
@@ -347,11 +351,11 @@ class HarnessContextBuilder:
                     continue
                 result[key_text] = self._safe_object(value[key], max_items=max_items)
             return result
-        if isinstance(value, (list, tuple)):
+        if isinstance(value, list | tuple):
             return [self._safe_object(item, max_items=max_items) for item in value[:max_items]]
         if isinstance(value, str):
             return self._short_text(value)
-        if isinstance(value, (int, float, bool)) or value is None:
+        if isinstance(value, int | float | bool) or value is None:
             return value
         return self._short_text(str(value))
 
@@ -366,7 +370,7 @@ class HarnessContextBuilder:
         if isinstance(value, str):
             sanitized = HarnessContextBuilder._short_text(value, limit=257)
             return sanitized if len(sanitized) <= 256 else None
-        return value if isinstance(value, (int, float, bool)) or value is None else None
+        return value if isinstance(value, int | float | bool) or value is None else None
 
     @staticmethod
     def _safe_ref(value: object) -> str | None:

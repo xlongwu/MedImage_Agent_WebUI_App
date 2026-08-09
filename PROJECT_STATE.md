@@ -97,6 +97,14 @@ their tag state.
   baseline is recorded in `specs/阶段记录/阶段十二/Agent改造/01_当前Agent基线与差距分析.md`;
   no Harness-specific packaged smoke or formal release evidence was located,
   so those two release surfaces remain `unknown` rather than inferred.
+- The Harness Product Skill source implementation provides exactly three
+  static packaged procedures (planning evidence review, result explanation,
+  recovery review). The strict registry verifies manifest/hash/capability and
+  Context-section constraints, records only Skill references in audit state,
+  and falls back to the base safety prompt when a resource is unavailable. This
+  is prompt-governance only: it does not add data, approval, execution, or
+  scientific-computation capability. Source-level regression coverage exists;
+  packaged smoke/release evidence remains separate and is not inferred here.
 - The Phase 10 source tree adds an Agent-first project workspace backed by a
   project-scoped Agent Task read projection. Goal commands stop for unresolved
   science decisions, produce one hashed Approval Summary, and reuse the

@@ -152,6 +152,10 @@ def test_pyinstaller_spec_excludes_blocked_model_modules():
     launcher_spec = read("desktop/packaging/pyinstaller_desktop_launcher.spec")
 
     assert "desktop_backend_entry.py" in spec
+    assert '"planning_evidence_review.v1"' in spec
+    assert '"result_explanation.v1"' in spec
+    assert '"recovery_review.v1"' in spec
+    assert '"manifest.json", "SKILL.md"' in spec
     assert "medimage-backend" in spec
     assert "upx=False" in spec
     assert 'runtime_tmpdir="."' in spec

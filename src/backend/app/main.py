@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import os
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.backend.app.agent_skills.registry import AgentSkillRegistry
 from src.backend.app.api.advisor_routes import router as advisor_router
 from src.backend.app.api.agent_lifecycle_routes import router as agent_lifecycle_router
 from src.backend.app.api.agent_routes import router as agent_router
@@ -26,6 +27,7 @@ from src.backend.app.api.external_smoke_routes import router as external_smoke_r
 from src.backend.app.api.gpu_routes import router as gpu_router
 from src.backend.app.api.image_routes import router as image_router
 from src.backend.app.api.llm_planner_routes import router as llm_planner_router
+from src.backend.app.api.memory_routes import router as memory_router
 from src.backend.app.api.middleware import (
     APIVersionMiddleware,
     RateLimitMiddleware,
@@ -33,7 +35,6 @@ from src.backend.app.api.middleware import (
     RequestLoggingMiddleware,
     register_exception_handlers,
 )
-from src.backend.app.api.memory_routes import router as memory_router
 from src.backend.app.api.pipeline_routes import router as pipeline_router
 from src.backend.app.api.plan_validator_routes import router as plan_validator_router
 from src.backend.app.api.planner_routes import router as planner_router
@@ -48,22 +49,21 @@ from src.backend.app.api.rsfmri_routes import router as rsfmri_router
 from src.backend.app.api.session_routes import router as session_router
 from src.backend.app.api.task_routes import router as task_router
 from src.backend.app.api.tool_catalog_routes import router as tool_catalog_router
-from src.backend.app.core.logging_config import setup_logging
 from src.backend.app.core.config import ConfigService
-from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
+from src.backend.app.core.logging_config import setup_logging
 from src.backend.app.runtime.agent_harness_scheduler import get_agent_harness_scheduler
 from src.backend.app.runtime.node_contract_consistency import assert_node_contract_consistency
+from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.memory_candidate_service import MemoryCandidateService
 from src.backend.app.services.memory_consolidation_service import MemoryConsolidationService
-from src.backend.app.services.memory_maintenance_service import MemoryMaintenanceService
 from src.backend.app.services.memory_llm_proposal_service import (
     MemoryLLMProposalService,
     build_memory_llm_provider_from_env,
 )
+from src.backend.app.services.memory_maintenance_service import MemoryMaintenanceService
 from src.backend.app.services.memory_projection_service import MemoryProjectionService
 from src.backend.app.services.memory_repository import MemoryRepository
 from src.backend.app.version import API_DESCRIPTION, API_TITLE, APP_VERSION
-
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +136,8 @@ async def _lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     setup_logging()
     assert_node_contract_consistency()
+    for error in AgentSkillRegistry().validate_all():
+        logger.error("agent_skill_unavailable", extra={"error_code": error.code})
     app = FastAPI(
         title=API_TITLE,
         version=APP_VERSION,

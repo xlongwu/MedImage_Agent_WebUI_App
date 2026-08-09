@@ -1,0 +1,10 @@
+{
+  "skill_id": "recovery_review.v1",
+  "version": "v1",
+  "allowed_actions": ["propose_recovery"],
+  "allowed_states": ["DIAGNOSING"],
+  "required_context_sections": ["policy", "latest_observation", "last_action_result", "plan_state", "execution_state", "decision_state", "budget"],
+  "output_schema_ref": "ActionEnvelope",
+  "max_bytes": 4096,
+  "content_hash": "7f977da5605e4aa67db395cc0bd787de9295a16a5e42c5bdfcc22449d34e3906"
+}

@@ -7,8 +7,8 @@ import os
 from dataclasses import dataclass
 from typing import Protocol
 
+from src.backend.app.agent_skills.schemas import SkillContextRef
 from src.backend.app.schemas.agent_harness import ActionEnvelope
-
 
 CONTEXT_V2_SECTION_ORDER = (
     "goal", "policy", "project_evidence", "decision_state", "plan_state",
@@ -19,7 +19,7 @@ CONTEXT_V2_SECTION_ORDER = (
 def _canonical_value(value: object) -> object:
     if isinstance(value, dict):
         return {key: _canonical_value(value[key]) for key in sorted(value)}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_canonical_value(item) for item in value]
     return value
 
@@ -41,12 +41,29 @@ def serialize_context_v2(snapshot: dict) -> dict:
         if not isinstance(section, dict) or section.get("schema_version") != 1:
             raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
         fixed_sections[name] = _canonical_value(section)
+    skill_refs = tuple(
+        SkillContextRef.model_validate(item)
+        for item in snapshot.get("skill_refs", [])
+        if isinstance(item, dict)
+    )
+    allowed_sections = {
+        section for reference in skill_refs for section in reference.sections
+    }
+    if skill_refs:
+        fixed_sections = {
+            name: section for name, section in fixed_sections.items() if name in allowed_sections
+        }
     return {
         "schema_version": 2,
         "policy_version": str(snapshot.get("policy_version") or ""),
         "redaction_policy_version": str(snapshot.get("redaction_policy_version") or ""),
         "prompt_template_version": str(snapshot.get("prompt_template_version") or ""),
-        "skill_refs": sorted(str(item) for item in snapshot.get("skill_refs", []) if isinstance(item, str)),
+        "skill_refs": [reference.model_dump(mode="json") for reference in sorted(
+            skill_refs, key=lambda reference: (reference.skill_id, reference.content_hash)
+        )],
+        "skill_error_codes": sorted(
+            str(item) for item in snapshot.get("skill_error_codes", []) if isinstance(item, str)
+        ),
         "sections": fixed_sections,
         "omitted_fields": sorted(str(item) for item in snapshot.get("omitted_fields", []) if isinstance(item, str)),
     }
@@ -72,7 +89,7 @@ class ActionProposal:
     metadata: ActionCallMetadata
 
     @classmethod
-    def rule_based(cls, envelope: ActionEnvelope) -> "ActionProposal":
+    def rule_based(cls, envelope: ActionEnvelope) -> ActionProposal:
         return cls(
             envelope=envelope,
             metadata=ActionCallMetadata(
@@ -108,11 +125,11 @@ class DefaultAgentModelAdapter:
     """
 
     def propose_action(self, *, snapshot: dict, provider_ref: str, repair: bool = False) -> ActionProposal:
+        raw_sections = snapshot.get("sections") if isinstance(snapshot, dict) else None
+        raw_goal = raw_sections.get("goal") if isinstance(raw_sections, dict) else None
+        raw_goal_data = raw_goal.get("data") if isinstance(raw_goal, dict) else None
+        state = str(raw_goal_data.get("lifecycle_state") or "") if isinstance(raw_goal_data, dict) else ""
         snapshot = serialize_context_v2(snapshot)
-        sections = snapshot["sections"]
-        goal = sections.get("goal") if isinstance(sections, dict) else None
-        goal_data = goal.get("data") if isinstance(goal, dict) else None
-        state = str(goal_data.get("lifecycle_state") or "") if isinstance(goal_data, dict) else ""
         provider = provider_ref.strip().casefold()
         if provider == "rule_based":
             return ActionProposal.rule_based(ActionEnvelope(
@@ -130,8 +147,8 @@ class DefaultAgentModelAdapter:
                     network_called=False,
                 ),
             )
-        from src.backend.app.planner.llm_provider import call_openai_compatible_action_provider
         from src.backend.app.planner.audit_record import stable_hash
+        from src.backend.app.planner.llm_provider import call_openai_compatible_action_provider
 
         result = call_openai_compatible_action_provider(snapshot=snapshot, repair=repair)
         metadata = ActionCallMetadata(
@@ -157,6 +174,11 @@ def action_schema() -> dict[str, object]:
 
 
 def build_action_prompt(snapshot: dict, *, repair: bool) -> str:
+    serialized = serialize_context_v2(snapshot)
+    from src.backend.app.agent_skills.loader import AgentSkillLoader
+
+    refs = tuple(SkillContextRef.model_validate(item) for item in serialized["skill_refs"])
+    skill_result = AgentSkillLoader().render(refs)
     repair_instruction = (
         "Your previous reply was invalid. Return only one corrected JSON object matching the schema."
         if repair
@@ -166,8 +188,10 @@ def build_action_prompt(snapshot: dict, *, repair: bool) -> str:
         "You are an advice-only research planning assistant. You may not approve, execute, "
         "write files, invoke tools, or issue commands. "
         + repair_instruction
+        + "\nSKILL_WORKING_PROCEDURES:\n"
+        + (skill_result.markdown or "No packaged procedure is available; follow the base safety policy only.")
         + "\nACTION_ENVELOPE_SCHEMA:\n"
         + json.dumps(action_schema(), ensure_ascii=False, separators=(",", ":"))
         + "\nSAFE_CONTEXT:\n"
-        + json.dumps(serialize_context_v2(snapshot), ensure_ascii=False, separators=(",", ":"))
+        + json.dumps(serialized, ensure_ascii=False, separators=(",", ":"))
     )

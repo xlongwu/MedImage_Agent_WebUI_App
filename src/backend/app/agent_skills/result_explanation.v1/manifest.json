@@ -1,0 +1,10 @@
+{
+  "skill_id": "result_explanation.v1",
+  "version": "v1",
+  "allowed_actions": ["explain_result"],
+  "allowed_states": ["GOAL_SATISFIED", "SUCCEEDED", "HUMAN_HANDOFF", "CANCELED"],
+  "required_context_sections": ["policy", "execution_state", "latest_observation", "last_action_result", "budget"],
+  "output_schema_ref": "ActionEnvelope",
+  "max_bytes": 4096,
+  "content_hash": "3b96a375bbc28ddc3f750c258e7237eb1cf1cfa34e1c5488b2465c77f22f3da5"
+}

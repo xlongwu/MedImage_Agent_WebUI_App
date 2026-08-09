@@ -11,6 +11,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.backend.app.agent_skills.schemas import SkillContextRef
+
 AgentHarnessStatus = Literal[
     "READY",
     "RUNNING",
@@ -62,6 +64,8 @@ class ModelCallRecord(BaseModel):
     endpoint_class: str = Field(min_length=1, max_length=64)
     prompt_template_version: str = Field(min_length=1, max_length=128)
     context_hash: str = Field(min_length=1, max_length=128)
+    skill_hashes: tuple[str, ...] = Field(default_factory=tuple, max_length=3)
+    skill_error_codes: tuple[str, ...] = Field(default_factory=tuple, max_length=3)
     request_hash: str = Field(min_length=1, max_length=128)
     response_hash: str | None = Field(default=None, max_length=128)
     schema_valid: bool | None = None
@@ -153,6 +157,7 @@ class AgentHarnessStep(BaseModel):
     idempotency_key: str
     kind: AgentHarnessActionKind | None = None
     input_hash: str
+    skill_refs: tuple[SkillContextRef, ...] = Field(default_factory=tuple, max_length=3)
     output_hash: str | None = None
     observation_ref: str | None = Field(default=None, max_length=256)
     evaluation_ref: str | None = Field(default=None, max_length=256)
@@ -215,7 +220,8 @@ class AgentHarnessContext(BaseModel):
     policy_version: str = "agent-harness-policy-v2"
     redaction_policy_version: str = "agent-harness-redaction-v2"
     prompt_template_version: str = "agent-harness-prompt-v2"
-    skill_refs: tuple[str, ...] = ()
+    skill_refs: tuple[SkillContextRef, ...] = Field(default_factory=tuple, max_length=3)
+    skill_error_codes: tuple[str, ...] = Field(default_factory=tuple, max_length=3)
     omitted_fields: tuple[str, ...] = ()
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -226,7 +232,8 @@ class AgentHarnessContext(BaseModel):
             "policy_version": self.policy_version,
             "redaction_policy_version": self.redaction_policy_version,
             "prompt_template_version": self.prompt_template_version,
-            "skill_refs": list(self.skill_refs),
+            "skill_refs": [reference.model_dump(mode="json") for reference in self.skill_refs],
+            "skill_error_codes": list(self.skill_error_codes),
             "sections": self.sections.model_dump(mode="json"),
             "omitted_fields": list(self.omitted_fields),
         }

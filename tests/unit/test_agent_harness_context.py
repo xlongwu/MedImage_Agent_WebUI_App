@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+from src.backend.app.agent_skills.schemas import SkillContextRef
+from src.backend.app.planner.agent_model_adapter import (
+    DefaultAgentModelAdapter,
+    build_action_prompt,
+    serialize_context_v2,
+)
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleRecord
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_harness_context_service import (
     AgentContextLimitExceededError,
     HarnessContextBuilder,
     HarnessContextSources,
-)
-from src.backend.app.planner.agent_model_adapter import (
-    DefaultAgentModelAdapter,
-    build_action_prompt,
-    serialize_context_v2,
 )
 
 
@@ -90,11 +91,28 @@ def test_prompt_or_skill_version_invalidates_context_hash_without_reordering_sec
     first = builder.build(sources=HarnessContextSources(lifecycle=lifecycle, project=project))
     changed = builder.build(sources=HarnessContextSources(
         lifecycle=lifecycle, project=project, prompt_template_version="agent-harness-prompt-v3",
-        skill_refs=("planning_evidence_review.v1",),
+        skill_refs=(SkillContextRef(
+            skill_id="planning_evidence_review.v1", version="v1",
+            content_hash="a" * 64, sections=("goal",),
+        ),),
     ))
 
     assert first.context_hash != changed.context_hash
     assert tuple(changed.prompt_payload()["sections"]) == builder.SECTION_ORDER
+
+
+def test_skill_prompt_receives_only_manifest_allowed_context_sections() -> None:
+    context = HarnessContextBuilder().build(sources=HarnessContextSources(
+        lifecycle=_lifecycle(), project=_project({}),
+        skill_refs=(SkillContextRef(
+            skill_id="planning_evidence_review.v1", version="v1",
+            content_hash="a" * 64, sections=("goal", "policy"),
+        ),),
+    ))
+
+    serialized = serialize_context_v2(context.prompt_payload())
+
+    assert tuple(serialized["sections"]) == ("goal", "policy")
 
 
 def test_required_context_that_cannot_fit_stops_before_provider() -> None:

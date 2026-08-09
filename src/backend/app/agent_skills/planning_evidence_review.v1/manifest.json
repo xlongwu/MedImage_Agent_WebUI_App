@@ -1,0 +1,10 @@
+{
+  "skill_id": "planning_evidence_review.v1",
+  "version": "v1",
+  "allowed_actions": ["read_evidence", "draft_plan"],
+  "allowed_states": ["CREATED", "CONTEXT_READY", "PLAN_DRAFTED"],
+  "required_context_sections": ["goal", "policy", "project_evidence", "decision_state", "plan_state", "last_action_result", "budget"],
+  "output_schema_ref": "ActionEnvelope",
+  "max_bytes": 4096,
+  "content_hash": "85273e956445fac00630941924148ba22656f18659c0dc7f95f839e0bc1dd707"
+}

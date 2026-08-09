@@ -14,8 +14,8 @@ from src.backend.app.runtime.agent_harness_scheduler import AgentHarnessSchedule
 from src.backend.app.schemas.agent_harness import ActionEnvelope
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.desktop import ProjectDetail
-from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.agent_harness_context_service import HarnessContextBuilder
+from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 from tests.unit.test_agent_task_read_model import _terminal_evidence
@@ -72,6 +72,24 @@ def test_request_decision_is_persisted_and_waits_for_user(tmp_path) -> None:
     assert result.lifecycle.state == "WAITING_FOR_SCIENCE_DECISION"
     assert result.attempt.status == "WAITING_FOR_USER"
     assert store.list_agent_harness_steps(result.attempt.attempt_id)[0].kind == "request_decision"
+
+
+def test_planning_skill_refs_and_hashes_are_persisted_without_markdown(tmp_path) -> None:
+    store = _store(tmp_path)
+    lifecycle = _created(store)
+    adapter = Adapter(ActionEnvelope(kind="read_evidence", reason="Read evidence", expected_state="CREATED"))
+    service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter)
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
+
+    result = service.run_one(lifecycle=lifecycle, actor="user")
+
+    context = store.get_agent_harness_context(result.attempt.context_hash)
+    step = store.list_agent_harness_steps(result.attempt.attempt_id)[0]
+    assert context is not None
+    assert [ref.skill_id for ref in context.skill_refs] == ["planning_evidence_review.v1"]
+    assert [ref.skill_id for ref in step.skill_refs] == ["planning_evidence_review.v1"]
+    assert step.model_calls[0].skill_hashes == (context.skill_refs[0].content_hash,)
+    assert "Do not infer missing data" not in str(context.model_dump())
 
 
 def test_invalid_or_stale_action_stops_without_second_model_call(tmp_path) -> None:

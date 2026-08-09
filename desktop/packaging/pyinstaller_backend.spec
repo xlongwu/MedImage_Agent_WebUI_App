@@ -23,6 +23,17 @@ if _library_bin.is_dir():
 
 # Runtime data files collected by reviewed optional backends.
 _datas = []
+_agent_skill_root = repo_root / "src" / "backend" / "app" / "agent_skills"
+for _skill_id in (
+    "planning_evidence_review.v1",
+    "result_explanation.v1",
+    "recovery_review.v1",
+):
+    for _resource_name in ("manifest.json", "SKILL.md"):
+        _resource_path = _agent_skill_root / _skill_id / _resource_name
+        if not _resource_path.is_file():
+            raise RuntimeError(f"Required Agent Skill resource is missing: {_resource_path}")
+        _datas.append((str(_resource_path), f"src/backend/app/agent_skills/{_skill_id}"))
 _acpc_reference_dir = repo_root / "src" / "backend" / "app" / "native_preproc" / "resources" / "acpc_reference"
 for _reference_file in ("avg152T1.nii", "spm12_avg152_t1_ras.json"):
     _reference_path = _acpc_reference_dir / _reference_file

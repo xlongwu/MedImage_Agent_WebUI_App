@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-import re
 from uuid import uuid4
 
+from src.backend.app.agent_skills.loader import AgentSkillLoader
 from src.backend.app.core.config_schema import AgentHarnessConfig
 from src.backend.app.planner.agent_model_adapter import (
     ActionCallMetadata,
@@ -26,7 +27,11 @@ from src.backend.app.schemas.agent_harness import (
     AgentHarnessStep,
     ModelCallRecord,
 )
-from src.backend.app.schemas.agent_lifecycle import DecisionItem, PendingDecisionBatch, PendingDecisionOption
+from src.backend.app.schemas.agent_lifecycle import (
+    DecisionItem,
+    PendingDecisionBatch,
+    PendingDecisionOption,
+)
 from src.backend.app.services.agent_evidence_service import AgentEvidenceService
 from src.backend.app.services.agent_harness_context_service import (
     AgentContextLimitExceededError,
@@ -88,6 +93,7 @@ class AgentHarnessService:
         config: AgentHarnessConfig,
         adapter: AgentModelAdapter | None = None,
         context_builder: HarnessContextBuilder | None = None,
+        skill_loader: AgentSkillLoader | None = None,
         draft_plan: Callable[..., object] | None = None,
         recovery_proposer: Callable[..., object] | None = None,
         now: Callable[[], datetime] | None = None,
@@ -96,6 +102,7 @@ class AgentHarnessService:
         self.config = config
         self.adapter = adapter or DefaultAgentModelAdapter()
         self.context_builder = context_builder or HarnessContextBuilder()
+        self.skill_loader = skill_loader or AgentSkillLoader()
         self.draft_plan = draft_plan
         self.recovery_proposer = recovery_proposer
         self.now = now or (lambda: datetime.now(UTC))
@@ -180,11 +187,19 @@ class AgentHarnessService:
         run_link = self._run_link(lifecycle)
         last_step = self._last_step(claimed)
         try:
-            built_context = self.context_builder.build(sources=HarnessContextSources(
+            base_context = self.context_builder.build(sources=HarnessContextSources(
                 lifecycle=lifecycle, project=project, evidence_snapshot=evidence,
                 reviewed_plan=reviewed_plan, run_link=run_link, observation=observation,
                 evaluation=evaluation, recovery_proposal=proposal, result_summary=result_summary,
                 last_step=last_step, attempt=claimed,
+            ))
+            skills = self.skill_loader.load_for_state(state=lifecycle.state, context=base_context)
+            built_context = self.context_builder.build(sources=HarnessContextSources(
+                lifecycle=lifecycle, project=project, evidence_snapshot=evidence,
+                reviewed_plan=reviewed_plan, run_link=run_link, observation=observation,
+                evaluation=evaluation, recovery_proposal=proposal, result_summary=result_summary,
+                last_step=last_step, attempt=claimed, skill_refs=skills.references,
+                skill_error_codes=skills.error_codes,
             ))
         except AgentContextLimitExceededError:
             return HarnessRunResult(
@@ -215,7 +230,7 @@ class AgentHarnessService:
             step_id=f"harness_step_{uuid4().hex}", attempt_id=claimed.attempt_id,
             project_id=claimed.project_id, step_no=claimed.next_step_no, idempotency_key=key,
             input_hash=input_hash, validation_result="error", state_before=lifecycle.state,
-            started_at=self.now(), summary="Model action requested.",
+            skill_refs=context.skill_refs, started_at=self.now(), summary="Model action requested.",
         )
         self.store.add_agent_harness_step(step)
         try:
@@ -439,11 +454,14 @@ class AgentHarnessService:
         """Persist a call-start row before invoking an untrusted provider."""
         started = self.now()
         phase = self._phase_for(lifecycle_state=step.state_before)
+        rendered_skills = self.skill_loader.render(context.skill_refs)
         pending_call = ModelCallRecord(
             call_id=f"harness_call_{uuid4().hex}", step_id=step.step_id,
             attempt_id=attempt.attempt_id, provider=attempt.provider_ref.strip().casefold()[:64] or "unknown",
             phase=phase, endpoint_class="rule_based" if attempt.provider_ref == "rule_based" else "chat_completions",
             prompt_template_version=context.prompt_template_version, context_hash=context.context_hash,
+            skill_hashes=tuple(reference.content_hash for reference in context.skill_refs),
+            skill_error_codes=tuple(sorted(set(context.skill_error_codes + rendered_skills.error_codes))),
             request_hash=stable_hash({
                 "attempt_id": attempt.attempt_id, "step_id": step.step_id,
                 "context_hash": context.context_hash, "provider": attempt.provider_ref,
@@ -575,7 +593,9 @@ class AgentHarnessService:
             evaluation = self._record("get_goal_evaluation", lifecycle.goal_evaluation_id)
             if observation is None or evaluation is None:
                 raise RuntimeError("AGENT_EXPLANATION_EVIDENCE_REQUIRED")
-            from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
+            from src.backend.app.services.agent_task_result_summary import (
+                AgentTaskResultSummaryService,
+            )
 
             explanation = AgentTaskResultSummaryService().build_explanation(
                 lifecycle=lifecycle,
@@ -926,7 +946,9 @@ class AgentHarnessService:
         if observation is None or evaluation is None:
             return None
         try:
-            from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
+            from src.backend.app.services.agent_task_result_summary import (
+                AgentTaskResultSummaryService,
+            )
 
             return AgentTaskResultSummaryService().build(
                 lifecycle=lifecycle,
