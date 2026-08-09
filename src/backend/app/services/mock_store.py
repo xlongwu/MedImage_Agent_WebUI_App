@@ -2573,6 +2573,11 @@ class SQLiteDesktopStore:
             self._insert_agent_lifecycle_event(conn, event)
         return record
 
+    def add_agent_lifecycle_event(self, event: AgentLifecycleEvent) -> AgentLifecycleEvent:
+        with self._lock, self._connect() as conn:
+            self._insert_agent_lifecycle_event(conn, event)
+        return event
+
     def list_agent_lifecycle_events(
         self,
         lifecycle_id: str,

@@ -209,6 +209,7 @@ class AgentTaskReadModel:
 
         approval_summary = self._approval_summary(plan)
         result_summary = self._result_summary(lifecycle, observation, evaluation)
+        result_explanation = self._result_explanation(lifecycle, observation, evaluation)
         public_state = _STATE_MAP.get(state, "needs_attention")
         if state in {"GOAL_SATISFIED", "SUCCEEDED"} and public_state == "completed" and (
             result_summary is None or result_summary.outcome != "succeeded"
@@ -263,6 +264,7 @@ class AgentTaskReadModel:
             decision_batch=self._decision_batch(lifecycle),
             approval_summary=approval_summary,
             result_summary=result_summary,
+            result_explanation=result_explanation,
             recovery=recovery,
             evidence_links=self._evidence_links(lifecycle, observation, evaluation),
             technical_details=technical,
@@ -598,6 +600,43 @@ class AgentTaskReadModel:
             plan_hash_before=pending.plan_hash_before,
             expires_at=pending.expires_at,
         )
+
+    def _result_explanation(self, lifecycle, observation, evaluation):
+        if observation is None or evaluation is None:
+            return None
+        generated_text = None
+        generated_text_rejected = False
+        get_attempt = getattr(self.store, "get_agent_harness_attempt", None)
+        list_steps = getattr(self.store, "list_agent_harness_steps", None)
+        if callable(get_attempt) and callable(list_steps):
+            attempt = get_attempt(lifecycle.lifecycle_id)
+            if attempt is not None and attempt.project_id == lifecycle.project_id:
+                steps = list_steps(attempt.attempt_id)
+                explanation_step = next(
+                    (
+                        step
+                        for step in reversed(steps)
+                        if step.kind == "explain_result" and step.validation_result == "accepted"
+                    ),
+                    None,
+                )
+                if explanation_step is not None:
+                    generated_text = explanation_step.generated_text
+                    generated_text_rejected = (
+                        explanation_step.action_result_code == "AGENT_EXPLANATION_CONFLICT"
+                    )
+        try:
+            from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
+
+            return AgentTaskResultSummaryService().build_explanation(
+                lifecycle=lifecycle,
+                observation=observation,
+                evaluation=evaluation,
+                generated_text=generated_text,
+                generated_text_rejected=generated_text_rejected,
+            )
+        except SafetyError:
+            return None
 
     @staticmethod
     def _current_action(public_state: str, internal_state: str) -> str:

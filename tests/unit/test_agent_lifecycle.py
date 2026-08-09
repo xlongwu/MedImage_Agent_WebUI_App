@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 import src.backend.app.services.agent_orchestrator as agent_orchestrator_module
 from src.backend.app.api.dependencies import get_project_store
@@ -14,7 +15,7 @@ from src.backend.app.runtime.execution_gateway import (
     ExecutionGateway,
     current_allowlist_hash,
 )
-from src.backend.app.schemas.agent_lifecycle import LifecycleObservation
+from src.backend.app.schemas.agent_lifecycle import AgentLifecycleRecord
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
@@ -206,15 +207,17 @@ def test_illegal_replayed_missing_ticket_and_cross_project_commands_are_rejected
         )
 
 
-def test_legacy_embedded_observation_cannot_claim_metadata_only_success():
-    legacy = LifecycleObservation(
-        summary_status="SUCCESS",
-        node_states_consistent=True,
-        artifacts_reloadable=True,
-        numerical_artifacts_present=False,
-        capability_level="metadata_only",
-    )
-    assert legacy.supports_success is False
+def test_legacy_embedded_observation_payload_is_rejected_at_schema_cutover():
+    with pytest.raises(ValidationError, match="observation"):
+        AgentLifecycleRecord.model_validate(
+            {
+                "schema_version": 5,
+                "lifecycle_id": "legacy-task",
+                "project_id": "project-1",
+                "state": "SUCCEEDED",
+                "observation": {"summary_status": "SUCCESS"},
+            }
+        )
 
 
 def test_retry_is_quota_risk_and_contract_bound(tmp_path):

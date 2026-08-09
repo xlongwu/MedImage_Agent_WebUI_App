@@ -43,3 +43,17 @@ hash。该 fallback 不复用旧 Approval Summary；schema、安全或预算拒�
 
 前端只显示后端只读 `harness_summary`（预算、状态、下一步、让出次数、实际 fallback
 路径、停止原因和最新脱敏步骤摘要），不推断执行成功，也不会从 GET 触发模型调用。
+
+## 终态 Observation 与结果说明
+
+- terminal run 先由确定性 Reconciler 依次持久化 Observation、Goal Evaluation，必要时
+  生成 Recovery Proposal；之后才发送 `run_reconciled` wake。wake 以 lifecycle、run、
+  observation、evaluation 和 recovery proposal 的 hash 组成指纹，同一指纹只处理一次。
+- Reflector 只能读取这些结构化记录并选择解释、补读允许证据、请求既有 recovery service
+  或转人工；不能改写 evaluation、outcome、capability、artifact 或审批范围。
+- `explain_result` 重新从绑定的 Observation 和 Goal Evaluation 计算 outcome、受试者计数、
+  artifact/reload 状态、criterion 和限制。模型生成文本与这些字段分离；冲突文本以
+  `AGENT_EXPLANATION_CONFLICT` 丢弃，确定性摘要仍可读取。
+- 每个 Harness step 仅保存 Observation、Evaluation、Recovery Proposal 和 explanation 的
+  引用/hash，不复制其正文；wake 和 explanation 都写入 lifecycle 审计事件。Recovery 仍只
+  是 proposal，所有 retry、重规划或 scope 变化仍要经过新的显式审批。

@@ -1,7 +1,7 @@
 import { Badge, Button, Card } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { MessageKey } from "../../../i18n/messages/en";
-import type { AgentTaskResultSummary } from "../../../lib/types/agentTask";
+import type { AgentResultExplanation, AgentTaskResultSummary } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
 
 const RESULT_MESSAGE_KEYS: Record<string, MessageKey> = {
@@ -29,9 +29,11 @@ export function getAgentResultMessageKey(value: string): MessageKey | undefined 
 export function ResultSummaryCard({
   onOpenRuns,
   result,
+  explanation,
 }: {
   onOpenRuns: () => void;
   result: AgentTaskResultSummary;
+  explanation?: AgentResultExplanation | null;
 }) {
   const { t } = useI18n();
   const isPlanOnly = result.artifacts.some(
@@ -69,6 +71,15 @@ export function ResultSummaryCard({
         </Badge>
       </div>
       <p>{summary}</p>
+      {explanation?.generated_text_status === "accepted" && explanation.generated_text ? (
+        <div className={styles.limitations}>
+          <strong>{t("agent.result.generatedExplanation")}</strong>
+          <p>{explanation.generated_text}</p>
+        </div>
+      ) : null}
+      {explanation?.generated_text_status === "conflict_rejected" ? (
+        <p className={styles.evidenceMissing}>{t("agent.result.generatedConflict")}</p>
+      ) : null}
       <div className={styles.resultMetrics}>
         {isPlanOnly ? (
           <>

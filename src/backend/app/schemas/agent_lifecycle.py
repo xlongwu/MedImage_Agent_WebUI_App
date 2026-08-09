@@ -101,27 +101,6 @@ class PendingDecisionBatch(BaseModel):
         return self
 
 
-class LifecycleObservation(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    summary_status: str
-    node_states_consistent: bool = False
-    artifacts_reloadable: bool = False
-    numerical_artifacts_present: bool = False
-    capability_level: str = "unavailable"
-    warnings: tuple[str, ...] = ()
-    evidence: dict[str, Any] = Field(default_factory=dict)
-
-    @property
-    def supports_success(self) -> bool:
-        return (
-            self.summary_status.upper() in {"SUCCESS", "COMPLETED"}
-            and self.node_states_consistent
-            and self.artifacts_reloadable
-            and self.capability_level in {"computed", "validated"}
-        )
-
-
 class RetryProposal(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -138,9 +117,11 @@ class RetryProposal(BaseModel):
 
 
 class AgentLifecycleRecord(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    """Canonical task state, bound only to separately persisted observations."""
 
-    schema_version: Literal[4] = 4
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[5] = 5
     lifecycle_id: str
     project_id: str
     state: AgentLifecycleState = "CREATED"
@@ -170,9 +151,6 @@ class AgentLifecycleRecord(BaseModel):
     retry_quota: int = 0
     observation_id: str | None = None
     observation_summary: ObservationSummary | None = None
-    # v1 compatibility only. New commands never accept or persist this field.
-    observation: LifecycleObservation | None = None
-    legacy_observation_needs_review: bool = False
     retry_proposal: RetryProposal | None = None
     last_error: str | None = None
     canceled_at: datetime | None = None
@@ -181,15 +159,6 @@ class AgentLifecycleRecord(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_command_id: str | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def mark_legacy_observation_unverified(cls, value: Any) -> Any:
-        if isinstance(value, dict) and value.get("observation") and not value.get("observation_id"):
-            value = dict(value)
-            value["legacy_observation_needs_review"] = True
-        return value
-
 
 class AgentLifecycleEvent(BaseModel):
     model_config = ConfigDict(frozen=True)

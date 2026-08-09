@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from src.backend.app.core.config_schema import AgentHarnessConfig
 from src.backend.app.runtime.agent_harness_scheduler import AgentHarnessScheduler
 from src.backend.app.schemas.agent_harness import ActionEnvelope
+from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.mock_store import SQLiteDesktopStore
+from tests.unit.test_agent_task_read_model import _terminal_evidence
 
 
 class Adapter:
@@ -275,3 +279,76 @@ def test_startup_recovery_skips_waiting_and_canceled_attempts(tmp_path) -> None:
     assert store.get_agent_harness_attempt(waiting_lifecycle.lifecycle_id).status == "WAITING_FOR_USER"
     assert store.get_agent_harness_attempt(canceled_lifecycle.lifecycle_id).attempt_id == canceled_attempt.attempt_id
     assert store.get_agent_harness_attempt(canceled_lifecycle.lifecycle_id).status == "STOPPED"
+
+
+def test_run_reconciled_reflector_persists_only_safe_result_explanation(tmp_path) -> None:
+    store = _store(tmp_path)
+    observation, evaluation = _terminal_evidence(reload_status="failed", completeness="partial")
+    now = datetime.now(UTC)
+    lifecycle = AgentLifecycleRecord(
+        lifecycle_id="task-1",
+        project_id="project-1",
+        state="GOAL_SATISFIED",
+        reviewed_plan_id="plan-1",
+        execution_ticket_id="ticket-1",
+        run_id="run-1",
+        observation_id=observation.observation_id,
+        goal_evaluation_id=evaluation.goal_evaluation_id,
+        created_at=now,
+        updated_at=now,
+    )
+    store.create_agent_lifecycle(
+        lifecycle,
+        AgentLifecycleEvent(
+            event_id="event-1",
+            lifecycle_id=lifecycle.lifecycle_id,
+            project_id=lifecycle.project_id,
+            command_id="fixture",
+            actor="test",
+            source_command="fixture",
+            occurred_at=now,
+            from_state=None,
+            to_state="GOAL_SATISFIED",
+            observation_id=observation.observation_id,
+            goal_evaluation_id=evaluation.goal_evaluation_id,
+        ),
+    )
+    store.add_observation(observation)
+    store.add_goal_evaluation(evaluation)
+    service = AgentHarnessService(
+        store,
+        config=AgentHarnessConfig(enabled=True),
+        adapter=Adapter(
+            ActionEnvelope(
+                kind="explain_result",
+                reason="Explain deterministic evidence",
+                expected_state="GOAL_SATISFIED",
+                payload={"generated_text": "The run succeeded and is fully validated."},
+            )
+        ),
+    )
+    attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
+
+    result = service.run_until_blocked(
+        lifecycle=lifecycle,
+        actor="system",
+        wake_reason="run_reconciled",
+        wake_fingerprint="terminal-evidence-hash",
+        lease_owner="reflector",
+    )
+
+    assert result.outcome == "finished"
+    assert result.attempt.status == "FINISHED"
+    assert result.attempt.last_wake_fingerprint == "terminal-evidence-hash"
+    step = store.list_agent_harness_steps(attempt.attempt_id)[0]
+    assert step.kind == "explain_result"
+    assert step.generated_text is None
+    assert step.action_result_code == "AGENT_EXPLANATION_CONFLICT"
+    assert step.observation_ref == observation.observation_id
+    assert step.evaluation_ref == evaluation.goal_evaluation_id
+    explanation_events = [
+        item
+        for item in store.list_agent_lifecycle_events(lifecycle.lifecycle_id)
+        if item.source_command == "harness_result_explained"
+    ]
+    assert explanation_events[0].details["result_explanation_hash"] == step.result_explanation_hash

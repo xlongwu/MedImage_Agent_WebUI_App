@@ -259,7 +259,11 @@ export function AgentWorkspaceView({
             />
           )}
           {task.result_summary ? (
-            <ResultSummaryCard onOpenRuns={onOpenRuns} result={task.result_summary} />
+            <ResultSummaryCard
+              onOpenRuns={onOpenRuns}
+              result={task.result_summary}
+              explanation={task.result_explanation}
+            />
           ) : null}
           {task.state === "completed" && task.outcome !== "canceled" && !task.result_summary ? (
             <EmptyState

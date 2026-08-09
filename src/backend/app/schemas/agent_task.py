@@ -200,6 +200,35 @@ class AgentTaskResultSummary(BaseModel):
     artifacts: tuple[AgentTaskArtifactSummary, ...] = ()
 
 
+class AgentResultCriterion(BaseModel):
+    """Read-only criterion outcome copied from the deterministic evaluator."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    criterion_id: str
+    status: Literal["passed", "failed", "indeterminate"]
+    reason_code: str
+    evidence_ids: tuple[str, ...] = ()
+
+
+class AgentResultExplanation(BaseModel):
+    """Structured result explanation; generated prose never controls the outcome."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    outcome: AgentTaskOutcome
+    completed_subjects: int | None = Field(default=None, ge=0)
+    failed_subjects: int | None = Field(default=None, ge=0)
+    excluded_subjects: int | None = Field(default=None, ge=0)
+    total_subjects: int | None = Field(default=None, ge=0)
+    artifact_refs: tuple[AgentTaskArtifactSummary, ...] = ()
+    criteria: tuple[AgentResultCriterion, ...] = ()
+    limitations: tuple[str, ...] = ()
+    recommended_action: str | None = None
+    generated_text: str | None = Field(default=None, max_length=2048)
+    generated_text_status: Literal["not_requested", "accepted", "conflict_rejected"] = "not_requested"
+
+
 class AgentTaskRecoverySummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -279,6 +308,7 @@ class AgentTaskResponse(BaseModel):
     decision_batch: AgentTaskDecisionBatch | None = None
     approval_summary: AgentTaskApprovalSummary | None = None
     result_summary: AgentTaskResultSummary | None = None
+    result_explanation: AgentResultExplanation | None = None
     recovery: AgentTaskRecoverySummary | None = None
     evidence_links: tuple[AgentTaskEvidenceLink, ...] = ()
     technical_details: AgentTaskTechnicalDetails | None = None

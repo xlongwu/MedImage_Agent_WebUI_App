@@ -43,6 +43,15 @@ class HarnessLoopResult:
     reason: str | None = None
 
 
+@dataclass(frozen=True)
+class HarnessActionResult:
+    lifecycle: object
+    attempt_status: str
+    terminal_reason: str | None
+    result_explanation: object | None = None
+    action_result_code: str | None = None
+
+
 class AgentHarnessService:
     """Run at most one advice-only step; it has no execution dependencies."""
 
@@ -116,7 +125,15 @@ class AgentHarnessService:
         attempt = self.store.get_agent_harness_attempt(lifecycle.lifecycle_id)
         if attempt is None:
             return HarnessRunResult(lifecycle=lifecycle, attempt=None)
-        if lifecycle.project_id != attempt.project_id or lifecycle.state in {"CANCELED", "SUCCEEDED", "GOAL_SATISFIED", "HUMAN_HANDOFF"}:
+        terminal_reflector_wake = (
+            attempt.status == "READY"
+            and attempt.last_wake_reason == "run_reconciled"
+            and lifecycle.state in {"SUCCEEDED", "GOAL_SATISFIED", "HUMAN_HANDOFF"}
+        )
+        if lifecycle.project_id != attempt.project_id or (
+            lifecycle.state in {"CANCELED", "SUCCEEDED", "GOAL_SATISFIED", "HUMAN_HANDOFF"}
+            and not terminal_reflector_wake
+        ):
             return HarnessRunResult(lifecycle=lifecycle, attempt=self.stop(lifecycle_id=lifecycle.lifecycle_id, reason="LIFECYCLE_TERMINAL"))
         if attempt.status in {"FINISHED", "STOPPED", "FAILED", "WAITING_FOR_USER"}:
             return HarnessRunResult(lifecycle=lifecycle, attempt=attempt)
@@ -128,7 +145,24 @@ class AgentHarnessService:
         project = self.store.get_project(lifecycle.project_id)
         evidence_hash = str((lifecycle.command_context or {}).get("evidence_snapshot_hash") or "")
         evidence = self.store.get_agent_evidence_snapshot(evidence_hash) if evidence_hash and hasattr(self.store, "get_agent_evidence_snapshot") else None
-        context = self.context_builder.build(lifecycle=lifecycle, project=project, evidence_snapshot=evidence)
+        observation = self._record("get_observation", lifecycle.observation_id)
+        evaluation = self._record("get_goal_evaluation", lifecycle.goal_evaluation_id)
+        proposal = self._record("get_recovery_proposal", lifecycle.recovery_proposal_id)
+        result_summary = self._result_summary(lifecycle, observation, evaluation)
+        persisted_context = None
+        get_context = getattr(self.store, "get_agent_harness_context", None)
+        if claimed.context_hash and callable(get_context):
+            persisted_context = get_context(claimed.context_hash)
+        context = persisted_context or self.context_builder.build(
+            lifecycle=lifecycle,
+            project=project,
+            evidence_snapshot=evidence,
+            observation=observation,
+            evaluation=evaluation,
+            recovery_proposal=proposal,
+            result_summary=result_summary,
+            attempt=claimed,
+        )
         self.store.add_agent_harness_context(context)
         claimed = self._with_attempt(claimed, context_hash=context.context_hash)
         claimed = self.store.update_agent_harness_attempt(
@@ -176,20 +210,36 @@ class AgentHarnessService:
             return HarnessRunResult(lifecycle=lifecycle, attempt=self._stop_claimed(claimed, code))
 
         try:
-            updated_lifecycle, next_status, terminal_reason = self._apply(envelope, lifecycle, actor)
+            applied = self._apply(envelope, lifecycle, actor)
+            explanation = applied.result_explanation
             completed = step.model_copy(update={
                 "kind": envelope.kind, "output_hash": stable_hash(envelope.model_dump(mode="json")),
                 "requested_capability": envelope.kind, "validation_result": "accepted",
                 "model_call_count": model_call_count,
-                "state_after": updated_lifecycle.state, "summary": self._summary(envelope.reason),
+                "state_after": applied.lifecycle.state, "summary": self._summary(envelope.reason),
+                "observation_ref": lifecycle.observation_id,
+                "evaluation_ref": lifecycle.goal_evaluation_id,
+                "recovery_proposal_ref": lifecycle.recovery_proposal_id,
+                "result_explanation_hash": (
+                    stable_hash(explanation.model_dump(mode="json")) if explanation is not None else None
+                ),
+                "generated_text": explanation.generated_text if explanation is not None else None,
+                "action_result_code": applied.action_result_code,
                 "completed_at": self.now(),
             })
             self.store.update_agent_harness_step(completed)
+            if explanation is not None:
+                self._record_result_explanation_event(
+                    lifecycle=applied.lifecycle,
+                    step=completed,
+                    explanation=explanation,
+                )
             finished = self._complete_claim(
-                claimed, status=next_status, terminal_reason=terminal_reason,
+                claimed, status=applied.attempt_status, terminal_reason=applied.terminal_reason,
                 model_call_increment=model_call_count, proposal_increment=1,
+                recovery_attempt_increment=1 if envelope.kind == "propose_recovery" else 0,
             )
-            return HarnessRunResult(lifecycle=updated_lifecycle, attempt=finished)
+            return HarnessRunResult(lifecycle=applied.lifecycle, attempt=finished)
         except Exception:
             completed = step.model_copy(update={"completed_at": self.now(), "error_code": "AGENT_HARNESS_STEP_FAILED", "summary": "Harness step stopped safely."})
             self.store.update_agent_harness_step(completed)
@@ -202,6 +252,7 @@ class AgentHarnessService:
         actor: str,
         wake_reason: str,
         lease_owner: str,
+        wake_fingerprint: str | None = None,
     ) -> HarnessLoopResult:
         """Advance only bounded, independently committed Harness steps.
 
@@ -216,7 +267,7 @@ class AgentHarnessService:
         if attempt is None:
             return HarnessLoopResult("stopped", steps_run, current_lifecycle, None, "ATTEMPT_MISSING")
         if attempt.status == "READY":
-            attempt = self._mark_wake(attempt, wake_reason)
+            attempt = self._mark_wake(attempt, wake_reason, wake_fingerprint)
 
         while True:
             current_lifecycle = self.store.get_agent_lifecycle(lifecycle.lifecycle_id) or current_lifecycle
@@ -257,10 +308,18 @@ class AgentHarnessService:
         if lifecycle.state in {"RUNNING", "RETRYING", "RECOVERING"}:
             return "waiting_for_runtime", lifecycle.state
         if lifecycle.state == "HUMAN_HANDOFF":
+            if attempt.status == "FINISHED":
+                return "handoff", attempt.terminal_reason
+            if attempt.status == "READY" and attempt.last_wake_reason == "run_reconciled":
+                return None
             return "handoff", lifecycle.state
         if lifecycle.state == "CANCELED":
             return "canceled", lifecycle.state
         if lifecycle.state in {"GOAL_SATISFIED", "SUCCEEDED"}:
+            if attempt.status == "FINISHED":
+                return "finished", attempt.terminal_reason
+            if attempt.status == "READY" and attempt.last_wake_reason == "run_reconciled":
+                return None
             return "finished", lifecycle.state
         if attempt.status == "WAITING_FOR_USER":
             return "waiting_for_user", attempt.status
@@ -304,8 +363,10 @@ class AgentHarnessService:
             raise ValueError("AGENT_HARNESS_REFERENCE_DENIED")
         if envelope.kind == "request_decision":
             self._validate_decision_payload(envelope.payload)
+        if envelope.kind == "explain_result" and set(envelope.payload) - {"generated_text"}:
+            raise ValueError("AGENT_HARNESS_EXPLANATION_PAYLOAD_INVALID")
 
-    def _apply(self, envelope: ActionEnvelope, lifecycle, actor: str) -> tuple[object, str, str | None]:
+    def _apply(self, envelope: ActionEnvelope, lifecycle, actor: str) -> HarnessActionResult:
         if envelope.kind == "draft_plan":
             if self.draft_plan is None:
                 raise RuntimeError("AGENT_HARNESS_DRAFT_PLAN_UNAVAILABLE")
@@ -313,7 +374,7 @@ class AgentHarnessService:
             status = "WAITING_FOR_USER" if result.state in {"WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"} else "READY"
             if result.state in {"GOAL_SATISFIED", "SUCCEEDED", "HUMAN_HANDOFF", "CANCELED"}:
                 status = "FINISHED"
-            return result, status, None
+            return HarnessActionResult(result, status, None)
         if envelope.kind == "request_decision":
             decision = self._decision_from_payload(envelope.payload, lifecycle)
             state = "WAITING_FOR_SCIENCE_DECISION" if decision.items[0].kind not in {"missing_input", "goal_revision"} else "WAITING_FOR_INPUT"
@@ -328,15 +389,42 @@ class AgentHarnessService:
                 command_id=f"harness:{lifecycle.lifecycle_id}:decision:{decision.batch_id}", actor=actor,
                 source_command="harness_decision_required", updates={"pending_decision_batch": decision}, reason=decision.items[0].impact,
             )
-            return result, "WAITING_FOR_USER", None
+            return HarnessActionResult(result, "WAITING_FOR_USER", None)
         if envelope.kind == "propose_recovery":
             if self.recovery_proposer is None:
                 raise RuntimeError("AGENT_HARNESS_RECOVERY_UNAVAILABLE")
             result = self.recovery_proposer(lifecycle=lifecycle, actor=actor)
-            return result, "READY", None
-        # Evidence/explanation are non-mutating, and finish only terminates the attempt.
-        return lifecycle, "FINISHED" if envelope.kind in {"finish", "explain_result"} else "READY", (
-            "MODEL_FINISHED" if envelope.kind == "finish" else None
+            lifecycle_result = result[0] if isinstance(result, tuple) else result
+            return HarnessActionResult(lifecycle_result, "READY", None)
+        if envelope.kind == "explain_result":
+            observation = self._record("get_observation", lifecycle.observation_id)
+            evaluation = self._record("get_goal_evaluation", lifecycle.goal_evaluation_id)
+            if observation is None or evaluation is None:
+                raise RuntimeError("AGENT_EXPLANATION_EVIDENCE_REQUIRED")
+            from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
+
+            explanation = AgentTaskResultSummaryService().build_explanation(
+                lifecycle=lifecycle,
+                observation=observation,
+                evaluation=evaluation,
+                generated_text=envelope.payload.get("generated_text"),
+            )
+            return HarnessActionResult(
+                lifecycle,
+                "FINISHED",
+                None,
+                result_explanation=explanation,
+                action_result_code=(
+                    "AGENT_EXPLANATION_CONFLICT"
+                    if explanation.generated_text_status == "conflict_rejected"
+                    else None
+                ),
+            )
+        # Evidence is non-mutating, and finish only terminates the attempt.
+        return HarnessActionResult(
+            lifecycle,
+            "FINISHED" if envelope.kind == "finish" else "READY",
+            "MODEL_FINISHED" if envelope.kind == "finish" else None,
         )
 
     def _claim(self, attempt: AgentHarnessAttempt, owner: str) -> AgentHarnessAttempt | None:
@@ -381,12 +469,14 @@ class AgentHarnessService:
         terminal_reason: str | None,
         model_call_increment: int,
         proposal_increment: int,
+        recovery_attempt_increment: int = 0,
     ) -> AgentHarnessAttempt:
         updated = self._with_attempt(
             attempt, status=status, terminal_reason=terminal_reason,
             next_step_no=attempt.next_step_no + 1,
             model_calls_used=attempt.model_calls_used + model_call_increment,
             tool_proposals_used=attempt.tool_proposals_used + proposal_increment,
+            recovery_attempts_used=attempt.recovery_attempts_used + recovery_attempt_increment,
             last_progress_at=self.now(),
             lease_owner=None, lease_expires_at=None,
         )
@@ -415,8 +505,17 @@ class AgentHarnessService:
         )
         return self.store.update_agent_harness_attempt(updated, expected_status=attempt.status)
 
-    def _mark_wake(self, attempt: AgentHarnessAttempt, wake_reason: str) -> AgentHarnessAttempt:
-        updated = self._with_attempt(attempt, last_wake_reason=wake_reason[:128])
+    def _mark_wake(
+        self,
+        attempt: AgentHarnessAttempt,
+        wake_reason: str,
+        wake_fingerprint: str | None,
+    ) -> AgentHarnessAttempt:
+        updated = self._with_attempt(
+            attempt,
+            last_wake_reason=wake_reason[:128],
+            last_wake_fingerprint=wake_fingerprint,
+        )
         return self.store.update_agent_harness_attempt(
             updated,
             expected_status="READY",
@@ -523,6 +622,40 @@ class AgentHarnessService:
 
     def _with_attempt(self, attempt: AgentHarnessAttempt, **updates) -> AgentHarnessAttempt:
         return attempt.model_copy(update={**updates, "updated_at": self.now()})
+
+    def _record(self, name: str, record_id: str | None):
+        getter = getattr(self.store, name, None)
+        return getter(record_id) if callable(getter) and record_id else None
+
+    def _record_result_explanation_event(self, *, lifecycle, step: AgentHarnessStep, explanation) -> None:
+        self.orchestrator.record_event(
+            project_id=lifecycle.project_id,
+            lifecycle_id=lifecycle.lifecycle_id,
+            command_id=f"harness:{step.step_id}:result-explanation",
+            actor="system-harness",
+            source_command="harness_result_explained",
+            details={
+                "result_explanation_hash": step.result_explanation_hash,
+                "observation_ref": step.observation_ref,
+                "evaluation_ref": step.evaluation_ref,
+                "generated_text_status": explanation.generated_text_status,
+            },
+        )
+
+    @staticmethod
+    def _result_summary(lifecycle, observation, evaluation):
+        if observation is None or evaluation is None:
+            return None
+        try:
+            from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
+
+            return AgentTaskResultSummaryService().build(
+                lifecycle=lifecycle,
+                observation=observation,
+                evaluation=evaluation,
+            )
+        except Exception:
+            return None
 
     @staticmethod
     def _summary(reason: str) -> str:

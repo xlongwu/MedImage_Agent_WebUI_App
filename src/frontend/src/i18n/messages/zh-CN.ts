@@ -121,6 +121,8 @@ export const messagesZhCn = {
   "agent.scienceChanges": "科学选择",
   "agent.limitations": "限制",
   "agent.resultSummary": "结果摘要",
+  "agent.result.generatedExplanation": "基于证据的说明",
+  "agent.result.generatedConflict": "生成的说明与已记录证据冲突，未予显示。",
   "agent.result.satisfied.title": "研究目标已满足",
   "agent.result.satisfied.summary": "完整、已登记且可重载的数值证据支持该研究目标。",
   "agent.result.notSatisfied.title": "研究目标未完全满足",

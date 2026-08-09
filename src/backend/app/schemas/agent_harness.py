@@ -68,11 +68,13 @@ class AgentHarnessAttempt(BaseModel):
     next_step_no: int = Field(default=1, ge=1)
     model_calls_used: int = Field(default=0, ge=0)
     tool_proposals_used: int = Field(default=0, ge=0)
+    recovery_attempts_used: int = Field(default=0, ge=0)
     deadline_at: datetime
     lease_owner: str | None = None
     lease_expires_at: datetime | None = None
     lease_takeovers: int = Field(default=0, ge=0)
     last_wake_reason: str | None = Field(default=None, max_length=128)
+    last_wake_fingerprint: str | None = Field(default=None, max_length=128)
     last_progress_at: datetime | None = None
     yield_count: int = Field(default=0, ge=0)
     fallback_from: str | None = Field(default=None, max_length=256)
@@ -95,6 +97,12 @@ class AgentHarnessStep(BaseModel):
     kind: AgentHarnessActionKind | None = None
     input_hash: str
     output_hash: str | None = None
+    observation_ref: str | None = Field(default=None, max_length=256)
+    evaluation_ref: str | None = Field(default=None, max_length=256)
+    recovery_proposal_ref: str | None = Field(default=None, max_length=256)
+    result_explanation_hash: str | None = Field(default=None, max_length=128)
+    generated_text: str | None = Field(default=None, max_length=2048)
+    action_result_code: str | None = Field(default=None, max_length=128)
     requested_capability: str | None = None
     validation_result: Literal["accepted", "rejected", "error"]
     model_call_count: int = Field(default=0, ge=0, le=2)

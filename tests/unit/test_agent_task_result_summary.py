@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.backend.app.core.exceptions import SafetyError
+from src.backend.app.schemas.goal_contract import CriterionResult
 from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
 from tests.unit.test_agent_task_read_model import _lifecycle, _terminal_evidence
 
@@ -109,3 +110,48 @@ def test_result_summary_rejects_cross_run_binding() -> None:
             observation=observation,
             evaluation=evaluation,
         )
+
+
+def test_result_explanation_is_derived_from_evidence_and_rejects_conflicting_prose() -> None:
+    lifecycle = _lifecycle("GOAL_SATISFIED").model_copy(
+        update={"observation_id": "observation-1", "goal_evaluation_id": "evaluation-1"}
+    )
+    observation, evaluation = _terminal_evidence()
+    evaluation = evaluation.model_copy(
+        update={
+            "criterion_results": (
+                CriterionResult(
+                    criterion_id="registered-artifact",
+                    criterion_type="artifact_present",
+                    status="passed",
+                    reason_code="ARTIFACT_REGISTERED",
+                ),
+            )
+        }
+    )
+
+    explanation = AgentTaskResultSummaryService().build_explanation(
+        lifecycle=lifecycle,
+        observation=observation,
+        evaluation=evaluation,
+        generated_text="The registered result is available for review.",
+    )
+
+    assert explanation.outcome == "succeeded"
+    assert explanation.artifact_refs[0].artifact_id == "artifact-1"
+    assert explanation.criteria[0].reason_code == "ARTIFACT_REGISTERED"
+    assert explanation.generated_text_status == "accepted"
+
+    partial_observation, partial_evaluation = _terminal_evidence(
+        reload_status="failed", completeness="partial"
+    )
+    rejected = AgentTaskResultSummaryService().build_explanation(
+        lifecycle=lifecycle,
+        observation=partial_observation,
+        evaluation=partial_evaluation,
+        generated_text="The run succeeded and is fully validated.",
+    )
+
+    assert rejected.outcome == "partial"
+    assert rejected.generated_text is None
+    assert rejected.generated_text_status == "conflict_rejected"

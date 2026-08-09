@@ -15,6 +15,7 @@ from src.backend.app.schemas.agent_lifecycle import (
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord
 from src.backend.app.schemas.execution_ticket import ExecutionTicketEvent
 from src.backend.app.schemas.goal_contract import GoalEvaluationRecord
+from src.backend.app.schemas.agent_harness import AgentHarnessAttempt, AgentHarnessStep
 from src.backend.app.schemas.observation import (
     ArtifactObservation,
     CapabilityObservation,
@@ -315,6 +316,38 @@ def test_completed_requires_satisfied_evaluation_and_reloadable_registered_artif
     assert projected.outcome == "succeeded"
     assert projected.result_summary is not None
     assert projected.result_summary.artifacts[0].uri == ("project://project-1/artifacts/artifact-1")
+    assert projected.result_explanation is not None
+    assert projected.result_explanation.outcome == "succeeded"
+    assert projected.result_explanation.artifact_refs[0].artifact_id == "artifact-1"
+
+
+def test_projection_surfaces_only_persisted_guarded_reflector_text() -> None:
+    lifecycle = _lifecycle("GOAL_SATISFIED").model_copy(
+        update={"observation_id": "observation-1", "goal_evaluation_id": "evaluation-1"}
+    )
+    store = ReadOnlyStore(lifecycle)
+    observation, evaluation = _terminal_evidence()
+    store.get_observation = lambda observation_id: observation
+    store.get_goal_evaluation = lambda evaluation_id: evaluation
+    store.get_agent_harness_attempt = lambda lifecycle_id: AgentHarnessAttempt(
+        attempt_id="harness-1", lifecycle_id=lifecycle_id, project_id="project-1",
+        provider_ref="rule_based", status="FINISHED", deadline_at=NOW,
+    )
+    store.list_agent_harness_steps = lambda attempt_id: [
+        AgentHarnessStep(
+            step_id="step-1", attempt_id=attempt_id, project_id="project-1", step_no=1,
+            idempotency_key="key", kind="explain_result", input_hash="input",
+            validation_result="accepted", state_before="GOAL_SATISFIED",
+            state_after="GOAL_SATISFIED", summary="Result explained.", started_at=NOW,
+            completed_at=NOW, generated_text="The registered result is available.",
+        )
+    ]
+
+    projected = AgentTaskReadModel(store).get(project_id="project-1", task_id="task-1")
+
+    assert projected.result_explanation is not None
+    assert projected.result_explanation.generated_text == "The registered result is available."
+    assert projected.result_explanation.generated_text_status == "accepted"
 
 
 def test_reload_failure_and_partial_evidence_never_project_completed() -> None:

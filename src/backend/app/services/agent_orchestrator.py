@@ -39,6 +39,7 @@ class AgentLifecycleStore(Protocol):
     def get_agent_lifecycle(self, lifecycle_id: str): ...
     def list_agent_lifecycles(self, project_id: str): ...
     def transition_agent_lifecycle(self, record, event, *, expected_state: str): ...
+    def add_agent_lifecycle_event(self, event): ...
     def list_agent_lifecycle_events(self, lifecycle_id: str): ...
     def get_execution_ticket(self, execution_ticket_id: str) -> ExecutionTicket | None: ...
     def get_reviewed_plan(self, reviewed_plan_id: str): ...
@@ -176,6 +177,32 @@ class AgentOrchestrator:
     def events(self, *, project_id: str, lifecycle_id: str) -> list[AgentLifecycleEvent]:
         self.get(project_id=project_id, lifecycle_id=lifecycle_id)
         return self.store.list_agent_lifecycle_events(lifecycle_id)
+
+    def record_event(
+        self,
+        *,
+        project_id: str,
+        lifecycle_id: str,
+        command_id: str,
+        actor: str,
+        source_command: str,
+        details: dict[str, Any],
+    ) -> AgentLifecycleEvent:
+        """Append an idempotent audit event without changing lifecycle state."""
+        current = self.get(project_id=project_id, lifecycle_id=lifecycle_id)
+        for existing in self.store.list_agent_lifecycle_events(lifecycle_id):
+            if existing.command_id == command_id:
+                return existing
+        event = self._event(
+            record=current,
+            command_id=command_id,
+            actor=actor,
+            source_command=source_command,
+            from_state=current.state,
+            to_state=current.state,
+            details=details,
+        )
+        return self.store.add_agent_lifecycle_event(event)
 
     @staticmethod
     def _event(
@@ -415,8 +442,6 @@ class AgentOrchestrator:
             updates={
                 "observation_id": observation.observation_id,
                 "observation_summary": observation.summary(),
-                "observation": None,
-                "legacy_observation_needs_review": False,
             },
             details={
                 "observation_hash": observation.observation_hash,

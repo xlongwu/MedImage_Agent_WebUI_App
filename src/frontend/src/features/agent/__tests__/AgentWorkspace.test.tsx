@@ -477,6 +477,20 @@ describe("AgentWorkspace", () => {
         recommended_action: "Review the recovery proposal",
         artifacts: [],
       },
+      result_explanation: {
+        outcome: "partial",
+        completed_subjects: 2,
+        failed_subjects: 1,
+        excluded_subjects: 1,
+        total_subjects: 3,
+        artifact_refs: [],
+        criteria: [],
+        limitations: ["Group interpretation is incomplete"],
+        recommended_action: "Review the recovery proposal",
+        generated_text:
+          "One subject needs recovery review before the cohort result can be interpreted.",
+        generated_text_status: "accepted",
+      },
     };
 
     render(
@@ -494,6 +508,12 @@ describe("AgentWorkspace", () => {
 
     expect(screen.getByText("Partially completed")).toBeInTheDocument();
     expect(screen.getByText("Group interpretation is incomplete")).toBeInTheDocument();
+    expect(screen.getByText("Evidence-based explanation")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "One subject needs recovery review before the cohort result can be interpreted.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/^Completed$/)).not.toBeInTheDocument();
   });
 

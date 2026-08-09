@@ -699,7 +699,8 @@ def test_observation_api_collects_server_facts_and_rejects_client_booleans(tmp_p
         assert collected.status_code == 200
         payload = collected.json()
         assert payload["lifecycle"]["state"] == "OBSERVING"
-        assert payload["lifecycle"]["observation"] is None
+        assert "observation" not in payload["lifecycle"]
+        assert payload["lifecycle"]["observation_id"] == payload["observation"]["observation_id"]
         observation_id = payload["observation"]["observation_id"]
         queried = client.get(
             f"/api/projects/project-1/agent-lifecycles/{lifecycle.lifecycle_id}/observations/{observation_id}"

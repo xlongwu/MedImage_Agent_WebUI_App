@@ -7,7 +7,9 @@ from threading import Lock, Thread
 from typing import TYPE_CHECKING
 
 from src.backend.app.core.config import ConfigService
+from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.services.agent_harness_service import AgentHarnessService
+from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
 
 if TYPE_CHECKING:
@@ -48,12 +50,19 @@ class AgentHarnessScheduler:
         self.harness_service = harness_service
         self.start_workers = start_workers
         self._lock = Lock()
-        self._pending: deque[tuple[str, str, str, str]] = deque()
+        self._pending: deque[tuple[str, str, str, str, str | None]] = deque()
         self._pending_keys: set[str] = set()
         self._worker: Thread | None = None
         self._accepting = True
 
-    def wake(self, *, project_id: str, lifecycle_id: str, reason: str) -> bool:
+    def wake(
+        self,
+        *,
+        project_id: str,
+        lifecycle_id: str,
+        reason: str,
+        details: dict[str, str | None] | None = None,
+    ) -> bool:
         """Idempotently record a wake-up and let the owner process it in background."""
         if not self.config.enabled or not self._accepting:
             return False
@@ -61,11 +70,14 @@ class AgentHarnessScheduler:
         attempt = self.store.get_agent_harness_attempt(lifecycle_id)
         if lifecycle is None or attempt is None or lifecycle.project_id != project_id:
             return False
-        wake_key = f"{lifecycle_id}:{lifecycle.updated_at.isoformat()}:{reason}"
+        fingerprint = stable_hash(details) if details is not None else None
+        if fingerprint is not None and attempt.last_wake_fingerprint == fingerprint:
+            return False
+        wake_key = f"{lifecycle_id}:{fingerprint or lifecycle.updated_at.isoformat()}:{reason}"
         with self._lock:
             if wake_key in self._pending_keys:
                 return False
-            self._pending.append((project_id, lifecycle_id, reason[:128], wake_key))
+            self._pending.append((project_id, lifecycle_id, reason[:128], wake_key, fingerprint))
             self._pending_keys.add(wake_key)
         if self.start_workers:
             self._start_worker()
@@ -81,7 +93,7 @@ class AgentHarnessScheduler:
             return ()
         harness = self._harness()
         processed: list[str] = []
-        for project_id, lifecycle_id, reason, _wake_key in pending:
+        for project_id, lifecycle_id, reason, _wake_key, fingerprint in pending:
             if not self._accepting:
                 break
             lifecycle = self.store.get_agent_lifecycle(lifecycle_id)
@@ -91,6 +103,7 @@ class AgentHarnessScheduler:
                 lifecycle=lifecycle,
                 actor="system-harness-scheduler",
                 wake_reason=reason,
+                wake_fingerprint=fingerprint,
                 lease_owner=f"scheduler:{lifecycle_id}",
             )
             processed.append(lifecycle_id)
@@ -144,9 +157,22 @@ class AgentHarnessScheduler:
             self.store,
             config=self.config,
             draft_plan=lambda **kwargs: command_service._plan(**kwargs),
+            recovery_proposer=lambda *, lifecycle, actor: AgentTaskReconciler(self.store).orchestrator.propose_recovery(
+                project_id=lifecycle.project_id,
+                lifecycle_id=lifecycle.lifecycle_id,
+                command_id=f"harness:{lifecycle.lifecycle_id}:recovery",
+                actor=actor,
+            ),
         )
         if harness.draft_plan is None:
             harness.draft_plan = lambda **kwargs: command_service._plan(**kwargs)
+        if harness.recovery_proposer is None:
+            harness.recovery_proposer = lambda *, lifecycle, actor: AgentTaskReconciler(self.store).orchestrator.propose_recovery(
+                project_id=lifecycle.project_id,
+                lifecycle_id=lifecycle.lifecycle_id,
+                command_id=f"harness:{lifecycle.lifecycle_id}:recovery",
+                actor=actor,
+            )
         return harness
 
     def _start_worker(self) -> None:
@@ -170,8 +196,8 @@ class AgentHarnessScheduler:
                 self._worker = None
                 return
 
-    def _take_pending(self, limit: int) -> tuple[tuple[str, str, str, str], ...]:
-        entries: list[tuple[str, str, str, str]] = []
+    def _take_pending(self, limit: int) -> tuple[tuple[str, str, str, str, str | None], ...]:
+        entries: list[tuple[str, str, str, str, str | None]] = []
         with self._lock:
             for _ in range(max(0, limit)):
                 if not self._pending:
@@ -185,7 +211,7 @@ class AgentHarnessScheduler:
         with self._lock:
             if dedupe_key in self._pending_keys:
                 return False
-            self._pending.append((project_id, lifecycle_id, reason[:128], dedupe_key))
+            self._pending.append((project_id, lifecycle_id, reason[:128], dedupe_key, None))
             self._pending_keys.add(dedupe_key)
         return True
 

@@ -171,6 +171,27 @@ export type AgentTaskResultSummary = {
   artifacts: AgentTaskArtifactSummary[];
 };
 
+export type AgentResultCriterion = {
+  criterion_id: string;
+  status: "passed" | "failed" | "indeterminate";
+  reason_code: string;
+  evidence_ids: string[];
+};
+
+export type AgentResultExplanation = {
+  outcome: AgentTaskOutcome;
+  completed_subjects: number | null;
+  failed_subjects: number | null;
+  excluded_subjects: number | null;
+  total_subjects: number | null;
+  artifact_refs: AgentTaskArtifactSummary[];
+  criteria: AgentResultCriterion[];
+  limitations: string[];
+  recommended_action: string | null;
+  generated_text: string | null;
+  generated_text_status: "not_requested" | "accepted" | "conflict_rejected";
+};
+
 export type AgentTaskRecoverySummary = {
   proposal_id: string;
   diagnosis: string;
@@ -259,6 +280,7 @@ export type AgentTaskResponse = {
   decision_batch: AgentTaskDecisionBatch | null;
   approval_summary: AgentTaskApprovalSummary | null;
   result_summary: AgentTaskResultSummary | null;
+  result_explanation?: AgentResultExplanation | null;
   recovery: AgentTaskRecoverySummary | null;
   evidence_links: AgentTaskEvidenceLink[];
   technical_details: AgentTaskTechnicalDetails | null;

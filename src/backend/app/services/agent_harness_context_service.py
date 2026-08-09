@@ -17,7 +17,18 @@ class HarnessContextBuilder:
     _SECRET_KEY = re.compile(r"(?:api[_-]?key|token|secret|password|authorization)", re.I)
     _UNSAFE_KEY = re.compile(r"(?:rawdata|image|dicom|nifti|transcript|prompt|log)", re.I)
 
-    def build(self, *, lifecycle, project, evidence_snapshot=None) -> AgentHarnessContext:
+    def build(
+        self,
+        *,
+        lifecycle,
+        project,
+        evidence_snapshot=None,
+        observation=None,
+        evaluation=None,
+        recovery_proposal=None,
+        result_summary=None,
+        attempt=None,
+    ) -> AgentHarnessContext:
         metadata = project.metadata if project is not None and isinstance(project.metadata, dict) else {}
         command_context = lifecycle.command_context if isinstance(lifecycle.command_context, dict) else {}
         memory = command_context.get("memory_context")
@@ -32,6 +43,11 @@ class HarnessContextBuilder:
                 "execution_ticket_id": lifecycle.execution_ticket_id,
                 "run_id": lifecycle.run_id,
             },
+            "latest_observation": self._safe_summary(observation),
+            "goal_evaluation": self._safe_summary(evaluation),
+            "recovery": self._safe_summary(recovery_proposal),
+            "result_summary": self._safe_summary(result_summary),
+            "budget": self._budget_fields(attempt),
             "memory": safe_memory,
         }
         omitted: list[str] = []
@@ -99,6 +115,26 @@ class HarnessContextBuilder:
             },
             max_items=24,
         )
+
+    def _safe_summary(self, record) -> dict[str, Any]:
+        if record is None:
+            return {}
+        summary_method = getattr(record, "summary", None)
+        summary = summary_method() if callable(summary_method) else record
+        if hasattr(summary, "model_dump"):
+            summary = summary.model_dump(mode="json")
+        return self._safe_object(summary, max_items=24)
+
+    @staticmethod
+    def _budget_fields(attempt) -> dict[str, int | str]:
+        if attempt is None:
+            return {}
+        return {
+            "model_calls_used": attempt.model_calls_used,
+            "tool_proposals_used": attempt.tool_proposals_used,
+            "recovery_attempts_used": attempt.recovery_attempts_used,
+            "deadline_at": attempt.deadline_at.isoformat(),
+        }
 
     def _memory_fields(self, value: object) -> dict[str, Any]:
         if not isinstance(value, dict):

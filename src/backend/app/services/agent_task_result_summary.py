@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from src.backend.app.core.exceptions import SafetyError
-from src.backend.app.schemas.agent_task import AgentTaskArtifactSummary, AgentTaskResultSummary
+from src.backend.app.schemas.agent_task import (
+    AgentResultCriterion,
+    AgentResultExplanation,
+    AgentTaskArtifactSummary,
+    AgentTaskResultSummary,
+)
 
 _LIMITATION_TEXT = {
     "partial": "Only part of the reviewed subject or artifact scope completed.",
@@ -88,6 +93,80 @@ class AgentTaskResultSummaryService:
             recommended_action=None if complete else "Review technical evidence and the bounded recovery proposal.",
             artifacts=artifacts,
         )
+
+    def build_explanation(
+        self,
+        *,
+        lifecycle,
+        observation,
+        evaluation,
+        generated_text: str | None = None,
+        generated_text_rejected: bool = False,
+    ) -> AgentResultExplanation:
+        """Return a deterministic explanation envelope with optional guarded prose.
+
+        The model may contribute text only.  All outcome, artifact, subject and
+        criterion fields are rebuilt from the persisted Observation and Goal
+        Evaluation on every call.
+        """
+        summary = self.build(
+            lifecycle=lifecycle,
+            observation=observation,
+            evaluation=evaluation,
+        )
+        if generated_text_rejected:
+            accepted_text, text_status = None, "conflict_rejected"
+        else:
+            accepted_text, text_status = self._guard_generated_text(
+                outcome=summary.outcome,
+                capability=observation.capability.defensible_level,
+                generated_text=generated_text,
+            )
+        return AgentResultExplanation(
+            outcome=summary.outcome,
+            completed_subjects=summary.completed_subjects,
+            failed_subjects=summary.failed_subjects,
+            excluded_subjects=summary.excluded_subjects,
+            total_subjects=summary.total_subjects,
+            artifact_refs=summary.artifacts,
+            criteria=tuple(
+                AgentResultCriterion(
+                    criterion_id=item.criterion_id,
+                    status=item.status,
+                    reason_code=item.reason_code,
+                    evidence_ids=item.evidence_ids,
+                )
+                for item in evaluation.criterion_results
+            ),
+            limitations=summary.limitations,
+            recommended_action=summary.recommended_action,
+            generated_text=accepted_text,
+            generated_text_status=text_status,
+        )
+
+    @staticmethod
+    def _guard_generated_text(
+        *,
+        outcome: str,
+        capability: str,
+        generated_text: str | None,
+    ) -> tuple[str | None, str]:
+        if generated_text is None:
+            return None, "not_requested"
+        text = " ".join(str(generated_text).split())
+        if not text:
+            return None, "not_requested"
+        normalized = text.casefold()
+        success_claims = ("succeeded", "successful", "completed", "validated")
+        failure_claims = ("failed", "failure", "not satisfied", "incomplete")
+        conflicts = (
+            (outcome != "succeeded" and any(term in normalized for term in success_claims))
+            or (outcome == "succeeded" and any(term in normalized for term in failure_claims))
+            or (capability != "validated" and "validated" in normalized)
+        )
+        if conflicts:
+            return None, "conflict_rejected"
+        return text, "accepted"
 
     @staticmethod
     def _validate_bindings(*, lifecycle, observation, evaluation) -> None:

@@ -28,6 +28,15 @@ class ReconcileStore:
     def get_run_link_by_run_id(self, project_id, run_id):
         return self.link
 
+    def get_observation(self, observation_id):
+        return SimpleNamespace(observation_hash="observation-hash") if observation_id == "observation-1" else None
+
+    def get_goal_evaluation(self, evaluation_id):
+        return SimpleNamespace(goal_evaluation_hash="evaluation-hash") if evaluation_id == "evaluation-1" else None
+
+    def get_recovery_proposal(self, proposal_id):
+        return SimpleNamespace(recovery_proposal_hash="recovery-hash") if proposal_id == "proposal-1" else None
+
 
 class FakeOrchestrator:
     def __init__(self, store, *, evaluation_status="satisfied") -> None:
@@ -58,7 +67,9 @@ class FakeOrchestrator:
             ]
         )
         target = "GOAL_SATISFIED" if self.evaluation_status == "satisfied" else "DIAGNOSING"
-        self.store.lifecycle = self.store.lifecycle.model_copy(update={"state": target})
+        self.store.lifecycle = self.store.lifecycle.model_copy(
+            update={"state": target, "goal_evaluation_id": "evaluation-1"}
+        )
         return self.store.lifecycle, SimpleNamespace(
             status=self.evaluation_status,
             goal_evaluation_hash="evaluation-hash",
@@ -67,7 +78,7 @@ class FakeOrchestrator:
     def propose_recovery(self, **kwargs):
         self.calls.append("RECOVERY_PROPOSED")
         self.store.lifecycle = self.store.lifecycle.model_copy(
-            update={"state": "RECOVERY_PROPOSED"}
+            update={"state": "RECOVERY_PROPOSED", "recovery_proposal_id": "proposal-1"}
         )
         return self.store.lifecycle, object(), object()
 
@@ -91,14 +102,18 @@ def test_reconcile_wakes_harness_only_after_terminal_records_are_persisted() -> 
     wakes = []
     reconciler = AgentTaskReconciler(
         store,
-        harness_waker=lambda *, lifecycle, reason: wakes.append((lifecycle.state, reason)) or True,
+        harness_waker=lambda *, lifecycle, reason, details: wakes.append((lifecycle.state, reason, details)) or True,
     )
     reconciler.orchestrator = FakeOrchestrator(store)
 
     result = reconciler.reconcile_once(project_id="project-1", lifecycle_id="task-1")
 
     assert result.state == "GOAL_SATISFIED"
-    assert wakes == [("GOAL_SATISFIED", "run_terminal")]
+    assert wakes[0][:2] == ("GOAL_SATISFIED", "run_reconciled")
+    assert wakes[0][2]["lifecycle_id"] == "task-1"
+    assert wakes[0][2]["run_id"] == "run-1"
+    assert wakes[0][2]["evaluation_hash"] == "evaluation-hash"
+    assert wakes[0][2]["wake_hash"]
 
 
 def test_reconcile_failed_goal_stops_at_unapproved_recovery_proposal() -> None:
@@ -119,7 +134,7 @@ def test_conflicting_terminal_evidence_hands_off_without_observation() -> None:
     wakes = []
     reconciler = AgentTaskReconciler(
         store,
-        harness_waker=lambda *, lifecycle, reason: wakes.append((lifecycle.state, reason)) or True,
+        harness_waker=lambda *, lifecycle, reason, details: wakes.append((lifecycle.state, reason, details)) or True,
     )
     reconciler.orchestrator = FakeOrchestrator(store)
 
@@ -127,7 +142,8 @@ def test_conflicting_terminal_evidence_hands_off_without_observation() -> None:
 
     assert result.state == "HUMAN_HANDOFF"
     assert reconciler.orchestrator.calls == ["HUMAN_HANDOFF"]
-    assert wakes == [("HUMAN_HANDOFF", "run_terminal")]
+    assert wakes[0][:2] == ("HUMAN_HANDOFF", "run_reconciled")
+    assert wakes[0][2]["wake_hash"]
 
 
 def test_concurrent_reconcile_creates_one_observation_evaluation_chain() -> None:

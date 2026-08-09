@@ -139,6 +139,9 @@ export const messagesEn = {
   "agent.scienceChanges": "Scientific choices",
   "agent.limitations": "Limitations",
   "agent.resultSummary": "Result summary",
+  "agent.result.generatedExplanation": "Evidence-based explanation",
+  "agent.result.generatedConflict":
+    "Generated explanation conflicted with the recorded evidence and was not shown.",
   "agent.result.satisfied.title": "Research goal satisfied",
   "agent.result.satisfied.summary":
     "The goal is supported by complete, registered, reloadable numerical evidence.",
