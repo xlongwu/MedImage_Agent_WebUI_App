@@ -1,6 +1,6 @@
 # AGENTS.md — MedImage Agent 仓库执行规则
 
-本文件是后续 Codex、Claude Code 及其他开发 Agent 在本仓库中的项目级执行约束。它只保留会直接影响开发正确性、安全性、科学有效性、兼容性和交付质量的规则；架构细节、能力说明和当前状态分别由专项文档维护。
+本文件是后续 Codex、Claude Code 及其他开发 Agent 在本仓库中的项目级执行约束。它只保留会直接影响开发正确性、安全性、科学有效性和交付质量的规则；架构细节、能力说明和当前状态分别由专项文档维护。
 
 ---
 
@@ -52,7 +52,7 @@ MedImage Agent 是面向 rs-fMRI 研究工程的确定性 Plan-then-Execute 平�
 |---|---|---|
 | Focused Fix | 小范围 Bug、单接口、文档小修 | 目标文件、调用方、相关测试 |
 | Feature Bundle | 完整用户或开发功能 | 前端到存储/运行时的完整调用链 |
-| Architecture / Refactor | 拆分、迁移、依赖或状态重构 | 现有行为刻画、兼容面、共享测试 |
+| Architecture / Refactor | 拆分、替换、依赖或状态重构 | 现有行为刻画、当前消费者、共享测试 |
 | Scientific Validation | ALFF/fALFF、ReHo、连接、过滤、回归、atlas、数值后端 | 请求到数值产物、注册、溯源和参考验证全链 |
 | Release / Packaging | 版本、依赖、CI、sidecar、Electron、安装包 | 版本面、锁文件、构建、启动、产物清单 |
 | Documentation | 规则、README、架构或流程文档 | 引用路径、命令、实现锚点和文档一致性 |
@@ -64,7 +64,7 @@ Focused Fix 不得借机广泛重构；其他模式新增修改文件必须确�
 1. 完整阅读本文件、任务说明和与任务直接相关的专项文档。
 2. 运行 `git status --short`，识别用户已有修改、未跟踪文件和生成物；不得假设工作区干净。
 3. 阅读每个目标文件、直接调用方、数据结构和现有测试；不得在未理解现有实现时直接重写。
-4. 搜索旧字段、旧路径、旧接口、重复实现和兼容入口。
+4. 搜索旧字段、旧路径、旧接口和重复实现，并确认所有当前消费者已改用新实现后移除废弃项。
 5. 对方案驱动任务列出必做项、非目标、调用链和验收命令，并在开发过程中持续逐项对照。
 6. 确认是否触及受保护区域：Pipeline Runtime、node runner、Approval Gate、Execution Gateway、转换/预处理算法、产物注册、状态迁移、路径/allowlist。
 7. 修改前确认测试不会使用持久桌面数据库、用户工作区或研究数据。
@@ -78,6 +78,15 @@ Focused Fix 不得借机广泛重构；其他模式新增修改文件必须确�
 ---
 
 ## 3. 项目级核心约束
+
+### 3.0 架构与实现原则
+
+- 不保留向后兼容性。需求变更时，必须同步更新当前消费者并移除废弃的路径、字段、接口、配置和实现；禁止新增兼容层、fallback、shim 或迁移逻辑来同时维持新旧行为。
+- 选择能完整满足当前需求的最简单实现。禁止为尚未确认的需求预先引入抽象、配置、间接层或扩展点。
+- 系统必须逐层生长：先交付端到端可用的最小版本，再在已可用的产品上叠加能力；不得以未完成的复杂性替换可工作的产品。
+- 组件必须保持模块化、职责清晰，并按既有分层边界组织；不得以跨层耦合或万能模块换取短期便利。
+- 优先复用项目现有依赖；当成熟且维护良好的库能降低整体复杂度或提高可靠性时，应优先采用。新增实现或依赖前，必须先核查现有依赖的文档和类型，不能仅凭假设认定其缺少所需能力；无明确理由不得重造常见功能。
+- 架构决策必须面向长期维护，选择可作为最终设计持续演进的方案；禁止接受仅为暂时可用、计划后续替换的权宜实现。
 
 ### 3.1 后端分层
 
@@ -95,14 +104,14 @@ Route -> Request/Response Schema -> Service
 - Route 的 catch-all 必须经 `src/backend/app/api/_errors.py:raise_api_error()` 保留结构化领域错误。
 - 新读接口必须通过 `ProjectStore` Protocol 和 `FastAPI Depends()` 隔离存储，不得新增对全局 `mock_store` 的直接耦合。
 - 运行时 JSON 状态必须使用 `atomic_write_json()`，并包含 `_schema_version`；禁止用 `Path.write_text(json.dumps(...))` 写受管状态。
-- 配置经 `ConfigService` 读取，环境变量使用 `MEDIMAGE_` 前缀；旧 accessor 在明确迁移前保持兼容。
+- 配置经 `ConfigService` 读取，环境变量使用 `MEDIMAGE_` 前缀；替换 accessor 时必须同步更新调用方并删除旧 accessor。
 
 ### 3.2 Runtime、Node Registry 与执行边界
 
 - Pipeline Runtime 是确定性执行唯一来源；服务编排 kernel，runner 调用共享实现，禁止在 Route/Service 复制数值算法或建立旁路执行。
 - 新 node 放在 `src/backend/app/runtime/node_registry_plugins/` 的正确插件中并暴露 `REGISTRY`；稳定 `node_id` 不得改名，重复 ID 必须失败。
 - 新可执行 node 必须同步 Tool Catalog、Approval Gate、审计、安全 allowlist、API/前端能力展示和测试。
-- 受保护模块只有在任务明确要求、已有行为被测试刻画、兼容性已评估并运行安全回归时才可修改。
+- 受保护模块只有在任务明确要求、已有行为被测试刻画、当前消费者影响已评估并运行安全回归时才可修改。
 
 ### 3.3 前端边界
 
@@ -113,17 +122,17 @@ Route -> Request/Response Schema -> Service
 - 完整功能必须表示 loading、empty、disabled、success、partial 和 failure 状态中适用的部分。
 - 用户可见文案必须走 i18n catalog；错误码、ID、hash 等机器标识保持不翻译，由前端映射。
 
-### 3.4 API、状态和兼容性
+### 3.4 API、状态和持久格式变更
 
 任何 API、schema、状态或持久格式变更必须同时检查并按需更新：
 
 - 后端 schema、route、service 和 contract tests；
 - 前端 API wrapper、TypeScript 类型、调用方、i18n 和测试；
-- 旧字段/旧路径兼容或显式迁移；
-- 持久状态 `_schema_version`、迁移和重启恢复测试；
+- 同步更新所有当前消费者，并删除旧字段、旧路径和旧接口；
+- 持久状态保留 `_schema_version`，但格式切换必须采用单一权威格式并验证重启恢复；禁止保留旧格式读取、迁移或 fallback；
 - README、API/架构/状态文档。
 
-禁止把 contract 变化作为顺手清理；禁止只修改生产者而遗漏消费者。
+禁止把 contract 变化作为顺手清理；禁止只修改生产者而遗漏消费者，也不得以兼容层掩盖未更新的消费者。
 
 ### 3.5 数据、路径和安全不变量
 
@@ -159,12 +168,13 @@ Summary。忘记必须清除明文、保留最小 tombstone 并阻止旧来源�
 - 数值算法只能有一个 canonical kernel；新增前必须搜索已有实现。
 - 产物必须存在、可重开、shape/dtype 正确、关联输入与参数，并处理部分写失败。
 - 简化、预览或子集处理必须明确标注并记录 subset rule；不得冒充完整标准算法。
-- 多后端必须显式选择，定义 CPU 可用性/GPU fallback 和容差，并验证实际后端。
+- 多后端必须显式选择，定义 CPU/GPU 的支持边界和容差，并验证实际后端；不得隐式切换后端。
 
 ### 3.7 依赖、版本和可复现性
 
 - 禁止依赖版本写成 `latest`；前端 manifest 与 lockfile 必须一起更新。
 - 删除依赖前必须检查可选执行路径和打包；重依赖保持 optional，除非任务明确改变安装要求。
+- 实现通用能力前必须优先检查并复用项目已有依赖；需要新增依赖时，优先选择成熟、维护良好且能降低整体复杂度或提高可靠性的库，并核查其文档和类型。
 - 稳定文档不得写维护者私有 Python/Node/Conda/MATLAB/CUDA 绝对路径。
 - 随机科学操作必须接收或记录确定性 seed。
 - 应用版本唯一来源是 `src/backend/app/version.py` 中的 `APP_VERSION`；版本变更必须是显式 Release 任务，并同步 `pyproject.toml`、前端、Electron、README 和当前发布文档。
@@ -189,13 +199,13 @@ Summary。忘记必须清除明文、保留最小 tombstone 并阻止旧来源�
 ### 4.3 重构
 
 - 移动代码前必须用 characterization tests 记录公共行为。
-- 默认保持 API、执行、状态、产物和科学语义；任何有意变化必须单独列出迁移和兼容风险。
+- 必须保留当前需求仍要求的 API、执行、状态、产物和科学语义；有意变化必须同步更新所有当前消费者并删除被替换实现，不得增加迁移或兼容路径。
 - 禁止把无关产品功能混入架构重构；禁止为规避核心 bug 在外围复制第二套逻辑。
 
 ### 4.4 删除和废弃
 
-- 删除前必须检查 Git tracking、动态注册、可选依赖、打包资源、fixtures、文档和兼容入口。
-- 必须全仓搜索旧路径、旧字段、旧命令和旧标识；仍需兼容时提供明确 shim 和淘汰条件。
+- 删除前必须检查 Git tracking、动态注册、可选依赖、打包资源、fixtures、文档和当前入口。
+- 必须全仓搜索旧路径、旧字段、旧命令和旧标识；更新全部当前引用后，必须一并删除废弃实现、入口和文档，不得保留 shim、fallback 或迁移逻辑。
 - 名称像 `memory/`、`outputs/` 或 `dist/` 不代表整个目录可删除；tracked fixture/source 必须保留。
 
 ---
@@ -347,9 +357,9 @@ Release / Packaging 任务再按 `docs/桌面与前端/桌面应用打包.md` �
 |---|---|
 | 文档 | Markdown 结构、真实路径、真实命令、链接/引用、重复与冲突；有配置的文档检查则运行 |
 | Focused Fix | 复现测试 + focused 回归；共享基础设施变化时扩大范围 |
-| API/schema | 后端 contract/API + 前端 client/type/caller + 兼容性 |
+| API/schema | 后端 contract/API + 前端 client/type/caller + 当前消费者切换与废弃项删除 |
 | Feature Bundle | backend focused + frontend + success/failure/empty/unsafe + 关键状态迁移 |
-| Architecture/Refactor | characterization + 受影响层完整套件 + API/状态兼容 |
+| Architecture/Refactor | characterization + 受影响层完整套件 + 当前 API/状态消费者更新 |
 | Scientific | kernel、边界、产物 reload、provenance、golden/reference、backend 等价（适用时） |
 | Agent Task | routing、create/update/approve/cancel/read/result、审批顺序、plan-only 零执行、重启投影、中英文前端 |
 | Release/Packaging | backend、frontend、sidecar、launcher/Electron、packaged smoke、版本和产物清单 |
@@ -383,7 +393,7 @@ Release / Packaging 任务再按 `docs/桌面与前端/桌面应用打包.md` �
 |---|---|
 | 用户使用方式、安装、启动 | `README.md`、`README_CN.md`、相应使用/桌面文档 |
 | 架构、模块边界、目录 | `docs/架构与决策/系统架构.md`、`docs/文档索引.md` |
-| API、schema、状态、持久格式 | API/生命周期/架构文档、迁移说明、`PROJECT_STATE.md`（当前状态确有变化时） |
+| API、schema、状态、持久格式 | API/生命周期/架构文档、切换说明、`PROJECT_STATE.md`（当前状态确有变化时） |
 | 安全、审批、路径、执行能力 | `AGENTS.md`、`docs/安全与审批/`、能力矩阵 |
 | 科学算法、backend、产物、验证等级 | `docs/项目概览/能力矩阵.md`、算法/验证文档、README 状态说明 |
 | 配置、环境变量、依赖 | `.env.example`、README、配置/打包文档、manifest/lockfile |
@@ -414,7 +424,7 @@ Release / Packaging 任务再按 `docs/桌面与前端/桌面应用打包.md` �
 - `PROJECT_STATE.md` 是当前验证状态快照，不是开发日记，不得追加每次修复和测试计数。
 - 例行 Completion Report 放在最终回复、PR 或提交信息，不为每个小修创建 Markdown 报告。
 - 只有阶段/里程碑级架构结果才可按约定保留在 `specs/阶段记录/`。
-- 临时任务文件不得无限累积；耐久信息迁移后应按任务要求移除。
+- 临时任务文件不得无限累积；耐久信息完成归档后应按任务要求移除。
 
 ---
 
@@ -426,19 +436,19 @@ Release / Packaging 任务再按 `docs/桌面与前端/桌面应用打包.md` �
 - [ ] 已对照方案确认所有当前范围必做项已实现，未只接通表层。
 - [ ] 关键 Route/Schema/Service/Runtime/Storage 或前端调用链已完整检查。
 - [ ] rawdata、Approval Gate、路径、审计、执行和科学真实性不变量未被削弱。
-- [ ] API、状态、配置、持久格式和旧调用方兼容性已处理。
+- [ ] API、状态、配置、持久格式的当前调用方已同步更新，废弃路径和实现已删除。
 - [ ] 必要的回归、类型、构建、科学或 packaged smoke 已运行并如实记录。
 - [ ] pytest 临时目录和本任务生成物已按安全规则清理。
 - [ ] 已完成文档影响检查并同步相应文档；是否更新 `AGENTS.md` 有明确结论。
 - [ ] 已检查 `git diff` 和 `git status --short`，未覆盖无关用户修改，未包含秘密、用户数据或不应提交的产物。
-- [ ] 未发现重复代码、调试残留、虚假成功、临时兼容或未解释风险。
+- [ ] 未发现重复代码、调试残留、虚假成功、临时路径或未解释风险。
 
 最终 Completion Report 必须包含：
 
 1. **Task**：任务模式、交付目标、分支/工作区（适用时）；
 2. **Files changed**：逐个分类为 modified/created/restored/deleted 并说明原因；
 3. **Behavior delivered**：之前行为、现在行为、边界和失败状态；
-4. **API / Scientific impact**：contract、迁移、能力等级、产物与溯源影响；
+4. **API / Scientific impact**：contract、切换、能力等级、产物与溯源影响；
 5. **Validation**：精确命令、结果、环境和未验证区域；
 6. **Documentation impact**：已更新、确认无需更新和 `AGENTS.md` 决策；
 7. **Git / artifacts**：保留的用户改动、排除的生成物和打包清单；

@@ -1,6 +1,6 @@
 # 阶段十一：自动 AC-PC 与受控 Agent Harness
 
-> 状态：**三份计划的工程实施与统一回归验收已完成；计划 01 的独立科学参考验证仍未完成。**
+> 状态：**计划 02 的源码实现、生产入口和 focused 基线已确认；当前 Harness 的 packaged smoke / 正式 release 证据仍为 unknown。计划 01 的独立科学参考验证仍未完成。**
 > 更新日期：2026-08-09。工程结论以当前源码、完整后端回归和前端检查为依据；自动 AC-PC 仍保持 `computed`，不得标为 `validated`。
 
 本阶段已按当前基线完成差异实施：计划 01 保持自动 AC-PC 工程实现并移除 GUI Agent；计划 02 收敛受控单 Agent Harness 的失败语义和前端投影；计划 03 完成 Node Contract、Planner provenance、dispatch 证据链和 Memory 运营闭环。原始顺序仅作历史审计，不得据此恢复兼容入口或第二条执行路径。
@@ -14,7 +14,7 @@
 | 文件 | 当前处置 | 后续动作 |
 |---|---|---|
 | 计划 01 | 转为工程实施记录。自动 AC-PC 已保持为 `computed`，GUI Agent 已从产品入口移除。 | 独立人工标注参考验证仍是单独的 Scientific Validation 任务；未完成前不得升级能力等级。 |
-| 计划 02 | Harness 工程实现与当前规则验收完成；attempt/step/context、租约、单步调度、投影与默认关闭配置均已覆盖。 | 保持单一权威路径；provider 故障结构化停止，不 fallback。 |
+| 计划 02 | Harness 的源码实现、生产入口、attempt/step/context、租约、单步调度、投影与默认关闭配置已由 2026-08-09 focused baseline 复核。 | 保持单一权威路径；provider 故障结构化停止，不 fallback；不将该源码/测试事实表述为 packaged 或 release 验收。 |
 | 计划 03 | Phase 0-4 差异实施与工程验收完成。 | 保持 NodeContract 权威、不可变 dispatch 证据和 Memory 三态语义。 |
 
 计划 03 的后续实施不得与其他任务并行改动 `agent_task_command_service.py`、`mock_store.py`、`agent_task.py` 或 `PROJECT_STATE.md`，除非已经明确划分唯一所有者和合并顺序。

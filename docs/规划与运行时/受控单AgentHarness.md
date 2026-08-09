@@ -4,6 +4,11 @@ Harness 是可选的单 Agent 控制层，默认由
 `MEDIMAGE_AGENT_HARNESS_ENABLED=false` 关闭。它只协助 Agent Task 的规划、
 澄清、解释和恢复建议；不执行计算，也不拥有审批权限。
 
+当前可验证的源码和 focused-test 基线见
+`specs/阶段记录/阶段十二/Agent改造/01_当前Agent基线与差距分析.md`。该基线不构成
+Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专属证据时，其状态为
+`unknown`。
+
 ## 运行合同
 
 - 一个 `AgentLifecycleRecord` 最多对应一个项目绑定的 Harness attempt；attempt

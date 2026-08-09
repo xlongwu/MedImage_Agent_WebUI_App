@@ -89,7 +89,10 @@ their tag state.
   ordered steps, processes one leased step at a time, and has no approval,
   ticket, gateway, runner, shell, or file/database-write capability. Once
   enabled, provider/config/schema/budget failures stop structurally and never
-  switch to a different planner.
+  switch to a different planner. The 2026-08-09 source/entry/focused-test
+  baseline is recorded in `specs/阶段记录/阶段十二/Agent改造/01_当前Agent基线与差距分析.md`;
+  no Harness-specific packaged smoke or formal release evidence was located,
+  so those two release surfaces remain `unknown` rather than inferred.
 - The Phase 10 source tree adds an Agent-first project workspace backed by a
   project-scoped Agent Task read projection. Goal commands stop for unresolved
   science decisions, produce one hashed Approval Summary, and reuse the
