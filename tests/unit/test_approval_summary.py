@@ -122,6 +122,31 @@ def test_summary_hash_and_scope_change_when_write_root_changes(tmp_path) -> None
     assert changed.write_roots != first.write_roots
 
 
+def test_summary_identity_binds_planning_inputs_and_revision_lineage(tmp_path) -> None:
+    service = ApprovalSummaryService()
+    reviewed = _reviewed(tmp_path).model_copy(
+        update={
+            "planning_inputs_hash": "inputs-v1",
+            "revision_no": 2,
+            "parent_reviewed_plan_id": "reviewed-parent",
+            "parent_plan_hash": "parent-hash",
+            "revision_reason": "decision_answered",
+        }
+    )
+    first = service.build(project=_project(tmp_path), reviewed_plan=reviewed, now=NOW)
+    changed = service.build(
+        project=_project(tmp_path),
+        reviewed_plan=reviewed.model_copy(update={"planning_inputs_hash": "inputs-v2"}),
+        now=NOW,
+    )
+
+    assert first.planning_inputs_hash == "inputs-v1"
+    assert first.revision_no == 2
+    assert first.parent_reviewed_plan_id == "reviewed-parent"
+    assert first.revision_reason == "decision_answered"
+    assert changed.summary_hash != first.summary_hash
+
+
 def test_summary_includes_runtime_roots_when_inspection_has_explicit_data_output(tmp_path) -> None:
     reviewed = _reviewed(tmp_path, output_dir="data")
     reviewed.payload["plan"]["nodes"].append(

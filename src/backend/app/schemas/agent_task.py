@@ -163,6 +163,11 @@ class AgentTaskApprovalSummary(BaseModel):
     memory_context_hash: str | None = None
     memory_refs: tuple[dict[str, object], ...] = ()
     memory_influence_summary: tuple[str, ...] = ()
+    planning_inputs_hash: str | None = None
+    revision_no: int | None = Field(default=None, ge=1)
+    parent_reviewed_plan_id: str | None = None
+    parent_plan_hash: str | None = None
+    revision_reason: str | None = None
     sections: tuple[AgentTaskApprovalSection, ...] = ()
     expires_at: datetime | None = None
 
@@ -232,6 +237,12 @@ class AgentTaskTechnicalDetails(BaseModel):
     internal_state: str
     reviewed_plan_id: str | None = None
     plan_hash: str | None = None
+    planning_inputs_hash: str | None = None
+    plan_revision_no: int | None = Field(default=None, ge=1)
+    parent_reviewed_plan_id: str | None = None
+    parent_plan_hash: str | None = None
+    revision_reason: str | None = None
+    evidence_snapshot_hash: str | None = None
     goal_contract_id: str | None = None
     goal_hash: str | None = None
     ticket_id: str | None = None

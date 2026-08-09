@@ -24,6 +24,11 @@ class ApprovalSummary(BaseModel):
     project_id: str
     reviewed_plan_id: str
     plan_hash: str
+    planning_inputs_hash: str
+    revision_no: int
+    parent_reviewed_plan_id: str | None = None
+    parent_plan_hash: str | None = None
+    revision_reason: str
     memory_context_hash: str | None = None
     memory_refs: tuple[dict[str, object], ...] = ()
     memory_influence_summary: tuple[str, ...] = ()

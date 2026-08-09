@@ -12,6 +12,7 @@ from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.planner.plan_validator import validate_plan
 from src.backend.app.planner.reviewed_plan_store import save_reviewed_plan
 from src.backend.app.schemas.goal_contract import GoalContract, GoalContractCandidate
+from src.backend.app.schemas.planning import PlanningRequest
 from src.backend.app.schemas.recovery_attempt import RecoveryAttemptEvent, RecoveryAttemptRecord
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.recovery_execution_service import calculate_recovery_attempt_hash
@@ -184,6 +185,32 @@ class ReplanService:
             )
             raise
         try:
+            raw_memory_context = lifecycle.command_context.get("memory_context")
+            memory_context = raw_memory_context if isinstance(raw_memory_context, dict) else {}
+            planning_request = PlanningRequest(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                goal=goal.goal_text,
+                project_config_path=parent_plan.project_config_path,
+                evidence_snapshot_hash=str(
+                    lifecycle.evidence_snapshot_hash
+                    or parent_plan.evidence_snapshot_hash
+                    or "recovery-evidence-unavailable"
+                ),
+                science_answers={
+                    str(key): str(value)
+                    for key, value in dict(lifecycle.command_context.get("science_answers") or {}).items()
+                },
+                memory_context_hash=str(memory_context.get("context_hash") or "") or None,
+                memory_context_refs=tuple(memory_context.get("evidence_refs") or ()),
+                parent_reviewed_plan_id=parent_plan.reviewed_plan_id,
+                parent_plan_hash=parent_plan.plan_hash,
+                revision_reason="recovery_replan",
+                recovery_proposal_hash=proposal.recovery_proposal_hash,
+                recovery_candidate_hash=candidate.candidate_hash,
+                provider_ref="recovery_replan_service",
+                prompt_version="recovery-replan-v1",
+            )
             reviewed = save_reviewed_plan(
                 project_id=project_id,
                 project_config_path=parent_plan.project_config_path,
@@ -203,6 +230,7 @@ class ReplanService:
                     "recovery_action": candidate.action,
                     "quota_reservation_id": reservation.reservation_id,
                 },
+                planning_request=planning_request,
                 store=self.store,
             )
             if not reviewed.plan_path or not Path(reviewed.plan_path).is_file():
@@ -273,7 +301,7 @@ class ReplanService:
             )
             raise StateStoreError("REPLAN_ATTEMPT_PERSISTENCE_FAILED") from exc
         goal_payload = reviewed.payload.get("goal_contract") or {}
-        updated = orchestrator.transition(
+        drafted = orchestrator.transition(
             project_id=project_id,
             lifecycle_id=lifecycle_id,
             to_state="PLAN_DRAFTED",
@@ -300,6 +328,29 @@ class ReplanService:
                 "recovery_approval_id": None,
                 "recovery_attempt_id": attempt.recovery_attempt_id,
             },
+        )
+        raw_summary = reviewed.payload.get("approval_envelope")
+        if not isinstance(raw_summary, dict) or not str(raw_summary.get("summary_hash") or ""):
+            self._handoff(
+                orchestrator, drafted, command_id, actor, "REPLAN_APPROVAL_SUMMARY_MISSING"
+            )
+            raise StateStoreError("REPLAN_APPROVAL_SUMMARY_MISSING")
+        updated = orchestrator.transition(
+            project_id=project_id,
+            lifecycle_id=lifecycle_id,
+            to_state="PLAN_VALIDATED",
+            command_id=f"{command_id}:validated",
+            actor=actor,
+            source_command="recovery_replan_validated",
+        )
+        updated = orchestrator.transition(
+            project_id=project_id,
+            lifecycle_id=lifecycle_id,
+            to_state="WAITING_FOR_APPROVAL",
+            command_id=f"{command_id}:approval",
+            actor=actor,
+            source_command="recovery_replan_approval_summary_ready",
+            details={"approval_summary_hash": str(raw_summary["summary_hash"])},
         )
         return updated, reviewed, attempt
 

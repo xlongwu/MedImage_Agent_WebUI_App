@@ -26,6 +26,7 @@ from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.goal_planning_service import GoalPlanningService
+from src.backend.app.schemas.planning import PlanningRequest
 from src.backend.app.services.memory_repository import MemoryRepository, MemoryRepositoryError
 from src.backend.app.services.memory_retrieval_service import MemoryRetrievalService
 from src.backend.app.services.recovery_execution_service import RecoveryExecutionService
@@ -127,7 +128,8 @@ class AgentTaskCommandService:
     ) -> None:
         self.store = store
         self.orchestrator = AgentOrchestrator(store)
-        self.planner = planner or GoalPlanningService().plan
+        self.planner = planner
+        self.goal_planning_service = GoalPlanningService()
         self.plan_saver = plan_saver or save_reviewed_plan
         self.dry_runner = dry_runner or self._dry_run
         self.executor = executor or ReviewedExecutionService()
@@ -227,6 +229,7 @@ class AgentTaskCommandService:
             if not revised_goal:
                 raise SafetyError("AGENT_GOAL_REVISION_REQUIRED", code="AGENT_GOAL_REVISION_REQUIRED")
             context.pop("science_answers", None)
+            context["revision_reason"] = "goal_revised"
             updates.update(
                 goal_text=revised_goal,
                 goal_hash=stable_hash({"goal": revised_goal}),
@@ -244,6 +247,7 @@ class AgentTaskCommandService:
                 else:
                     science_answers[item.kind] = value
             context["science_answers"] = science_answers
+            context["revision_reason"] = "decision_answered"
         target = "CONTEXT_READY" if current.state == "WAITING_FOR_INPUT" else "PLAN_DRAFTED"
         resumed = self.orchestrator.transition(
             project_id=project_id,
@@ -481,6 +485,34 @@ class AgentTaskCommandService:
         )
 
     def _plan(self, *, lifecycle, command_id: str, actor: str, resume: bool = False):
+        prepared = self._build_planning_request(
+            lifecycle=lifecycle, command_id=command_id, actor=actor, resume=resume
+        )
+        if not isinstance(prepared, tuple):
+            return prepared
+        lifecycle, request, memory_context, metadata, project = prepared
+        result = self._generate_candidate_plan(request=request)
+        if not result.get("ok") or not isinstance(result.get("plan"), dict):
+            reason = "; ".join(str(item) for item in result.get("errors", [])) or "Planner unavailable"
+            waiter = self._wait_for_goal_revision if self._requires_goal_revision(reason) else self._wait_for_input
+            return waiter(
+                lifecycle=lifecycle,
+                command_id=f"{command_id}:planner",
+                actor=actor,
+                reason=reason,
+            )
+        return self._validate_persist_and_advance(
+            lifecycle=lifecycle,
+            command_id=command_id,
+            actor=actor,
+            project=project,
+            metadata=metadata,
+            memory_context=memory_context,
+            request=request,
+            result=result,
+        )
+
+    def _build_planning_request(self, *, lifecycle, command_id: str, actor: str, resume: bool):
         project = self.store.get_project(lifecycle.project_id)
         metadata = project.metadata if project is not None and isinstance(project.metadata, dict) else {}
         project_config_path = metadata.get("project_config_path")
@@ -545,37 +577,45 @@ class AgentTaskCommandService:
             update={"command_context": command_context, "evidence_snapshot_hash": evidence.snapshot_hash}
         )
         provider = str(metadata.get("agent_planner_provider") or "rule_based")
-        planner_constraints = dict(memory_context.planner_constraints) if memory_context else {}
-        planner_constraints["science_answers"] = lifecycle.command_context.get(
-            "science_answers", {}
-        )
-        result = self.planner(
-            goal=str(lifecycle.goal_text or ""),
-            provider=provider,
+        parent = self.store.get_reviewed_plan(lifecycle.reviewed_plan_id) if lifecycle.reviewed_plan_id else None
+        request = PlanningRequest(
             project_id=lifecycle.project_id,
+            lifecycle_id=lifecycle.lifecycle_id,
+            goal=str(lifecycle.goal_text or ""),
             project_config_path=project_config_path,
-            constraints=planner_constraints,
-            store=self.store,
+            evidence_snapshot_hash=evidence.snapshot_hash,
+            science_answers={
+                str(key): str(value)
+                for key, value in dict(lifecycle.command_context.get("science_answers") or {}).items()
+            },
+            memory_context_hash=(memory_context.context_hash if memory_context else None),
+            memory_context_refs=(
+                tuple(item.model_dump(mode="json") for item in memory_context.evidence_refs)
+                if memory_context else ()
+            ),
+            parent_reviewed_plan_id=(parent.reviewed_plan_id if parent else None),
+            parent_plan_hash=(parent.plan_hash if parent else None),
+            revision_reason=str(
+                lifecycle.command_context.get(
+                    "revision_reason", "decision_answered" if resume else "initial"
+                )
+            ),
+            provider_ref=provider,
+            prompt_version=str(metadata.get("agent_planner_prompt_version") or "planner-v1"),
         )
-        if not result.get("ok") or not isinstance(result.get("plan"), dict):
-            reason = "; ".join(str(item) for item in result.get("errors", [])) or "Planner unavailable"
-            waiter = self._wait_for_goal_revision if self._requires_goal_revision(reason) else self._wait_for_input
-            return waiter(
-                lifecycle=lifecycle,
-                command_id=f"{command_id}:planner",
-                actor=actor,
-                reason=reason,
-            )
+        return lifecycle, request, memory_context, metadata, project
+
+    def _generate_candidate_plan(self, *, request: PlanningRequest) -> dict[str, Any]:
+        if self.planner is not None:
+            return self.planner(request=request)
+        return self.goal_planning_service.plan(request=request, store=self.store)
+
+    def _validate_persist_and_advance(
+        self, *, lifecycle, command_id: str, actor: str, project, metadata: dict[str, Any],
+        memory_context: MemoryContext | None, request: PlanningRequest, result: dict[str, Any],
+    ):
         plan = self._apply_science_answers(result["plan"], lifecycle.command_context, metadata)
-        try:
-            self.memory_influence_guard.validate(
-                plan=plan,
-                memory_context=memory_context,
-                science_answers=dict(lifecycle.command_context.get("science_answers") or {}),
-                project_context_values=dict(metadata.get("agent_science_decisions") or {}),
-            )
-        except MemoryInfluenceError as exc:
-            raise SafetyError(str(exc), code=exc.code) from exc
+        command_context = dict(lifecycle.command_context)
         if lifecycle.state == "CONTEXT_READY":
             lifecycle = self.orchestrator.transition(
                 project_id=lifecycle.project_id,
@@ -584,11 +624,11 @@ class AgentTaskCommandService:
                 command_id=f"{command_id}:draft",
                 actor=actor,
                 source_command="plan_drafted",
-                updates={"command_context": command_context, "evidence_snapshot_hash": evidence.snapshot_hash},
-                details={"plan_hash": stable_hash(plan), "provider": provider},
+                updates={"command_context": command_context, "evidence_snapshot_hash": request.evidence_snapshot_hash},
+                details={"plan_hash": stable_hash(plan), "provider": request.provider_ref},
             )
         decision = self._decision_batch(
-            plan, lifecycle.command_context, metadata, evidence, memory_context, lifecycle
+            plan, command_context, metadata, request.evidence_snapshot_hash, memory_context, lifecycle
         )
         if decision is not None:
             command_context["pending_plan_hash"] = decision.plan_hash_before
@@ -599,8 +639,17 @@ class AgentTaskCommandService:
                 command_id=f"{command_id}:decision:{decision.batch_id}",
                 actor=actor,
                 source_command="science_decision_required",
-                updates={"pending_decision_batch": decision, "evidence_snapshot_hash": evidence.snapshot_hash, "command_context": command_context},
+                updates={"pending_decision_batch": decision, "evidence_snapshot_hash": request.evidence_snapshot_hash, "command_context": command_context},
             )
+        try:
+            self.memory_influence_guard.validate(
+                plan=plan,
+                memory_context=memory_context,
+                science_answers=dict(command_context.get("science_answers") or {}),
+                project_context_values=dict(metadata.get("agent_science_decisions") or {}),
+            )
+        except MemoryInfluenceError as exc:
+            raise SafetyError(str(exc), code=exc.code) from exc
         validation = result.get("validation") or {}
         if not validation.get("ok"):
             return self._wait_for_input(
@@ -644,11 +693,11 @@ class AgentTaskCommandService:
         candidate = GoalContractCandidate.model_validate(contract_build.semantics)
         reviewed = self.plan_saver(
             project_id=lifecycle.project_id,
-            project_config_path=project_config_path,
+            project_config_path=request.project_config_path,
             plan=plan,
             validation=validation,
             goal=lifecycle.goal_text,
-            provider=provider,
+            provider=request.provider_ref,
             status="REVIEWED",
             warnings=list(result.get("warnings", [])),
             goal_contract_candidate=candidate,
@@ -656,6 +705,7 @@ class AgentTaskCommandService:
             memory_context=memory_context,
             planner_invocation=result.get("planner_invocation"),
             planner_evidence=result.get("planner_evidence"),
+            planning_request=request,
             store=self.store,
         )
         if plan_only:
@@ -703,6 +753,7 @@ class AgentTaskCommandService:
                 "summary_hash", "goal", "dataset_summary", "execution_summary", "write_roots",
                 "rawdata_read_only", "external_tools", "limitations", "science_changes", "sections", "expires_at",
                 "memory_context_hash", "memory_refs", "memory_influence_summary",
+                "planning_inputs_hash", "revision_no", "parent_reviewed_plan_id", "parent_plan_hash", "revision_reason",
             }
         }
         payload = dict(reviewed.payload)
@@ -1041,7 +1092,7 @@ class AgentTaskCommandService:
 
     def _decision_batch(
         self, plan: dict[str, Any], context: dict[str, Any], metadata: dict[str, Any],
-        evidence, memory_context: MemoryContext | None, lifecycle,
+        evidence_snapshot_hash: str, memory_context: MemoryContext | None, lifecycle,
     ) -> PendingDecisionBatch | None:
         items = [
             *self._memory_decision_items(memory_context, context),
@@ -1051,14 +1102,14 @@ class AgentTaskCommandService:
         requested = {item.kind for item in items}
         if len(items) > 6:
             return self._goal_revision_batch(
-                lifecycle, evidence.snapshot_hash,
+                lifecycle, evidence_snapshot_hash,
                 "More than six required decisions indicate an ambiguous goal or project state.",
             )
         if not items:
             return None
         return PendingDecisionBatch(
             batch_id=f"decision_batch_{uuid4().hex}", lifecycle_id=lifecycle.lifecycle_id,
-            project_id=lifecycle.project_id, evidence_snapshot_hash=evidence.snapshot_hash,
+            project_id=lifecycle.project_id, evidence_snapshot_hash=evidence_snapshot_hash,
             plan_hash_before=stable_hash(plan), items=tuple(items),
             expires_at=datetime.now(UTC) + timedelta(hours=24),
             source="memory_suggestion" if requested and all(item.source == "memory_suggestion" for item in items) else "planner",

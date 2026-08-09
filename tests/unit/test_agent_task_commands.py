@@ -10,7 +10,8 @@ from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_lifecycle import (
     AgentLifecycleEvent,
     AgentLifecycleRecord,
-    PendingDecision,
+    DecisionItem,
+    PendingDecisionBatch,
     PendingDecisionOption,
 )
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord
@@ -83,7 +84,7 @@ def test_subject_science_decision_applies_reviewed_native_subject_scope() -> Non
         },
     }
 
-    decision = AgentTaskCommandService._science_decision(plan, {})
+    decision = AgentTaskCommandService._science_decision_items(plan, {})[0]
 
     assert decision is not None
     assert decision.kind == "subject_id"
@@ -122,22 +123,21 @@ def test_reho_approval_preflight_rejects_incomplete_native_preprocessing_chain()
     assert "temporal_filtering" in issue
 
 
-def test_v1_v2_lifecycle_payloads_load_with_v3_command_defaults() -> None:
-    for version in (1, 2):
-        record = AgentLifecycleRecord.model_validate(
-            {
-                "schema_version": version,
-                "lifecycle_id": f"legacy-{version}",
-                "project_id": "project-1",
-                "state": "CREATED",
-                "created_at": NOW,
-                "updated_at": NOW,
-            }
-        )
-        assert record.goal_text is None
-        assert record.goal_hash is None
-        assert record.pending_decision is None
-        assert record.canceled_at is None
+def test_current_lifecycle_payload_uses_batch_decision_defaults() -> None:
+    record = AgentLifecycleRecord.model_validate(
+        {
+            "schema_version": 4,
+            "lifecycle_id": "current-4",
+            "project_id": "project-1",
+            "state": "CREATED",
+            "created_at": NOW,
+            "updated_at": NOW,
+        }
+    )
+    assert record.goal_text is None
+    assert record.goal_hash is None
+    assert record.pending_decision_batch is None
+    assert record.canceled_at is None
 
 
 def test_waiting_input_and_science_decision_are_resumable_and_cancelable() -> None:
@@ -152,14 +152,19 @@ def test_waiting_input_and_science_decision_are_resumable_and_cancelable() -> No
         setattr(store, "lifecycle", record) or record
     )
 
-    missing = PendingDecision(
-        decision_id="decision-input",
-        kind="missing_input",
-        question="Select a registered dataset.",
-        options=(),
-        recommended_option=None,
-        impact="Planning cannot continue without project data.",
-        plan_hash_before=None,
+    missing = PendingDecisionBatch(
+        batch_id="decision-input",
+        lifecycle_id="task-1",
+        project_id="project-1",
+        evidence_snapshot_hash="evidence-input",
+        expires_at=NOW.replace(year=2027),
+        items=(DecisionItem(
+            item_id="missing_input",
+            kind="missing_input",
+            question="Select a registered dataset.",
+            impact="Planning cannot continue without project data.",
+            answer_type="text",
+        ),),
     )
     waiting = orchestrator.transition(
         project_id="project-1",
@@ -168,9 +173,9 @@ def test_waiting_input_and_science_decision_are_resumable_and_cancelable() -> No
         command_id="wait-input",
         actor="user",
         source_command="missing_input",
-        updates={"pending_decision": missing},
+        updates={"pending_decision_batch": missing},
     )
-    assert waiting.pending_decision == missing
+    assert waiting.pending_decision_batch == missing
 
     resumed = orchestrator.transition(
         project_id="project-1",
@@ -179,7 +184,7 @@ def test_waiting_input_and_science_decision_are_resumable_and_cancelable() -> No
         command_id="answer-input",
         actor="user",
         source_command="input_answered",
-        updates={"pending_decision": None},
+        updates={"pending_decision_batch": None},
     )
     drafted = orchestrator.transition(
         project_id="project-1",
@@ -189,21 +194,28 @@ def test_waiting_input_and_science_decision_are_resumable_and_cancelable() -> No
         actor="planner",
         source_command="plan_drafted",
     )
-    science = PendingDecision(
-        decision_id="decision-atlas",
-        kind="atlas",
-        question="Which atlas should define FC regions?",
-        options=(
+    science = PendingDecisionBatch(
+        batch_id="decision-atlas",
+        lifecycle_id="task-1",
+        project_id="project-1",
+        evidence_snapshot_hash="evidence-atlas",
+        plan_hash_before="plan-hash-before",
+        expires_at=NOW.replace(year=2027),
+        items=(DecisionItem(
+            item_id="atlas",
+            kind="atlas",
+            question="Which atlas should define FC regions?",
+            options=(
             PendingDecisionOption(
                 id="schaefer-200",
                 label="Schaefer 200",
                 description="A 200-region cortical parcellation.",
                 recommended=True,
             ),
-        ),
-        recommended_option="schaefer-200",
-        impact="Changing the atlas changes matrix dimensions and comparability.",
-        plan_hash_before="plan-hash-before",
+            ),
+            recommended_option="schaefer-200",
+            impact="Changing the atlas changes matrix dimensions and comparability.",
+        ),),
     )
     waiting_science = orchestrator.transition(
         project_id="project-1",
@@ -212,9 +224,9 @@ def test_waiting_input_and_science_decision_are_resumable_and_cancelable() -> No
         command_id="wait-science",
         actor="planner",
         source_command="science_decision_required",
-        updates={"pending_decision": science},
+        updates={"pending_decision_batch": science},
     )
-    assert waiting_science.pending_decision.kind == "atlas"
+    assert waiting_science.pending_decision_batch.items[0].kind == "atlas"
 
     canceled = orchestrator.cancel(
         project_id="project-1",
@@ -224,7 +236,7 @@ def test_waiting_input_and_science_decision_are_resumable_and_cancelable() -> No
         reason="User stopped before dispatch",
     )
     assert canceled.state == "CANCELED"
-    assert canceled.pending_decision is None
+    assert canceled.pending_decision_batch is None
     assert canceled.canceled_by == "user"
     assert resumed.state == "CONTEXT_READY"
     assert drafted.state == "PLAN_DRAFTED"
@@ -325,7 +337,7 @@ class CommandStore:
         return None
 
 
-def _planner(*, goal, **_kwargs):
+def _planner(*, request, **_kwargs):
     return {
         "ok": True,
         "plan": {
@@ -450,14 +462,14 @@ def test_memory_scientific_suggestion_requires_current_task_confirmation(
         actor="user",
     )
     assert waiting.state == "WAITING_FOR_SCIENCE_DECISION"
-    assert waiting.pending_decision.source == "memory_suggestion"
-    assert waiting.pending_decision.memory_id == "memory-atlas-1"
+    assert waiting.pending_decision_batch.source == "memory_suggestion"
+    assert waiting.pending_decision_batch.items[0].memory_id == "memory-atlas-1"
 
     resumed = service.answer(
         project_id="project-1",
         lifecycle_id=waiting.lifecycle_id,
-        decision_id=waiting.pending_decision.decision_id,
-        answer="schaefer-200",
+        batch_id=waiting.pending_decision_batch.batch_id,
+        answers=[{"item_id": "memory_atlas_memory-atlas-1", "value": "schaefer-200"}],
         command_id="memory-answer-0001",
         actor="user",
     )
@@ -516,7 +528,7 @@ def test_planning_never_invokes_execution_dry_run_before_user_approval(tmp_path)
     )
 
     assert waiting.state == "WAITING_FOR_APPROVAL"
-    assert waiting.pending_decision is None
+    assert waiting.pending_decision_batch is None
     assert dry_run_calls == []
     reviewed = store.get_reviewed_plan("reviewed-1")
     assert reviewed.payload["dry_run"]["status"] == "PENDING_USER_APPROVAL"
@@ -536,8 +548,8 @@ def test_science_decision_blocks_approval_and_answer_rebuilds_plan(tmp_path) -> 
     ready = service.answer(
         project_id="project-1",
         lifecycle_id=waiting.lifecycle_id,
-        decision_id=waiting.pending_decision.decision_id,
-        answer="schaefer-200",
+        batch_id=waiting.pending_decision_batch.batch_id,
+        answers=[{"item_id": "atlas", "value": "schaefer-200"}],
         command_id="answer-2",
         actor="user",
     )
@@ -585,14 +597,14 @@ def test_subject_decision_rebuilds_reviewed_plan_and_approval_scope(tmp_path) ->
     )
 
     assert waiting.state == "WAITING_FOR_SCIENCE_DECISION"
-    assert waiting.pending_decision.kind == "subject_id"
+    assert waiting.pending_decision_batch.items[0].kind == "subject_id"
     assert store.plans == {}
 
     ready = service.answer(
         project_id="project-1",
         lifecycle_id=waiting.lifecycle_id,
-        decision_id=waiting.pending_decision.decision_id,
-        answer="sub-001",
+        batch_id=waiting.pending_decision_batch.batch_id,
+        answers=[{"item_id": "subject_id", "value": "sub-001"}],
         command_id="answer-subject-scope",
         actor="user",
     )
@@ -670,14 +682,14 @@ def test_science_decision_matrix_requires_explicit_answer_and_rebuilds_plan(
         actor="user",
     )
     assert waiting.state == "WAITING_FOR_SCIENCE_DECISION"
-    assert waiting.pending_decision.kind == kind
+    assert waiting.pending_decision_batch.items[0].kind == kind
     assert store.plans == {}
 
     ready = service.answer(
         project_id="project-1",
         lifecycle_id=waiting.lifecycle_id,
-        decision_id=waiting.pending_decision.decision_id,
-        answer=answer,
+        batch_id=waiting.pending_decision_batch.batch_id,
+        answers=[{"item_id": kind, "value": answer}],
         command_id=f"answer-{kind}",
         actor="user",
     )
@@ -691,8 +703,8 @@ def test_science_decision_matrix_requires_explicit_answer_and_rebuilds_plan(
         event for event in store.events[ready.lifecycle_id] if event.source_command == "answer"
     )
     assert answer_event.details == {
-        "decision_id": waiting.pending_decision.decision_id,
-        "answer": answer,
+        "batch_id": waiting.pending_decision_batch.batch_id,
+        "item_ids": [kind],
     }
 
 
@@ -1042,22 +1054,22 @@ def test_conversion_readiness_failure_stops_before_reviewed_plan(tmp_path) -> No
     )
 
     assert waiting.state == "WAITING_FOR_INPUT"
-    assert waiting.pending_decision.kind == "missing_input"
-    assert "CONVERSION_RELEASE_APPROVAL_REQUIRED" in waiting.pending_decision.impact
+    assert waiting.pending_decision_batch.items[0].kind == "missing_input"
+    assert "CONVERSION_RELEASE_APPROVAL_REQUIRED" in waiting.pending_decision_batch.items[0].impact
     assert store.plans == {}
     assert calls[0]["conversion_run_id"] == "conv-1"
 
 
 def test_unsupported_goal_requests_goal_revision_and_answer_replaces_goal(tmp_path) -> None:
-    def planner(*, goal, **kwargs):
-        if goal == "unsupported wording":
+    def planner(*, request, **kwargs):
+        if request.goal == "unsupported wording":
             return {
                 "ok": False,
                 "plan": {},
                 "validation": {},
                 "errors": ["UNSUPPORTED_GOAL: no matching pipeline"],
             }
-        return _planner(goal=goal, **kwargs)
+        return _planner(request=request, **kwargs)
 
     store, service = _service(tmp_path, planner=planner)
     waiting = service.create(
@@ -1068,13 +1080,13 @@ def test_unsupported_goal_requests_goal_revision_and_answer_replaces_goal(tmp_pa
     )
 
     assert waiting.state == "WAITING_FOR_INPUT"
-    assert waiting.pending_decision.kind == "goal_revision"
+    assert waiting.pending_decision_batch.items[0].kind == "goal_revision"
 
     ready = service.answer(
         project_id="project-1",
         lifecycle_id=waiting.lifecycle_id,
-        decision_id=waiting.pending_decision.decision_id,
-        answer="Compute functional connectivity",
+        batch_id=waiting.pending_decision_batch.batch_id,
+        answers=[{"item_id": "goal_revision", "value": "Compute functional connectivity"}],
         command_id="answer-revision",
         actor="user",
     )

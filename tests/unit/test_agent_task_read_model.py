@@ -9,7 +9,8 @@ from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.schemas.agent_lifecycle import (
     AgentLifecycleEvent,
     AgentLifecycleRecord,
-    PendingDecision,
+    DecisionItem,
+    PendingDecisionBatch,
 )
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord
 from src.backend.app.schemas.execution_ticket import ExecutionTicketEvent
@@ -404,22 +405,30 @@ def test_unknown_internal_state_fails_closed() -> None:
     assert projected.technical_details.internal_state == "FUTURE_STATE"
 
 
-def test_goal_revision_is_not_project_input_and_exposes_decision_id() -> None:
-    pending = PendingDecision(
-        decision_id="decision-revise",
-        kind="goal_revision",
-        question="Revise the research goal.",
-        impact="UNSUPPORTED_GOAL",
+def test_goal_revision_is_not_project_input_and_exposes_decision_batch_id() -> None:
+    pending = PendingDecisionBatch(
+        batch_id="decision-revise",
+        lifecycle_id="task-1",
+        project_id="project-1",
+        evidence_snapshot_hash="evidence-revise",
+        expires_at=NOW.replace(year=2027),
+        items=(DecisionItem(
+            item_id="goal_revision",
+            kind="goal_revision",
+            question="Revise the research goal.",
+            impact="UNSUPPORTED_GOAL",
+            answer_type="text",
+        ),),
     )
     lifecycle = _lifecycle("WAITING_FOR_INPUT").model_copy(
-        update={"pending_decision": pending}
+        update={"pending_decision_batch": pending}
     )
     projected = AgentTaskReadModel(ReadOnlyStore(lifecycle)).get(
         project_id="project-1", task_id="task-1"
     )
 
     assert projected.next_action.type == "revise_goal"
-    assert projected.next_action.decision_id == "decision-revise"
+    assert projected.next_action.decision_batch_id == "decision-revise"
     assert projected.decisions[0].kind == "goal_revision"
 
 

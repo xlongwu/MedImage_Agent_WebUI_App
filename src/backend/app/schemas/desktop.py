@@ -45,6 +45,14 @@ class ReviewedPlanRecord(BaseModel):
     dataset_index_path: str | None = None
     rawdata_dir: str | None = None
     plan_hash: str
+    revision_no: int = Field(default=1, ge=1)
+    parent_reviewed_plan_id: str | None = None
+    parent_plan_hash: str | None = None
+    revision_reason: Literal[
+        "initial", "decision_answered", "goal_revised", "recovery_replan"
+    ] = "initial"
+    planning_inputs_hash: str | None = None
+    evidence_snapshot_hash: str | None = None
     memory_context_hash: str | None = None
     memory_context_refs: list[dict[str, Any]] = Field(default_factory=list)
     memory_retrieval_policy_version: str | None = None

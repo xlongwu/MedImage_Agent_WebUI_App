@@ -105,6 +105,11 @@ their tag state.
   non-terminal runs continue under a bounded single-owner monitor. Read-side
   Agent Task APIs remain side-effect free, and recovery remains a separate
   explicit approval.
+- Agent planning now uses one immutable `PlanningRequest` for initial planning,
+  answered decisions, goal revision, and recovery replan. Reviewed Plans retain
+  revision number, parent plan, reason, planning-input hash, and EvidenceSnapshot
+  hash; every changed planning input creates a new Approval Summary, and recovery
+  replans return to `WAITING_FOR_APPROVAL` with their own summary.
 - The desktop Runs workspace uses persisted project run links as its authoritative
   source. Exact duplicate run IDs resolve to the newest backend state; Workspace
   keeps only the newest attempt for each Agent Task (or legacy reviewed plan),

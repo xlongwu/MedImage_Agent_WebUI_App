@@ -12,6 +12,7 @@ from src.backend.app.planner.project_context import (
     apply_project_context_to_plan,
     load_project_context,
 )
+from src.backend.app.schemas.planning import PlanningRequest
 
 
 class GoalPlanningService:
@@ -23,35 +24,27 @@ class GoalPlanningService:
     def plan(
         self,
         *,
-        goal: str,
-        provider: str = "rule_based",
-        project_id: str | None = None,
-        project_config_path: str | None = None,
-        constraints: dict[str, Any] | None = None,
+        request: PlanningRequest,
         store=None,
     ) -> dict[str, Any]:
-        if not project_id and not project_config_path:
-            return self.context_error(
-                goal=goal,
-                provider=provider,
-                error="PROJECT_CONTEXT_REQUIRED: select a project or provide an explicit project_config_path",
-            )
         try:
             context = load_project_context(
-                project_id=project_id,
-                project_config_path=project_config_path,
+                project_id=request.project_id,
+                project_config_path=request.project_config_path,
                 store=store,
             )
         except ProjectContextError as exc:
-            return self.context_error(goal=goal, provider=provider, error=str(exc))
+            return self.context_error(
+                goal=request.goal, provider=request.provider_ref, error=str(exc)
+            )
 
-        planner_constraints = dict(constraints or {})
+        planner_constraints = request.planner_constraints()
         planner_constraints.setdefault("project_context", context.to_dict())
         result = self.planner(
-            goal=goal,
-            provider=provider,
+            goal=request.goal,
+            provider=request.provider_ref,
             constraints=planner_constraints,
-            project_config_path=project_config_path,
+            project_config_path=request.project_config_path,
         ).to_dict()
         result["project_context"] = context.to_dict()
         if not result.get("ok") or not isinstance(result.get("plan"), dict):

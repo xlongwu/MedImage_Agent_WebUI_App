@@ -23,8 +23,15 @@ def test_replan_persists_complete_new_plan_with_new_identity_and_pending_approva
     )
     assert reviewed.reviewed_plan_id != fixture.reviewed.reviewed_plan_id
     assert reviewed.plan_hash != fixture.reviewed.plan_hash
+    assert reviewed.revision_no == fixture.reviewed.revision_no + 1
+    assert reviewed.parent_reviewed_plan_id == fixture.reviewed.reviewed_plan_id
+    assert reviewed.parent_plan_hash == fixture.reviewed.plan_hash
+    assert reviewed.revision_reason == "recovery_replan"
+    assert reviewed.planning_inputs_hash
+    assert reviewed.evidence_snapshot_hash
     assert reviewed.status == "NEEDS_APPROVAL"
     assert reviewed.approval_status == "PENDING"
+    assert reviewed.payload["approval_envelope"]["summary_hash"]
     assert reviewed.payload["plan"]["metadata"]["subject_ids"] == ["sub-01"]
     assert reviewed.payload["lineage"] == {
         "parent_reviewed_plan_id": fixture.reviewed.reviewed_plan_id,
@@ -35,7 +42,7 @@ def test_replan_persists_complete_new_plan_with_new_identity_and_pending_approva
         "quota_reservation_id": attempt.quota_reservation_id,
     }
     assert attempt.status == "REPLAN_CREATED"
-    assert lifecycle.state == "PLAN_DRAFTED"
+    assert lifecycle.state == "WAITING_FOR_APPROVAL"
     assert lifecycle.reviewed_plan_id == reviewed.reviewed_plan_id
     assert lifecycle.execution_ticket_id is None
     assert lifecycle.parent_execution_ticket_id == fixture.parent.execution_ticket_id
@@ -55,5 +62,6 @@ def test_replan_persists_complete_new_plan_with_new_identity_and_pending_approva
     )
     assert replay_lifecycle == lifecycle
     assert replay_reviewed.reviewed_plan_id == reviewed.reviewed_plan_id
+    assert replay_reviewed.revision_no == reviewed.revision_no
     assert replay_attempt.recovery_attempt_id == attempt.recovery_attempt_id
     assert len(fixture.store.list_recovery_quota_reservations(fixture.project_id)) == 1

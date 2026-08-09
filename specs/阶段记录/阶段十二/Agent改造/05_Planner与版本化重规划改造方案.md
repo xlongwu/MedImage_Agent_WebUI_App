@@ -1,6 +1,6 @@
 # 05：Planner 与版本化重规划改造方案
 
-> 状态：Draft，待人工 Review。
+> 状态：Implemented，已完成代码与回归验证；仍按项目流程接受人工 Review。
 > 依赖：04 提供 EvidenceSnapshot 和决定批次；06 的恢复重规划复用本文合同。
 
 ## 1. 目标

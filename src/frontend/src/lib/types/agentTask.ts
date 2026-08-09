@@ -138,6 +138,11 @@ export type AgentTaskApprovalSummary = {
   memory_context_hash?: string | null;
   memory_refs?: Record<string, unknown>[];
   memory_influence_summary?: string[];
+  planning_inputs_hash?: string | null;
+  revision_no?: number | null;
+  parent_reviewed_plan_id?: string | null;
+  parent_plan_hash?: string | null;
+  revision_reason?: string | null;
   sections: AgentTaskApprovalSection[];
   expires_at: string | null;
 };
@@ -189,6 +194,12 @@ export type AgentTaskTechnicalDetails = {
   internal_state: string;
   reviewed_plan_id: string | null;
   plan_hash: string | null;
+  planning_inputs_hash?: string | null;
+  plan_revision_no?: number | null;
+  parent_reviewed_plan_id?: string | null;
+  parent_plan_hash?: string | null;
+  revision_reason?: string | null;
+  evidence_snapshot_hash?: string | null;
   goal_contract_id: string | null;
   goal_hash: string | null;
   ticket_id: string | null;
