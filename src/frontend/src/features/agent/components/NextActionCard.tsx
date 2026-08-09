@@ -60,13 +60,13 @@ export function NextActionCard({
   const decisionQuestion = (decision: (typeof task.decisions)[number]) =>
     decision.kind === "goal_revision"
       ? t("agent.decision.goalRevision.question")
-        : decision.kind === "missing_input"
+      : decision.kind === "missing_input"
         ? t("agent.decision.missingInput.question")
         : decision.question;
   const decisionImpact = (decision: (typeof task.decisions)[number]) =>
     decision.kind === "goal_revision"
       ? t("agent.decision.goalRevision.impact")
-        : decision.kind === "missing_input"
+      : decision.kind === "missing_input"
         ? t("agent.decision.missingInput.impact")
         : decision.impact;
   const datasetCountMatch = task.approval_summary?.dataset_summary.match(
@@ -98,46 +98,55 @@ export function NextActionCard({
         )}
       </div>
 
-      {task.decisions.length && needsAnswer ? task.decisions.map((decision) => (
-        <fieldset className={styles.decisionOptions} key={decision.item_id}>
-          <legend>{decisionQuestion(decision)}</legend>
-          {decision.source === "memory_suggestion" ? (
-            <Badge tone="info">{t("agent.decision.memorySuggestion")}</Badge>
-          ) : null}
-          <p>{decisionImpact(decision)}</p>
-          {decision.options.length ? (
-            decision.options.map((option) => (
-              <label key={option.id}>
-                <input
-                  checked={answers[decision.item_id] === option.id}
-                  name={decision.item_id}
-                  onChange={() => setAnswers((current) => ({ ...current, [decision.item_id]: option.id }))}
-                  type="radio"
-                  value={option.id}
+      {task.decisions.length && needsAnswer
+        ? task.decisions.map((decision) => (
+            <fieldset className={styles.decisionOptions} key={decision.item_id}>
+              <legend>{decisionQuestion(decision)}</legend>
+              {decision.source === "memory_suggestion" ? (
+                <Badge tone="info">{t("agent.decision.memorySuggestion")}</Badge>
+              ) : null}
+              <p>{decisionImpact(decision)}</p>
+              {decision.options.length ? (
+                decision.options.map((option) => (
+                  <label key={option.id}>
+                    <input
+                      checked={answers[decision.item_id] === option.id}
+                      name={decision.item_id}
+                      onChange={() =>
+                        setAnswers((current) => ({ ...current, [decision.item_id]: option.id }))
+                      }
+                      type="radio"
+                      value={option.id}
+                    />
+                    <span>
+                      <strong>{option.label}</strong>
+                      <small>{option.description}</small>
+                    </span>
+                    {option.recommended ? (
+                      <Badge size="sm" tone="info">
+                        {t("agent.recommended")}
+                      </Badge>
+                    ) : null}
+                  </label>
+                ))
+              ) : (
+                <textarea
+                  aria-label={
+                    type === "revise_goal" ? t("agent.goalRevisionLabel") : t("agent.answerLabel")
+                  }
+                  onChange={(event) =>
+                    setAnswers((current) => ({
+                      ...current,
+                      [decision.item_id]: event.target.value,
+                    }))
+                  }
+                  rows={3}
+                  value={answers[decision.item_id] ?? ""}
                 />
-                <span>
-                  <strong>{option.label}</strong>
-                  <small>{option.description}</small>
-                </span>
-                {option.recommended ? (
-                  <Badge size="sm" tone="info">
-                    {t("agent.recommended")}
-                  </Badge>
-                ) : null}
-              </label>
-            ))
-          ) : (
-            <textarea
-              aria-label={
-                type === "revise_goal" ? t("agent.goalRevisionLabel") : t("agent.answerLabel")
-              }
-              onChange={(event) => setAnswers((current) => ({ ...current, [decision.item_id]: event.target.value }))}
-              rows={3}
-              value={answers[decision.item_id] ?? ""}
-            />
-          )}
-        </fieldset>
-      )) : null}
+              )}
+            </fieldset>
+          ))
+        : null}
 
       {task.approval_summary && isApproval ? (
         <div className={styles.approvalSummary}>
@@ -204,11 +213,20 @@ export function NextActionCard({
               disabled={
                 mutating ||
                 Boolean(task.next_action.disabled_reason) ||
-                (needsAnswer && task.decisions.some((item) => item.required && !(answers[item.item_id] ?? "").trim()))
+                (needsAnswer &&
+                  task.decisions.some(
+                    (item) => item.required && !(answers[item.item_id] ?? "").trim(),
+                  ))
               }
               onClick={() => {
                 if (needsAnswer && task.decision_batch)
-                  void onAnswer(task.decision_batch.batch_id, task.decisions.map((item) => ({ item_id: item.item_id, value: answers[item.item_id] ?? "" }))).catch((): void => {});
+                  void onAnswer(
+                    task.decision_batch.batch_id,
+                    task.decisions.map((item) => ({
+                      item_id: item.item_id,
+                      value: answers[item.item_id] ?? "",
+                    })),
+                  ).catch((): void => {});
                 else if (isApproval) void onApprove().catch((): void => {});
                 else onOpenRuns();
               }}

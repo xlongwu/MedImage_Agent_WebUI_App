@@ -13,8 +13,19 @@ describe("HarnessStatusCard", () => {
             status: "WAITING_FOR_USER",
             model_calls_used: 1,
             model_calls_limit: 6,
-            tool_proposals_used: 1,
-            tool_proposals_limit: 8,
+            action_proposals_used: 1,
+            action_proposals_limit: 8,
+            steps_used: 1,
+            steps_limit: 8,
+            repairs_used: 0,
+            repairs_limit: 1,
+            recovery_attempts_used: 0,
+            recovery_attempts_limit: 2,
+            input_tokens_used: null,
+            input_tokens_limit: null,
+            output_tokens_used: null,
+            output_tokens_limit: null,
+            actual_provider: "rule_based",
             next_step: null,
             terminal_reason: null,
             latest_step_id: "step-1",
@@ -31,7 +42,10 @@ describe("HarnessStatusCard", () => {
 
     expect(screen.getByRole("heading", { name: "规划追踪" })).toBeInTheDocument();
     expect(screen.getByText("等待你处理")).toBeInTheDocument();
-    expect(screen.getByText("模型调用：1/6；动作提议：1/8。")).toBeInTheDocument();
+    expect(
+      screen.getByText("步骤：1/8；模型调用：1/6；动作提议：1/8；每步修复：0/1；恢复：0/2。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("实际规划路径：rule_based。")).toBeInTheDocument();
     expect(screen.getByText("需要确认图谱。")).toBeInTheDocument();
   });
 
@@ -43,8 +57,19 @@ describe("HarnessStatusCard", () => {
             status: "STOPPED",
             model_calls_used: 1,
             model_calls_limit: 6,
-            tool_proposals_used: 0,
-            tool_proposals_limit: 8,
+            action_proposals_used: 0,
+            action_proposals_limit: 8,
+            steps_used: 1,
+            steps_limit: 8,
+            repairs_used: 0,
+            repairs_limit: 1,
+            recovery_attempts_used: 0,
+            recovery_attempts_limit: 2,
+            input_tokens_used: 12,
+            input_tokens_limit: 100,
+            output_tokens_used: 3,
+            output_tokens_limit: 50,
+            actual_provider: "openai_compatible",
             next_step: "step 2",
             terminal_reason: "AGENT_HARNESS_PROVIDER_UNAVAILABLE",
             latest_step_id: "step-1",
@@ -65,6 +90,8 @@ describe("HarnessStatusCard", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("AGENT_HARNESS_PROVIDER_UNAVAILABLE")).not.toBeInTheDocument();
     expect(screen.getByText("Fairness yields: 1.")).toBeInTheDocument();
+    expect(screen.getByText("Input tokens: 12/100; output tokens: 3/50.")).toBeInTheDocument();
+    expect(screen.getByText("Actual planning path: openai_compatible.")).toBeInTheDocument();
     expect(
       screen.getByText("Planning path: openai_compatible → deterministic_goal_planner."),
     ).toBeInTheDocument();

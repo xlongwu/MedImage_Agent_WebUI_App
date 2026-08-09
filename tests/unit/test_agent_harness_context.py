@@ -122,7 +122,7 @@ def test_adapter_serializes_context_v2_in_fixed_order_and_rejects_flat_v1() -> N
 
     assert tuple(serialized["sections"]) == HarnessContextBuilder.SECTION_ORDER
     assert '"sections":{"goal"' in prompt
-    assert action.expected_state == "CREATED"
+    assert action.envelope.expected_state == "CREATED"
     try:
         serialize_context_v2({"schema_version": 1, "lifecycle_state": "CREATED"})
     except ValueError as error:

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,6 +39,72 @@ class LLMProviderResult:
     raw: dict[str, Any] | None = None
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    model: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    latency_ms: int | None = None
+    provider_request_id: str | None = None
+    endpoint_class: str = "chat_completions"
+    network_called: bool = False
+
+
+_SAFE_PROVIDER_TEXT = re.compile(r"[^A-Za-z0-9._:/-]+")
+_SAFE_ERROR_CODE = re.compile(r"[A-Z][A-Z0-9_]{2,127}")
+
+
+def _safe_provider_text(value: object, *, limit: int = 128) -> str | None:
+    if not isinstance(value, str):
+        return None
+    cleaned = _SAFE_PROVIDER_TEXT.sub("", value.strip())[:limit]
+    return cleaned or None
+
+
+def _safe_error_code(value: object, *, default: str = "LLM_PROVIDER_ERROR") -> str:
+    match = _SAFE_ERROR_CODE.search(str(value or ""))
+    return match.group(0) if match else default
+
+
+def _usage_value(usage: object, *names: str) -> int | None:
+    if not isinstance(usage, dict):
+        return None
+    for name in names:
+        value = usage.get(name)
+        if isinstance(value, int) and value >= 0:
+            return value
+    return None
+
+
+def _provider_request_id(response: object, raw: object) -> str | None:
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        for name in ("x-request-id", "request-id", "openai-request-id"):
+            try:
+                value = headers.get(name)
+            except AttributeError:
+                value = None
+            safe = _safe_provider_text(value)
+            if safe:
+                return safe
+    return _safe_provider_text(raw.get("id") if isinstance(raw, dict) else None)
+
+
+def _result_metadata(
+    *, raw: object, response: object, started_at: float, network_called: bool
+) -> dict[str, object]:
+    usage = raw.get("usage") if isinstance(raw, dict) else None
+    prompt_details = usage.get("prompt_tokens_details") if isinstance(usage, dict) else None
+    cached = _usage_value(prompt_details, "cached_tokens")
+    return {
+        "model": _safe_provider_text(raw.get("model") if isinstance(raw, dict) else None),
+        "input_tokens": _usage_value(usage, "prompt_tokens", "input_tokens"),
+        "output_tokens": _usage_value(usage, "completion_tokens", "output_tokens"),
+        "cached_input_tokens": cached,
+        "latency_ms": max(0, round((time.perf_counter() - started_at) * 1000)),
+        "provider_request_id": _provider_request_id(response, raw),
+        "endpoint_class": "chat_completions",
+        "network_called": network_called,
+    }
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -197,6 +264,7 @@ def call_openai_compatible_provider(
     url = f"{config.base_url.rstrip('/')}/chat/completions"
 
     last_raw: dict[str, Any] | None = None
+    last_metadata: dict[str, object] = {"endpoint_class": "chat_completions", "network_called": False}
     last_error = "PLANNER_OUTPUT_INVALID"
     for attempt in range(2):
         request_body = dict(body)
@@ -212,6 +280,7 @@ def call_openai_compatible_provider(
                 }
             )
         try:
+            started_at = time.perf_counter()
             if http_post is None:
                 import httpx  # noqa: E402
                 resp = httpx.post(url, headers=headers, json=request_body, timeout=60.0)
@@ -226,10 +295,16 @@ def call_openai_compatible_provider(
             return LLMProviderResult(
                 ok=False,
                 content="",
-                errors=[f"LLM_API_CALL_FAILED: {type(exc).__name__}"],
+                errors=["LLM_API_CALL_FAILED"],
+                latency_ms=max(0, round((time.perf_counter() - started_at) * 1000)),
+                endpoint_class="chat_completions",
+                network_called=True,
             )
 
         last_raw = raw
+        last_metadata = _result_metadata(
+            raw=raw, response=resp, started_at=started_at, network_called=True
+        )
         choices = raw.get("choices", []) if isinstance(raw, dict) else []
         content = (
             (choices[0].get("message", {}) or {}).get("content", "")
@@ -249,6 +324,7 @@ def call_openai_compatible_provider(
                 ok=True,
                 content=json.dumps(candidate, ensure_ascii=False),
                 raw=raw,
+                **last_metadata,
             )
         except ValueError as exc:
             last_error = str(exc)
@@ -257,7 +333,8 @@ def call_openai_compatible_provider(
         ok=False,
         content="",
         raw=last_raw,
-        errors=[f"PLANNER_OUTPUT_INVALID: {last_error}"],
+        errors=[_safe_error_code(last_error, default="PLANNER_OUTPUT_INVALID")],
+        **last_metadata,
     )
 
 
@@ -285,6 +362,7 @@ def call_openai_compatible_action_provider(
         "max_tokens": 1024,
         "response_format": {"type": "json_object"},
     }
+    started_at = time.perf_counter()
     try:
         if http_post is None:
             import httpx  # noqa: E402
@@ -305,6 +383,24 @@ def call_openai_compatible_action_provider(
             raw = response.json() if hasattr(response, "json") else response
         content = ((raw.get("choices") or [{}])[0].get("message") or {}).get("content", "")
         envelope = ActionEnvelope.model_validate_json(content)
-        return LLMProviderResult(ok=True, content=envelope.model_dump_json(), raw=raw)
-    except Exception as exc:
-        return LLMProviderResult(ok=False, content="", errors=[f"AGENT_HARNESS_MODEL_OUTPUT_INVALID: {exc}"])
+        return LLMProviderResult(
+            ok=True,
+            content=envelope.model_dump_json(),
+            raw=raw,
+            **_result_metadata(raw=raw, response=response, started_at=started_at, network_called=True),
+        )
+    except Exception:
+        raw_value = locals().get("raw")
+        response_value = locals().get("response")
+        return LLMProviderResult(
+            ok=False,
+            content="",
+            raw=raw_value if isinstance(raw_value, dict) else None,
+            errors=["AGENT_HARNESS_MODEL_OUTPUT_INVALID"],
+            **_result_metadata(
+                raw=raw_value,
+                response=response_value,
+                started_at=started_at,
+                network_called=True,
+            ),
+        )

@@ -311,13 +311,19 @@ class HarnessContextBuilder:
         return self._safe_object(summary, max_items=24)
 
     @staticmethod
-    def _budget_fields(attempt) -> dict[str, int | str]:
+    def _budget_fields(attempt) -> dict[str, int | str | None | dict[str, int]]:
         if attempt is None:
             return {}
         return {
+            "steps_used": attempt.steps_used,
             "model_calls_used": attempt.model_calls_used,
-            "tool_proposals_used": attempt.tool_proposals_used,
+            "action_proposals_used": attempt.action_proposals_used,
+            "repairs_used": attempt.repairs_used,
             "recovery_attempts_used": attempt.recovery_attempts_used,
+            "input_tokens_used": attempt.input_tokens_used,
+            "output_tokens_used": attempt.output_tokens_used,
+            "model_call_phase_allocations": attempt.model_call_phase_allocations,
+            "model_call_phase_usage": attempt.model_call_phase_usage,
             "deadline_at": attempt.deadline_at.isoformat(),
         }
 

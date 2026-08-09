@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from typing import Protocol
 
 from src.backend.app.schemas.agent_harness import ActionEnvelope
@@ -51,8 +52,51 @@ def serialize_context_v2(snapshot: dict) -> dict:
     }
 
 
+@dataclass(frozen=True)
+class ActionCallMetadata:
+    provider: str
+    model: str | None
+    endpoint_class: str
+    response_hash: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cached_input_tokens: int | None
+    latency_ms: int | None
+    provider_request_id: str | None
+    network_called: bool
+
+
+@dataclass(frozen=True)
+class ActionProposal:
+    envelope: ActionEnvelope
+    metadata: ActionCallMetadata
+
+    @classmethod
+    def rule_based(cls, envelope: ActionEnvelope) -> "ActionProposal":
+        return cls(
+            envelope=envelope,
+            metadata=ActionCallMetadata(
+                provider="rule_based", model=None, endpoint_class="rule_based",
+                response_hash=None, input_tokens=None, output_tokens=None,
+                cached_input_tokens=None, latency_ms=None, provider_request_id=None,
+                network_called=False,
+            ),
+        )
+
+
+class AgentModelProviderError(RuntimeError):
+    def __init__(self, code: str, metadata: ActionCallMetadata) -> None:
+        super().__init__(code)
+        self.code = code
+        self.metadata = metadata
+
+
+class AgentModelInvalidOutputError(AgentModelProviderError):
+    pass
+
+
 class AgentModelAdapter(Protocol):
-    def propose_action(self, *, snapshot: dict, provider_ref: str, repair: bool = False) -> ActionEnvelope: ...
+    def propose_action(self, *, snapshot: dict, provider_ref: str, repair: bool = False) -> ActionProposal: ...
 
 
 class DefaultAgentModelAdapter:
@@ -63,7 +107,7 @@ class DefaultAgentModelAdapter:
     configured; provider failure stops the enabled Harness.
     """
 
-    def propose_action(self, *, snapshot: dict, provider_ref: str, repair: bool = False) -> ActionEnvelope:
+    def propose_action(self, *, snapshot: dict, provider_ref: str, repair: bool = False) -> ActionProposal:
         snapshot = serialize_context_v2(snapshot)
         sections = snapshot["sections"]
         goal = sections.get("goal") if isinstance(sections, dict) else None
@@ -71,19 +115,40 @@ class DefaultAgentModelAdapter:
         state = str(goal_data.get("lifecycle_state") or "") if isinstance(goal_data, dict) else ""
         provider = provider_ref.strip().casefold()
         if provider == "rule_based":
-            return ActionEnvelope(
+            return ActionProposal.rule_based(ActionEnvelope(
                 kind="draft_plan" if state in {"CREATED", "CONTEXT_READY", "PLAN_DRAFTED"} else "finish",
                 reason="Use the existing deterministic reviewed-planning service.",
                 expected_state=state,
-            )
+            ))
         if provider != "openai_compatible" or not os.environ.get("MEDIMAGE_LLM_API_KEY"):
-            raise RuntimeError("AGENT_HARNESS_PROVIDER_UNAVAILABLE")
+            raise AgentModelProviderError(
+                "AGENT_HARNESS_PROVIDER_UNAVAILABLE",
+                ActionCallMetadata(
+                    provider="openai_compatible", model=None, endpoint_class="chat_completions",
+                    response_hash=None, input_tokens=None, output_tokens=None,
+                    cached_input_tokens=None, latency_ms=None, provider_request_id=None,
+                    network_called=False,
+                ),
+            )
         from src.backend.app.planner.llm_provider import call_openai_compatible_action_provider
+        from src.backend.app.planner.audit_record import stable_hash
 
         result = call_openai_compatible_action_provider(snapshot=snapshot, repair=repair)
+        metadata = ActionCallMetadata(
+            provider="openai_compatible", model=result.model,
+            endpoint_class=result.endpoint_class, response_hash=(stable_hash(result.content) if result.content else None),
+            input_tokens=result.input_tokens, output_tokens=result.output_tokens,
+            cached_input_tokens=result.cached_input_tokens, latency_ms=result.latency_ms,
+            provider_request_id=result.provider_request_id, network_called=result.network_called,
+        )
         if not result.ok:
-            raise RuntimeError(result.errors[0] if result.errors else "AGENT_HARNESS_MODEL_FAILED")
-        return ActionEnvelope.model_validate_json(result.content)
+            code = result.errors[0] if result.errors else "AGENT_HARNESS_MODEL_FAILED"
+            error_type = AgentModelInvalidOutputError if code == "AGENT_HARNESS_MODEL_OUTPUT_INVALID" else AgentModelProviderError
+            raise error_type(code, metadata)
+        try:
+            return ActionProposal(envelope=ActionEnvelope.model_validate_json(result.content), metadata=metadata)
+        except (ValueError, TypeError) as exc:
+            raise AgentModelInvalidOutputError("AGENT_HARNESS_MODEL_OUTPUT_INVALID", metadata) from exc
 
 
 def action_schema() -> dict[str, object]:

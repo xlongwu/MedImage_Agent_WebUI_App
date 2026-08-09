@@ -348,6 +348,10 @@ def test_projection_surfaces_only_persisted_guarded_reflector_text() -> None:
     assert projected.result_explanation is not None
     assert projected.result_explanation.generated_text == "The registered result is available."
     assert projected.result_explanation.generated_text_status == "accepted"
+    assert projected.harness_summary is not None
+    assert projected.harness_summary.actual_provider == "rule_based"
+    assert projected.harness_summary.steps_limit == 8
+    assert projected.harness_summary.input_tokens_used is None
 
 
 def test_reload_failure_and_partial_evidence_never_project_completed() -> None:

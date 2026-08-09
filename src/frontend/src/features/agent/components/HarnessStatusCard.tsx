@@ -6,6 +6,15 @@ import styles from "../AgentWorkspace.module.css";
 
 const TERMINAL_REASON_KEYS: Readonly<Record<string, MessageKey>> = {
   AGENT_HARNESS_BUDGET_EXHAUSTED: "agent.harness.reason.budgetExhausted",
+  AGENT_HARNESS_STEP_BUDGET_EXHAUSTED: "agent.harness.reason.stepBudgetExhausted",
+  AGENT_HARNESS_MODEL_CALL_BUDGET_EXHAUSTED: "agent.harness.reason.modelCallBudgetExhausted",
+  AGENT_HARNESS_ACTION_PROPOSAL_BUDGET_EXHAUSTED: "agent.harness.reason.actionBudgetExhausted",
+  AGENT_HARNESS_REPAIR_BUDGET_EXHAUSTED: "agent.harness.reason.repairBudgetExhausted",
+  AGENT_HARNESS_RECOVERY_BUDGET_EXHAUSTED: "agent.harness.reason.recoveryBudgetExhausted",
+  AGENT_HARNESS_INPUT_TOKEN_BUDGET_EXHAUSTED: "agent.harness.reason.inputTokenBudgetExhausted",
+  AGENT_HARNESS_OUTPUT_TOKEN_BUDGET_EXHAUSTED: "agent.harness.reason.outputTokenBudgetExhausted",
+  AGENT_HARNESS_WALL_TIME_BUDGET_EXHAUSTED: "agent.harness.reason.wallTimeBudgetExhausted",
+  AGENT_HARNESS_CALL_OUTCOME_UNKNOWN: "agent.harness.reason.callOutcomeUnknown",
   AGENT_HARNESS_DUPLICATE_STEP: "agent.harness.reason.duplicateStep",
   AGENT_HARNESS_PROVIDER_UNAVAILABLE: "agent.harness.reason.providerUnavailable",
   AGENT_HARNESS_MODEL_FAILED: "agent.harness.reason.modelFailed",
@@ -38,12 +47,31 @@ export function HarnessStatusCard({ summary }: { summary: AgentHarnessSummary })
       </div>
       <p>
         {t("agent.harness.budget", {
+          steps: summary.steps_used,
+          stepLimit: summary.steps_limit,
           calls: summary.model_calls_used,
           callLimit: summary.model_calls_limit,
-          proposals: summary.tool_proposals_used,
-          proposalLimit: summary.tool_proposals_limit,
+          proposals: summary.action_proposals_used,
+          proposalLimit: summary.action_proposals_limit,
+          repairs: summary.repairs_used,
+          repairLimit: summary.repairs_limit,
+          recoveries: summary.recovery_attempts_used,
+          recoveryLimit: summary.recovery_attempts_limit,
         })}
       </p>
+      {summary.input_tokens_limit !== null || summary.output_tokens_limit !== null ? (
+        <p>
+          {t("agent.harness.tokens", {
+            input: summary.input_tokens_used ?? "—",
+            inputLimit: summary.input_tokens_limit ?? "—",
+            output: summary.output_tokens_used ?? "—",
+            outputLimit: summary.output_tokens_limit ?? "—",
+          })}
+        </p>
+      ) : null}
+      {summary.actual_provider ? (
+        <p>{t("agent.harness.provider", { provider: summary.actual_provider })}</p>
+      ) : null}
       {summary.next_step ? <p>{t("agent.harness.nextStep", { step: summary.next_step })}</p> : null}
       {summary.yield_count > 0 ? (
         <p>{t("agent.harness.yields", { count: summary.yield_count })}</p>

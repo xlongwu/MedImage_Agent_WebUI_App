@@ -5,10 +5,18 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import re
 from uuid import uuid4
 
 from src.backend.app.core.config_schema import AgentHarnessConfig
-from src.backend.app.planner.agent_model_adapter import AgentModelAdapter, DefaultAgentModelAdapter
+from src.backend.app.planner.agent_model_adapter import (
+    ActionCallMetadata,
+    ActionProposal,
+    AgentModelAdapter,
+    AgentModelInvalidOutputError,
+    AgentModelProviderError,
+    DefaultAgentModelAdapter,
+)
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.runtime.agent_capability_catalog import assert_capability_allowed
 from src.backend.app.schemas.agent_harness import (
@@ -16,6 +24,7 @@ from src.backend.app.schemas.agent_harness import (
     AgentHarnessAttempt,
     AgentHarnessContext,
     AgentHarnessStep,
+    ModelCallRecord,
 )
 from src.backend.app.schemas.agent_lifecycle import DecisionItem, PendingDecisionBatch, PendingDecisionOption
 from src.backend.app.services.agent_evidence_service import AgentEvidenceService
@@ -57,10 +66,20 @@ class HarnessActionResult:
     action_result_code: str | None = None
 
 
+class _ModelCallFailure(RuntimeError):
+    """A provider outcome whose redacted call entry is already durable."""
+
+    def __init__(self, *, code: str, step: AgentHarnessStep) -> None:
+        super().__init__(code)
+        self.code = code
+        self.step = step
+
+
 class AgentHarnessService:
     """Run at most one advice-only step; it has no execution dependencies."""
 
     MAX_LEASE_TAKEOVERS = 2
+    _SAFE_LEDGER_TEXT = re.compile(r"[^A-Za-z0-9._:/-]+")
 
     def __init__(
         self,
@@ -97,6 +116,7 @@ class AgentHarnessService:
             lifecycle_id=lifecycle.lifecycle_id,
             project_id=lifecycle.project_id,
             provider_ref=provider_ref,
+            model_call_phase_allocations={"planning": 4, "result_recovery": 2},
             deadline_at=now + timedelta(seconds=self.config.max_wall_seconds),
             created_at=now,
             updated_at=now,
@@ -145,8 +165,8 @@ class AgentHarnessService:
         claimed = self._claim(attempt, lease_owner or f"harness-{uuid4().hex}")
         if claimed is None:
             return HarnessRunResult(lifecycle=lifecycle, attempt=self.store.get_agent_harness_attempt(lifecycle.lifecycle_id))
-        if self._budget_exhausted(claimed):
-            return HarnessRunResult(lifecycle=lifecycle, attempt=self._stop_claimed(claimed, "AGENT_HARNESS_BUDGET_EXHAUSTED"))
+        if reason := self._budget_stop_reason(claimed):
+            return HarnessRunResult(lifecycle=lifecycle, attempt=self._stop_claimed(claimed, reason))
         project = self.store.get_project(lifecycle.project_id)
         evidence_hash = str((lifecycle.command_context or {}).get("evidence_snapshot_hash") or "")
         evidence = self.store.get_agent_evidence_snapshot(evidence_hash) if evidence_hash and hasattr(self.store, "get_agent_evidence_snapshot") else None
@@ -199,30 +219,56 @@ class AgentHarnessService:
         )
         self.store.add_agent_harness_step(step)
         try:
-            envelope, model_call_count = self._propose_with_one_repair(context, claimed)
-            self._validate_envelope(envelope, lifecycle, context)
-        except RuntimeError as exc:
-            code = str(exc).split(":", 1)[0]
-            completed = step.model_copy(update={
+            envelope, step = self._propose_with_one_repair(context, claimed, step)
+        except _ModelCallFailure as exc:
+            code = exc.code
+            fallback_to = "deterministic_goal_planner" if (
+                code == "AGENT_HARNESS_PROVIDER_UNAVAILABLE" and self.draft_plan is not None
+            ) else None
+            calls = tuple(
+                call.model_copy(update={"fallback_to": fallback_to}) if fallback_to else call
+                for call in exc.step.model_calls
+            )
+            completed = exc.step.model_copy(update={
+                "model_calls": calls,
                 "completed_at": self.now(),
                 "error_code": code,
                 "summary": "Harness provider failed; the enabled Harness stopped without creating a plan.",
             })
             self.store.update_agent_harness_step(completed)
-            failed = self._stop_claimed(claimed, code)
+            failed = self._stop_claimed(
+                claimed, code, model_calls=completed.model_calls, consume_step=True,
+            )
             if code == "AGENT_HARNESS_PROVIDER_UNAVAILABLE":
                 return self._fallback_to_deterministic_planner(
-                    lifecycle=lifecycle,
-                    attempt=failed,
-                    actor=actor,
-                    reason=code,
+                    lifecycle=lifecycle, attempt=failed, actor=actor, reason=code,
                 )
             return HarnessRunResult(lifecycle=lifecycle, attempt=failed)
+
+        try:
+            self._validate_envelope(envelope, lifecycle, context)
+            if (
+                envelope.kind == "propose_recovery"
+                and claimed.recovery_attempts_used >= self.config.max_recovery_attempts
+            ):
+                raise RuntimeError("AGENT_HARNESS_RECOVERY_BUDGET_EXHAUSTED")
         except Exception as exc:
             code = str(exc).split(":", 1)[0] or "AGENT_MODEL_OUTPUT_INVALID"
-            completed = step.model_copy(update={"completed_at": self.now(), "error_code": code, "summary": "Harness action was rejected safely."})
+            completed = step.model_copy(update={
+                "kind": envelope.kind,
+                "completed_at": self.now(),
+                "error_code": code,
+                "validation_result": "rejected",
+                "summary": "Harness action was rejected safely.",
+            })
             self.store.update_agent_harness_step(completed)
-            return HarnessRunResult(lifecycle=lifecycle, attempt=self._stop_claimed(claimed, code))
+            return HarnessRunResult(
+                lifecycle=lifecycle,
+                attempt=self._stop_claimed(
+                    claimed, code, model_calls=completed.model_calls,
+                    proposal_increment=1, consume_step=True,
+                ),
+            )
 
         try:
             applied = self._apply(envelope, lifecycle, actor)
@@ -230,7 +276,6 @@ class AgentHarnessService:
             completed = step.model_copy(update={
                 "kind": envelope.kind, "output_hash": stable_hash(envelope.model_dump(mode="json")),
                 "requested_capability": envelope.kind, "validation_result": "accepted",
-                "model_call_count": model_call_count,
                 "state_after": applied.lifecycle.state, "summary": self._summary(envelope.reason),
                 "observation_ref": lifecycle.observation_id,
                 "evaluation_ref": lifecycle.goal_evaluation_id,
@@ -249,16 +294,31 @@ class AgentHarnessService:
                     step=completed,
                     explanation=explanation,
                 )
+            stop_reason = self._post_completion_budget_reason(
+                claimed,
+                model_calls=completed.model_calls,
+                proposal_increment=1,
+                recovery_attempt_increment=1 if envelope.kind == "propose_recovery" else 0,
+            )
             finished = self._complete_claim(
-                claimed, status=applied.attempt_status, terminal_reason=applied.terminal_reason,
-                model_call_increment=model_call_count, proposal_increment=1,
+                claimed,
+                status="STOPPED" if stop_reason and applied.attempt_status == "READY" else applied.attempt_status,
+                terminal_reason=stop_reason or applied.terminal_reason,
+                model_calls=completed.model_calls,
+                proposal_increment=1,
                 recovery_attempt_increment=1 if envelope.kind == "propose_recovery" else 0,
             )
             return HarnessRunResult(lifecycle=applied.lifecycle, attempt=finished)
         except Exception:
             completed = step.model_copy(update={"completed_at": self.now(), "error_code": "AGENT_HARNESS_STEP_FAILED", "summary": "Harness step stopped safely."})
             self.store.update_agent_harness_step(completed)
-            return HarnessRunResult(lifecycle=lifecycle, attempt=self._stop_claimed(claimed, "AGENT_HARNESS_STEP_FAILED"))
+            return HarnessRunResult(
+                lifecycle=lifecycle,
+                attempt=self._stop_claimed(
+                    claimed, "AGENT_HARNESS_STEP_FAILED", model_calls=completed.model_calls,
+                    proposal_increment=1, consume_step=True,
+                ),
+            )
 
     def run_until_blocked(
         self,
@@ -347,27 +407,126 @@ class AgentHarnessService:
         return None
 
     def _propose_with_one_repair(
-        self, context: AgentHarnessContext, attempt: AgentHarnessAttempt
-    ) -> tuple[ActionEnvelope, int]:
+        self,
+        context: AgentHarnessContext,
+        attempt: AgentHarnessAttempt,
+        step: AgentHarnessStep,
+    ) -> tuple[ActionEnvelope, AgentHarnessStep]:
         try:
-            return (
-                self.adapter.propose_action(
-                    snapshot=context.prompt_payload(), provider_ref=attempt.provider_ref, repair=False
-                ),
-                1,
+            proposal, completed_step = self._invoke_model(
+                context=context, attempt=attempt, step=step, repair=False,
             )
+            return proposal.envelope, completed_step
+        except _ModelCallFailure as failure:
+            if failure.code != "AGENT_HARNESS_MODEL_OUTPUT_INVALID":
+                raise
+            repair_reason = self._repair_budget_stop_reason(attempt, failure.step)
+            if repair_reason:
+                raise _ModelCallFailure(code=repair_reason, step=failure.step) from failure
+            proposal, completed_step = self._invoke_model(
+                context=context, attempt=attempt, step=failure.step, repair=True,
+            )
+            return proposal.envelope, completed_step
+
+    def _invoke_model(
+        self,
+        *,
+        context: AgentHarnessContext,
+        attempt: AgentHarnessAttempt,
+        step: AgentHarnessStep,
+        repair: bool,
+    ) -> tuple[ActionProposal, AgentHarnessStep]:
+        """Persist a call-start row before invoking an untrusted provider."""
+        started = self.now()
+        phase = self._phase_for(lifecycle_state=step.state_before)
+        pending_call = ModelCallRecord(
+            call_id=f"harness_call_{uuid4().hex}", step_id=step.step_id,
+            attempt_id=attempt.attempt_id, provider=attempt.provider_ref.strip().casefold()[:64] or "unknown",
+            phase=phase, endpoint_class="rule_based" if attempt.provider_ref == "rule_based" else "chat_completions",
+            prompt_template_version=context.prompt_template_version, context_hash=context.context_hash,
+            request_hash=stable_hash({
+                "attempt_id": attempt.attempt_id, "step_id": step.step_id,
+                "context_hash": context.context_hash, "provider": attempt.provider_ref,
+                "repair": repair,
+            }),
+            repair=repair, started_at=started,
+        )
+        started_step = step.model_copy(update={"model_calls": (*step.model_calls, pending_call)})
+        self.store.update_agent_harness_step(started_step)
+        try:
+            proposal = self.adapter.propose_action(
+                snapshot=context.prompt_payload(), provider_ref=attempt.provider_ref, repair=repair,
+            )
+            if not isinstance(proposal, ActionProposal):
+                raise TypeError("AGENT_HARNESS_ADAPTER_CONTRACT_INVALID")
+        except AgentModelProviderError as exc:
+            status = "invalid_output" if isinstance(exc, AgentModelInvalidOutputError) else "failed"
+            completed = self._complete_model_call(
+                pending_call, metadata=exc.metadata, schema_valid=False, status=status, error_code=exc.code,
+            )
+            completed_step = started_step.model_copy(
+                update={"model_calls": (*step.model_calls, completed)}
+            )
+            self.store.update_agent_harness_step(completed_step)
+            raise _ModelCallFailure(code=exc.code, step=completed_step) from exc
         except (ValueError, TypeError) as exc:
-            if attempt.model_calls_used + 2 > self.config.max_model_calls:
-                raise RuntimeError("AGENT_MODEL_OUTPUT_INVALID") from exc
-            try:
-                return (
-                    self.adapter.propose_action(
-                        snapshot=context.prompt_payload(), provider_ref=attempt.provider_ref, repair=True
-                    ),
-                    2,
-                )
-            except (ValueError, TypeError) as exc:
-                raise RuntimeError("AGENT_MODEL_OUTPUT_INVALID") from exc
+            metadata = ActionCallMetadata(
+                provider=pending_call.provider, model=None, endpoint_class=pending_call.endpoint_class,
+                response_hash=None, input_tokens=None, output_tokens=None, cached_input_tokens=None,
+                latency_ms=None, provider_request_id=None, network_called=False,
+            )
+            completed = self._complete_model_call(
+                pending_call, metadata=metadata, schema_valid=False, status="invalid_output",
+                error_code="AGENT_HARNESS_MODEL_OUTPUT_INVALID",
+            )
+            completed_step = started_step.model_copy(
+                update={"model_calls": (*step.model_calls, completed)}
+            )
+            self.store.update_agent_harness_step(completed_step)
+            raise _ModelCallFailure(
+                code="AGENT_HARNESS_MODEL_OUTPUT_INVALID", step=completed_step,
+            ) from exc
+        completed = self._complete_model_call(
+            pending_call, metadata=proposal.metadata, schema_valid=True, status="succeeded",
+        )
+        completed_step = started_step.model_copy(update={"model_calls": (*step.model_calls, completed)})
+        self.store.update_agent_harness_step(completed_step)
+        return proposal, completed_step
+
+    def _complete_model_call(
+        self,
+        pending: ModelCallRecord,
+        *,
+        metadata: ActionCallMetadata,
+        schema_valid: bool,
+        status: str,
+        error_code: str | None = None,
+    ) -> ModelCallRecord:
+        return pending.model_copy(update={
+            "provider": self._safe_ledger_text(metadata.provider, limit=64) or pending.provider,
+            "model": self._safe_ledger_text(metadata.model, limit=128),
+            "endpoint_class": self._safe_ledger_text(metadata.endpoint_class, limit=64) or pending.endpoint_class,
+            "response_hash": self._safe_ledger_text(metadata.response_hash, limit=128),
+            "schema_valid": schema_valid,
+            "completed_at": self.now(),
+            "latency_ms": metadata.latency_ms,
+            "input_tokens": metadata.input_tokens,
+            "output_tokens": metadata.output_tokens,
+            "cached_input_tokens": metadata.cached_input_tokens,
+            "provider_request_id": self._safe_ledger_text(metadata.provider_request_id, limit=128),
+            "network_called": metadata.network_called,
+            "status": status,
+            "error_code": self._safe_ledger_text(error_code, limit=128),
+        })
+
+    def _repair_budget_stop_reason(
+        self, attempt: AgentHarnessAttempt, step: AgentHarnessStep
+    ) -> str | None:
+        if sum(call.repair for call in step.model_calls) >= self.config.max_repairs:
+            return "AGENT_HARNESS_REPAIR_BUDGET_EXHAUSTED"
+        if attempt.model_calls_used + self._network_call_count(step.model_calls) >= self.config.max_model_calls:
+            return "AGENT_HARNESS_MODEL_CALL_BUDGET_EXHAUSTED"
+        return None
 
     def _validate_envelope(self, envelope: ActionEnvelope, lifecycle, context: AgentHarnessContext) -> None:
         if envelope.expected_state != lifecycle.state:
@@ -469,12 +628,46 @@ class AgentHarnessService:
         except RuntimeError:
             return None
 
-    def _budget_exhausted(self, attempt: AgentHarnessAttempt) -> bool:
-        return (
-            attempt.model_calls_used >= self.config.max_model_calls
-            or attempt.tool_proposals_used >= self.config.max_tool_proposals
-            or self.now() >= attempt.deadline_at
-        )
+    def _budget_stop_reason(self, attempt: AgentHarnessAttempt) -> str | None:
+        if attempt.steps_used >= self.config.max_steps:
+            return "AGENT_HARNESS_STEP_BUDGET_EXHAUSTED"
+        if attempt.model_calls_used >= self.config.max_model_calls:
+            return "AGENT_HARNESS_MODEL_CALL_BUDGET_EXHAUSTED"
+        if attempt.action_proposals_used >= self.config.max_action_proposals:
+            return "AGENT_HARNESS_ACTION_PROPOSAL_BUDGET_EXHAUSTED"
+        if self.now() >= attempt.deadline_at:
+            return "AGENT_HARNESS_WALL_TIME_BUDGET_EXHAUSTED"
+        return None
+
+    def _post_completion_budget_reason(
+        self,
+        attempt: AgentHarnessAttempt,
+        *,
+        model_calls: tuple[ModelCallRecord, ...],
+        proposal_increment: int,
+        recovery_attempt_increment: int,
+    ) -> str | None:
+        next_steps = attempt.steps_used + 1
+        next_calls = attempt.model_calls_used + self._network_call_count(model_calls)
+        next_actions = attempt.action_proposals_used + proposal_increment
+        next_recoveries = attempt.recovery_attempts_used + recovery_attempt_increment
+        input_tokens = self._accumulate_optional(attempt.input_tokens_used, model_calls, "input_tokens")
+        output_tokens = self._accumulate_optional(attempt.output_tokens_used, model_calls, "output_tokens")
+        if next_steps >= self.config.max_steps:
+            return "AGENT_HARNESS_STEP_BUDGET_EXHAUSTED"
+        if next_calls >= self.config.max_model_calls:
+            return "AGENT_HARNESS_MODEL_CALL_BUDGET_EXHAUSTED"
+        if next_actions >= self.config.max_action_proposals:
+            return "AGENT_HARNESS_ACTION_PROPOSAL_BUDGET_EXHAUSTED"
+        if next_recoveries >= self.config.max_recovery_attempts and recovery_attempt_increment:
+            return "AGENT_HARNESS_RECOVERY_BUDGET_EXHAUSTED"
+        if self.config.max_input_tokens is not None and input_tokens is not None and input_tokens >= self.config.max_input_tokens:
+            return "AGENT_HARNESS_INPUT_TOKEN_BUDGET_EXHAUSTED"
+        if self.config.max_output_tokens is not None and output_tokens is not None and output_tokens >= self.config.max_output_tokens:
+            return "AGENT_HARNESS_OUTPUT_TOKEN_BUDGET_EXHAUSTED"
+        if self.now() >= attempt.deadline_at:
+            return "AGENT_HARNESS_WALL_TIME_BUDGET_EXHAUSTED"
+        return None
 
     def _complete_claim(
         self,
@@ -482,16 +675,26 @@ class AgentHarnessService:
         *,
         status: str,
         terminal_reason: str | None,
-        model_call_increment: int,
-        proposal_increment: int,
+        model_calls: tuple[ModelCallRecord, ...] = (),
+        proposal_increment: int = 0,
         recovery_attempt_increment: int = 0,
     ) -> AgentHarnessAttempt:
+        phase_usage = dict(attempt.model_call_phase_usage)
+        for call in model_calls:
+            if call.network_called:
+                phase_usage[call.phase] = phase_usage.get(call.phase, 0) + 1
         updated = self._with_attempt(
             attempt, status=status, terminal_reason=terminal_reason,
             next_step_no=attempt.next_step_no + 1,
-            model_calls_used=attempt.model_calls_used + model_call_increment,
-            tool_proposals_used=attempt.tool_proposals_used + proposal_increment,
+            model_calls_used=attempt.model_calls_used + self._network_call_count(model_calls),
+            action_proposals_used=attempt.action_proposals_used + proposal_increment,
+            steps_used=attempt.steps_used + 1,
+            repairs_used=attempt.repairs_used + sum(call.repair for call in model_calls),
             recovery_attempts_used=attempt.recovery_attempts_used + recovery_attempt_increment,
+            input_tokens_used=self._accumulate_optional(attempt.input_tokens_used, model_calls, "input_tokens"),
+            output_tokens_used=self._accumulate_optional(attempt.output_tokens_used, model_calls, "output_tokens"),
+            cached_input_tokens_used=self._accumulate_optional(attempt.cached_input_tokens_used, model_calls, "cached_input_tokens"),
+            model_call_phase_usage=phase_usage,
             last_progress_at=self.now(),
             lease_owner=None, lease_expires_at=None,
         )
@@ -503,13 +706,50 @@ class AgentHarnessService:
             expected_lease_owner=attempt.lease_owner,
         )
 
-    def _stop_claimed(self, attempt: AgentHarnessAttempt, reason: str) -> AgentHarnessAttempt:
-        return self._complete_claim(
-            attempt,
-            status="STOPPED",
-            terminal_reason=reason,
-            model_call_increment=0,
-            proposal_increment=0,
+    @staticmethod
+    def _network_call_count(calls: tuple[ModelCallRecord, ...]) -> int:
+        return sum(call.network_called for call in calls)
+
+    @staticmethod
+    def _accumulate_optional(
+        current: int | None,
+        calls: tuple[ModelCallRecord, ...],
+        field: str,
+    ) -> int | None:
+        observed = [getattr(call, field) for call in calls if getattr(call, field) is not None]
+        if not observed:
+            return current
+        return (current or 0) + sum(observed)
+
+    @staticmethod
+    def _phase_for(*, lifecycle_state: str) -> str:
+        if lifecycle_state in {"GOAL_SATISFIED", "SUCCEEDED", "HUMAN_HANDOFF", "RECOVERING"}:
+            return "result_recovery"
+        return "planning"
+
+    @classmethod
+    def _safe_ledger_text(cls, value: object, *, limit: int) -> str | None:
+        if not isinstance(value, str):
+            return None
+        cleaned = cls._SAFE_LEDGER_TEXT.sub("", value.strip())[:limit]
+        return cleaned or None
+
+    def _stop_claimed(
+        self,
+        attempt: AgentHarnessAttempt,
+        reason: str,
+        *,
+        model_calls: tuple[ModelCallRecord, ...] = (),
+        proposal_increment: int = 0,
+        consume_step: bool = False,
+    ) -> AgentHarnessAttempt:
+        if consume_step:
+            return self._complete_claim(
+                attempt, status="STOPPED", terminal_reason=reason, model_calls=model_calls,
+                proposal_increment=proposal_increment,
+            )
+        return self._transition_attempt(
+            attempt, status="STOPPED", terminal_reason=reason, clear_lease=True,
         )
 
     def _transition_attempt(self, attempt: AgentHarnessAttempt, *, status: str, terminal_reason: str | None, clear_lease: bool = False) -> AgentHarnessAttempt:
@@ -578,10 +818,18 @@ class AgentHarnessService:
         step: AgentHarnessStep,
     ) -> HarnessRunResult:
         """Finish an accepted, persisted step after a crash without another model call."""
+        if step.validation_result != "accepted" or step.completed_at is None:
+            reason = step.error_code or "AGENT_HARNESS_CALL_OUTCOME_UNKNOWN"
+            return HarnessRunResult(
+                lifecycle=lifecycle,
+                attempt=self._stop_claimed(
+                    claimed, reason, model_calls=step.model_calls,
+                    proposal_increment=1 if step.kind is not None else 0,
+                    consume_step=True,
+                ),
+            )
         if (
-            step.validation_result != "accepted"
-            or step.completed_at is None
-            or step.step_no != claimed.next_step_no
+            step.step_no != claimed.next_step_no
             or step.input_hash != stable_hash({"context_hash": claimed.context_hash, "state": lifecycle.state})
             or step.state_after != lifecycle.state
         ):
@@ -598,7 +846,7 @@ class AgentHarnessService:
             claimed,
             status=status,
             terminal_reason=terminal_reason,
-            model_call_increment=step.model_call_count,
+            model_calls=step.model_calls,
             proposal_increment=1,
         )
         return HarnessRunResult(lifecycle=lifecycle, attempt=recovered)

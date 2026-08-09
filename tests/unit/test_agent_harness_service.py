@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from src.backend.app.core.config_schema import AgentHarnessConfig
+from src.backend.app.planner.agent_model_adapter import (
+    ActionCallMetadata,
+    ActionProposal,
+    AgentModelInvalidOutputError,
+)
 from src.backend.app.runtime.agent_harness_scheduler import AgentHarnessScheduler
 from src.backend.app.schemas.agent_harness import ActionEnvelope
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
@@ -21,7 +28,20 @@ class Adapter:
 
     def propose_action(self, **_kwargs):
         self.calls += 1
-        return self.actions.pop(0)
+        action = self.actions.pop(0)
+        return action if isinstance(action, ActionProposal) else ActionProposal.rule_based(action)
+
+
+def _network_proposal(envelope: ActionEnvelope, *, input_tokens: int | None = None, output_tokens: int | None = None) -> ActionProposal:
+    return ActionProposal(
+        envelope=envelope,
+        metadata=ActionCallMetadata(
+            provider="openai_compatible", model="gpt-test", endpoint_class="chat_completions",
+            response_hash="response-hash", input_tokens=input_tokens, output_tokens=output_tokens,
+            cached_input_tokens=None, latency_ms=12, provider_request_id="req-test",
+            network_called=True,
+        ),
+    )
 
 
 def _store(tmp_path) -> SQLiteDesktopStore:
@@ -78,11 +98,71 @@ def test_budget_exhaustion_happens_before_model_call(tmp_path) -> None:
 
     result = service.run_one(lifecycle=lifecycle, actor="user")
 
-    assert result.attempt.terminal_reason == "AGENT_HARNESS_BUDGET_EXHAUSTED"
+    assert result.attempt.terminal_reason == "AGENT_HARNESS_MODEL_CALL_BUDGET_EXHAUSTED"
     assert adapter.calls == 0
 
 
-def test_invalid_json_gets_one_repair_and_counts_both_model_calls(tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("config_updates", "attempt_updates", "reason"),
+    [
+        ({"max_steps": 1}, {"steps_used": 1}, "AGENT_HARNESS_STEP_BUDGET_EXHAUSTED"),
+        ({"max_action_proposals": 1}, {"action_proposals_used": 1}, "AGENT_HARNESS_ACTION_PROPOSAL_BUDGET_EXHAUSTED"),
+    ],
+)
+def test_hard_budget_precheck_stops_before_provider_call(tmp_path, config_updates, attempt_updates, reason) -> None:
+    store = _store(tmp_path)
+    lifecycle = _created(store)
+    adapter = Adapter(ActionEnvelope(kind="finish", reason="done", expected_state="CREATED"))
+    service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True, **config_updates), adapter=adapter)
+    attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based").model_copy(update=attempt_updates)
+    store.update_agent_harness_attempt(attempt, expected_status="READY")
+
+    result = service.run_one(lifecycle=lifecycle, actor="user")
+
+    assert result.attempt.terminal_reason == reason
+    assert adapter.calls == 0
+
+
+def test_reported_token_limit_stops_after_current_redacted_step(tmp_path) -> None:
+    store = _store(tmp_path)
+    lifecycle = _created(store)
+    adapter = Adapter(_network_proposal(
+        ActionEnvelope(kind="read_evidence", reason="read", expected_state="CREATED"),
+        input_tokens=4, output_tokens=2,
+    ))
+    service = AgentHarnessService(
+        store, config=AgentHarnessConfig(enabled=True, max_input_tokens=4), adapter=adapter,
+    )
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="openai_compatible")
+
+    result = service.run_one(lifecycle=lifecycle, actor="user")
+
+    assert result.attempt.status == "STOPPED"
+    assert result.attempt.terminal_reason == "AGENT_HARNESS_INPUT_TOKEN_BUDGET_EXHAUSTED"
+    assert result.attempt.input_tokens_used == 4
+
+
+def test_recovery_budget_rejects_proposal_without_handler_side_effect(tmp_path) -> None:
+    store = _store(tmp_path)
+    lifecycle = _created(store).model_copy(update={"state": "DIAGNOSING"})
+    adapter = Adapter(ActionEnvelope(kind="propose_recovery", reason="recover", expected_state="DIAGNOSING"))
+    calls: list[str] = []
+    service = AgentHarnessService(
+        store, config=AgentHarnessConfig(enabled=True, max_recovery_attempts=2), adapter=adapter,
+        recovery_proposer=lambda **_kwargs: calls.append("recovery"),
+    )
+    attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based").model_copy(
+        update={"recovery_attempts_used": 2}
+    )
+    store.update_agent_harness_attempt(attempt, expected_status="READY")
+
+    result = service.run_one(lifecycle=lifecycle, actor="user")
+
+    assert result.attempt.terminal_reason == "AGENT_HARNESS_RECOVERY_BUDGET_EXHAUSTED"
+    assert calls == []
+
+
+def test_invalid_json_gets_one_repair_and_records_both_network_calls(tmp_path) -> None:
     class RepairAdapter:
         def __init__(self) -> None:
             self.repairs: list[bool] = []
@@ -90,8 +170,16 @@ def test_invalid_json_gets_one_repair_and_counts_both_model_calls(tmp_path) -> N
         def propose_action(self, *, repair: bool, **_kwargs):
             self.repairs.append(repair)
             if not repair:
-                raise ValueError("invalid JSON")
-            return ActionEnvelope(kind="finish", reason="fixed", expected_state="CREATED")
+                raise AgentModelInvalidOutputError(
+                    "AGENT_HARNESS_MODEL_OUTPUT_INVALID",
+                    ActionCallMetadata(
+                        provider="openai_compatible", model="gpt-test", endpoint_class="chat_completions",
+                        response_hash="invalid-hash", input_tokens=7, output_tokens=2,
+                        cached_input_tokens=None, latency_ms=10, provider_request_id="req-invalid",
+                        network_called=True,
+                    ),
+                )
+            return _network_proposal(ActionEnvelope(kind="finish", reason="fixed", expected_state="CREATED"), input_tokens=9, output_tokens=3)
 
     store = _store(tmp_path)
     lifecycle = _created(store)
@@ -103,6 +191,11 @@ def test_invalid_json_gets_one_repair_and_counts_both_model_calls(tmp_path) -> N
 
     assert adapter.repairs == [False, True]
     assert result.attempt.model_calls_used == 2
+    assert result.attempt.repairs_used == 1
+    assert result.attempt.input_tokens_used == 16
+    step = store.list_agent_harness_steps(result.attempt.attempt_id)[0]
+    assert [call.status for call in step.model_calls] == ["invalid_output", "succeeded"]
+    assert all("sk-" not in str(call.model_dump(mode="json")) for call in step.model_calls)
     assert result.attempt.status == "FINISHED"
 
 

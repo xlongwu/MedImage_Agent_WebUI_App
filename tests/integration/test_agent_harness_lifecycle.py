@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from src.backend.app.core.config_schema import AgentHarnessConfig
+from src.backend.app.planner.agent_model_adapter import ActionCallMetadata, ActionProposal, AgentModelProviderError
 from src.backend.app.runtime.agent_harness_scheduler import AgentHarnessScheduler
 from src.backend.app.schemas.agent_harness import ActionEnvelope
 from src.backend.app.schemas.desktop import ProjectDetail
@@ -15,12 +16,22 @@ class DraftAdapter:
 
     def propose_action(self, **_kwargs):
         self.calls += 1
-        return ActionEnvelope(kind="draft_plan", reason="Build the reviewed plan", expected_state="CREATED")
+        return ActionProposal.rule_based(
+            ActionEnvelope(kind="draft_plan", reason="Build the reviewed plan", expected_state="CREATED")
+        )
 
 
 class UnavailableAdapter:
     def propose_action(self, **_kwargs):
-        raise RuntimeError("AGENT_HARNESS_PROVIDER_UNAVAILABLE")
+        raise AgentModelProviderError(
+            "AGENT_HARNESS_PROVIDER_UNAVAILABLE",
+            ActionCallMetadata(
+                provider="openai_compatible", model=None, endpoint_class="chat_completions",
+                response_hash=None, input_tokens=None, output_tokens=None,
+                cached_input_tokens=None, latency_ms=None, provider_request_id=None,
+                network_called=False,
+            ),
+        )
 
 
 def test_enabled_harness_persists_step_and_falls_into_existing_input_gate(tmp_path) -> None:

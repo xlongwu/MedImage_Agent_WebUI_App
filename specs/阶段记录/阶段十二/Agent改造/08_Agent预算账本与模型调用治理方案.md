@@ -1,6 +1,6 @@
 # 08：Agent 预算账本与模型调用治理方案
 
-> 状态：Draft，待人工 Review。
+> 状态：Implemented，已完成代码、focused backend 和 frontend 回归验证；仍按项目流程接受人工 Review。
 > 依赖：02 有限循环、07 Context v2；10 消费本方案记录进行 replay/评测。
 
 ## 1. 目标
@@ -11,11 +11,15 @@
 
 ## 2. 当前实现分析
 
-- `AgentHarnessConfig` 只有 `max_model_calls=6`、`max_tool_proposals=8`、`max_wall_seconds=300`、`lease_seconds=30`，且环境配置被硬上限夹紧。
-- `AgentHarnessAttempt` 只记录模型调用和 tool proposal 总数；`_budget_exhausted()` 只检查这两项和 deadline。
-- 一次 invalid output repair 会计为两次调用，但没有逐次 `ModelCallRecord`。
-- `LLMProviderResult` 有 content/raw/errors/warnings，没有 model、usage、latency、request ID 或 cache 信息。
-- provider unavailable 会 fallback，但实际 provider/path 只体现在短摘要中。
+- `AgentHarnessConfig` 使用安装级环境变量，并将 step、真实 provider 调用、action、repair、
+  recovery、wall time 和可选 token 限额夹紧至系统硬上限。
+- `AgentHarnessAttempt` 保存快速预算总量和阶段分配；`AgentHarnessStep` 嵌套逐次
+  `ModelCallRecord`，可从步骤明细重建总量。
+- invalid output repair 在调用前后均写入独立账本行，repair 前重新检查同一总调用预算。
+- `LLMProviderResult` 在 OpenAI-compatible 响应可用时返回 model、usage、latency、request ID
+  和 cache metadata；缺失字段为 `None`，不估算成本或 token。
+- provider unavailable 和 deterministic fallback 都通过结构化 attempt/step 投影暴露实际路径，
+  不伪装为同一模型成功。
 
 ## 3. 总体修改思路
 
@@ -137,3 +141,18 @@ python -m pytest tests/unit/test_agent_harness_service.py tests/unit/test_agent_
 ## 11. 待确认
 
 **待确认：** OpenAI-compatible 目标服务是否都返回一致的 `usage` 和 request ID。推荐将 token/cache 字段设计为可空；在真实 provider 验证前不增加货币成本字段。
+
+## 12. 实施结果（2026-08-09）
+
+- 已采用方案推荐默认值：8 step、6 model call、8 action proposal、每 step 1 repair、
+  2 recovery、300 秒；配置只接受安装级 `MEDIMAGE_` 环境变量并分别受方案硬上限夹紧。
+  可选 input/output token 上限默认关闭，provider 未返回 usage 时维持 `null`。
+- `AgentHarnessStep` 现在嵌套 redacted `ModelCallRecord`，provider/adapter 会返回实际
+  model、usage、cache usage、latency、request ID 和 `network_called`。账本不保存 prompt、
+  raw response、header、API key 或影像；错误只保留结构化 code。
+- 调用前会持久化 started record；完成、repair、handler 和 attempt totals 通过 lease/
+  expected-status fence 结算。已持久化但 outcome 未知的调用会对账并安全停止，不重试。
+- 只读 `harness_summary` 与 Agent 前端卡片已展示实际路径、完整预算、可用 token 和
+  结构化停止原因；中英文文案与 TypeScript contract 已同步。
+- 本任务的 focused backend 76 项与 frontend 332 项测试均通过；未对真实远程 provider
+  发起请求，目标服务 usage/request ID 的兼容性仍保持上述待确认状态。

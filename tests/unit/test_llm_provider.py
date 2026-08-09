@@ -10,6 +10,7 @@ import pytest
 from src.backend.app.planner.llm_planner import PlannerResponse, generate_plan_from_goal
 from src.backend.app.planner.llm_provider import (
     build_planner_prompt,
+    call_openai_compatible_action_provider,
     call_openai_compatible_provider,
     parse_llm_plan_json,
 )
@@ -140,8 +141,9 @@ def _valid_plan_response():
 
 
 class FakeResponse:
-    def __init__(self, data):
+    def __init__(self, data, headers=None):
         self._data = data
+        self.headers = headers or {}
 
     def json(self):
         return self._data
@@ -159,6 +161,63 @@ def test_fake_http_returns_valid_plan(monkeypatch):
     result = call_openai_compatible_provider("motion", http_post=fake_post)
     assert result.ok is True
     assert "data_inspection" in result.content
+
+
+def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata(monkeypatch):
+    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+    response = {
+        "id": "chatcmpl-secret-looking-id",
+        "model": "gpt-test-1",
+        "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 5,
+            "prompt_tokens_details": {"cached_tokens": 3},
+        },
+        "choices": [{"message": {"content": json.dumps({
+            "kind": "finish", "reason": "done", "expected_state": "CREATED",
+        })}}],
+    }
+
+    result = call_openai_compatible_action_provider(
+        snapshot={
+            "schema_version": 2,
+            "policy_version": "p",
+            "redaction_policy_version": "r",
+            "prompt_template_version": "t",
+            "skill_refs": [],
+            "omitted_fields": [],
+            "sections": {
+                name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {}}
+                for name in ("goal", "policy", "project_evidence", "decision_state", "plan_state", "execution_state", "latest_observation", "last_action_result", "memory_context", "budget")
+            },
+        },
+        http_post=lambda *_args: FakeResponse(response, {"x-request-id": "req_123"}),
+    )
+
+    assert result.ok is True
+    assert result.model == "gpt-test-1"
+    assert (result.input_tokens, result.output_tokens, result.cached_input_tokens) == (12, 5, 3)
+    assert result.provider_request_id == "req_123"
+    assert result.network_called is True
+
+
+def test_action_provider_keeps_missing_usage_nullable_and_sanitizes_errors(monkeypatch):
+    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+    result = call_openai_compatible_action_provider(
+        snapshot={
+            "schema_version": 2, "policy_version": "p", "redaction_policy_version": "r",
+            "prompt_template_version": "t", "skill_refs": [], "omitted_fields": [],
+            "sections": {
+                name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {}}
+                for name in ("goal", "policy", "project_evidence", "decision_state", "plan_state", "execution_state", "latest_observation", "last_action_result", "memory_context", "budget")
+            },
+        },
+        http_post=lambda *_args: FakeResponse({"choices": [{"message": {"content": "not json sk-test-key"}}]}),
+    )
+
+    assert result.ok is False
+    assert result.input_tokens is None
+    assert "sk-test-key" not in " ".join(result.errors)
 
 
 def test_fake_http_invalid_json_returns_error(monkeypatch):

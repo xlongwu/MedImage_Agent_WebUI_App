@@ -16,9 +16,13 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
 - 每次 lease claim 最多处理一个 step。`run_until_blocked()` 只组合已持久化的
   单步，并在每一步后重新读取 lifecycle 和 attempt；它不持有跨 step 事务。step
   idempotency key 为 `attempt_id:step_no:input_hash`，重复 key 绝不触发第二次模型调用。
-- 固定上限：6 次模型调用、8 个 action proposal、300 秒 wall time、2 次 stale
-  lease takeover；每次 wake 默认最多 3 步，硬上限为 6。达到 wake 上限时 attempt
-  保持 `READY`、递增 `yield_count` 并在 FIFO 队列尾部重新排队，不能独占 worker。
+- 安装级预算由 `ConfigService` 读取并以硬上限夹紧：默认/硬上限分别为 8/16 个
+  step、6/6 次真实 provider 调用、8/8 个 action proposal、每 step 1/1 次 repair、
+  2/3 次 recovery 和 300/300 秒 wall time。输入/输出 token 限额默认关闭，只有
+  provider 实际返回 usage 且管理员设置 `MEDIMAGE_AGENT_HARNESS_MAX_*_TOKENS` 后才
+  累计和限制；缺失 usage 保持 `null`，绝不估算为 0。项目 metadata、用户请求或模型
+  输出不能提高这些上限。每次 wake 默认最多 3 步，硬上限为 6。达到 wake 上限时
+  attempt 保持 `READY`、递增 `yield_count` 并在 FIFO 队列尾部重新排队，不能独占 worker。
 - Scheduler 只处理 create、answer、recovery 执行、run terminal 和 startup recovery
   的 wake 请求。它在应用 lifespan 内保持单一后台 owner；`GET`/list/read projection
   不会登记 wake、claim lease 或调用模型。startup 只恢复 `READY` 或 lease 已过期的
@@ -40,6 +44,22 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   decision state、last action result 和 budget。它们仍无法装入时在模型调用前以
   `AGENT_CONTEXT_LIMIT_EXCEEDED` 安全停止。
 
+## 模型调用账本
+
+- 每个 `AgentHarnessStep` 嵌套 0–2 个 immutable `ModelCallRecord`。一条记录只保存
+  call/step/attempt ID、provider/model/endpoint class、phase、template/context/request/
+  response hash、schema/repair 状态、时间/延迟、可用 token usage、脱敏 request ID、
+  error code、network 标识和 fallback 目标；不保存 prompt、完整 response、header、
+  API key、影像或任意原始 provider 错误。
+- OpenAI-compatible response 的 model、usage、cache usage 和 request ID 在可用时才
+  写入；rule-based 路径显式记录为 `provider=rule_based`、`network_called=false`，其
+  token 字段为 `null`。模型调用计数只统计真实 provider 请求，repair 也受同一总调用
+  预算约束。
+- service 在 provider 调用前先持久化 `started` call record，再写完成状态，并通过
+  attempt 的 expected-status/lease fence 结算 totals。若进程在已持久化调用后失效，
+  恢复会对已有 step 对账；未知 outcome 以 `AGENT_HARNESS_CALL_OUTCOME_UNKNOWN` 停止，
+  不会重复调用 provider 或重复消费预算。
+
 ## 安全和恢复
 
 `draft_plan` 唯一可调用的业务服务是现有 Goal Planning Service，仍由既有
@@ -51,8 +71,9 @@ validator、Reviewed Plan 和 Approval Summary 流程决定后续状态。Harnes
 和结构化原因；随后才由确定性 Goal Planning Service 重新生成其自身的 plan/context
 hash。该 fallback 不复用旧 Approval Summary；schema、安全或预算拒绝仍只安全停止。
 
-前端只显示后端只读 `harness_summary`（预算、状态、下一步、让出次数、实际 fallback
-路径、停止原因和最新脱敏步骤摘要），不推断执行成功，也不会从 GET 触发模型调用。
+前端只显示后端只读 `harness_summary`（实际规划路径、steps/calls/actions/repairs/
+recovery/token 预算、状态、下一步、让出次数、actual fallback 路径、停止原因和最新
+脱敏步骤摘要），不推断执行成功，也不会从 GET 触发模型调用。
 
 ## 终态 Observation 与结果说明
 

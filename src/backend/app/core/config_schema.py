@@ -122,9 +122,14 @@ class AgentHarnessConfig(BaseModel):
     """
 
     enabled: bool = False
+    max_steps: int = Field(default=8, ge=1, le=16)
     max_model_calls: int = Field(default=6, ge=1, le=6)
-    max_tool_proposals: int = Field(default=8, ge=1, le=8)
+    max_action_proposals: int = Field(default=8, ge=1, le=8)
+    max_repairs: int = Field(default=1, ge=0, le=1)
+    max_recovery_attempts: int = Field(default=2, ge=0, le=3)
     max_wall_seconds: int = Field(default=300, ge=1, le=300)
+    max_input_tokens: int | None = Field(default=None, ge=1, le=1_000_000)
+    max_output_tokens: int | None = Field(default=None, ge=1, le=1_000_000)
     lease_seconds: int = Field(default=30, ge=5, le=300)
     max_steps_per_wakeup: int = Field(default=3, ge=1, le=6)
 
@@ -137,11 +142,28 @@ class AgentHarnessConfig(BaseModel):
                 return default
             return value if minimum <= value <= maximum else default
 
+        def optional_bounded(name: str, maximum: int) -> int | None:
+            raw = os.environ.get(name, "").strip()
+            if not raw:
+                return None
+            try:
+                value = int(raw)
+            except ValueError:
+                return None
+            return value if 1 <= value <= maximum else None
+
         return cls(
             enabled=_env_bool("MEDIMAGE_AGENT_HARNESS_ENABLED"),
+            max_steps=bounded("MEDIMAGE_AGENT_HARNESS_MAX_STEPS", 8, 1, 16),
             max_model_calls=bounded("MEDIMAGE_AGENT_HARNESS_MAX_MODEL_CALLS", 6, 1, 6),
-            max_tool_proposals=bounded("MEDIMAGE_AGENT_HARNESS_MAX_TOOL_PROPOSALS", 8, 1, 8),
+            max_action_proposals=bounded("MEDIMAGE_AGENT_HARNESS_MAX_ACTION_PROPOSALS", 8, 1, 8),
+            max_repairs=bounded("MEDIMAGE_AGENT_HARNESS_MAX_REPAIRS", 1, 0, 1),
+            max_recovery_attempts=bounded(
+                "MEDIMAGE_AGENT_HARNESS_MAX_RECOVERY_ATTEMPTS", 2, 0, 3
+            ),
             max_wall_seconds=bounded("MEDIMAGE_AGENT_HARNESS_MAX_WALL_SECONDS", 300, 1, 300),
+            max_input_tokens=optional_bounded("MEDIMAGE_AGENT_HARNESS_MAX_INPUT_TOKENS", 1_000_000),
+            max_output_tokens=optional_bounded("MEDIMAGE_AGENT_HARNESS_MAX_OUTPUT_TOKENS", 1_000_000),
             lease_seconds=bounded("MEDIMAGE_AGENT_HARNESS_LEASE_SECONDS", 30, 5, 300),
             max_steps_per_wakeup=bounded("MEDIMAGE_AGENT_HARNESS_MAX_STEPS_PER_WAKEUP", 3, 1, 6),
         )

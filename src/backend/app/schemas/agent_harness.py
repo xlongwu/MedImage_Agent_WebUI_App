@@ -40,6 +40,44 @@ AgentHarnessContextSectionName = Literal[
     "budget",
 ]
 
+ModelCallStatus = Literal["started", "succeeded", "failed", "invalid_output", "unknown"]
+
+
+class ModelCallRecord(BaseModel):
+    """Redacted ledger entry for one Harness provider invocation.
+
+    ``request_hash`` and ``response_hash`` allow an attempt to be audited
+    without retaining a prompt, raw response, credential, or image content.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    call_id: str = Field(min_length=1, max_length=128)
+    step_id: str = Field(min_length=1, max_length=128)
+    attempt_id: str = Field(min_length=1, max_length=128)
+    provider: str = Field(min_length=1, max_length=64)
+    phase: str = Field(min_length=1, max_length=64)
+    model: str | None = Field(default=None, max_length=128)
+    endpoint_class: str = Field(min_length=1, max_length=64)
+    prompt_template_version: str = Field(min_length=1, max_length=128)
+    context_hash: str = Field(min_length=1, max_length=128)
+    request_hash: str = Field(min_length=1, max_length=128)
+    response_hash: str | None = Field(default=None, max_length=128)
+    schema_valid: bool | None = None
+    repair: bool = False
+    started_at: datetime
+    completed_at: datetime | None = None
+    latency_ms: int | None = Field(default=None, ge=0)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    cached_input_tokens: int | None = Field(default=None, ge=0)
+    provider_request_id: str | None = Field(default=None, max_length=128)
+    network_called: bool = False
+    status: ModelCallStatus = "started"
+    error_code: str | None = Field(default=None, max_length=128)
+    fallback_to: str | None = Field(default=None, max_length=128)
+
 
 class ActionEnvelope(BaseModel):
     """The only model-to-Harness protocol.
@@ -69,7 +107,7 @@ class ActionEnvelope(BaseModel):
 class AgentHarnessAttempt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     attempt_id: str
     lifecycle_id: str
     project_id: str
@@ -79,8 +117,15 @@ class AgentHarnessAttempt(BaseModel):
     context_hash: str | None = None
     next_step_no: int = Field(default=1, ge=1)
     model_calls_used: int = Field(default=0, ge=0)
-    tool_proposals_used: int = Field(default=0, ge=0)
+    action_proposals_used: int = Field(default=0, ge=0)
+    steps_used: int = Field(default=0, ge=0)
+    repairs_used: int = Field(default=0, ge=0)
     recovery_attempts_used: int = Field(default=0, ge=0)
+    input_tokens_used: int | None = Field(default=None, ge=0)
+    output_tokens_used: int | None = Field(default=None, ge=0)
+    cached_input_tokens_used: int | None = Field(default=None, ge=0)
+    model_call_phase_allocations: dict[str, int] = Field(default_factory=dict)
+    model_call_phase_usage: dict[str, int] = Field(default_factory=dict)
     deadline_at: datetime
     lease_owner: str | None = None
     lease_expires_at: datetime | None = None
@@ -100,7 +145,7 @@ class AgentHarnessAttempt(BaseModel):
 class AgentHarnessStep(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     step_id: str
     attempt_id: str
     project_id: str
@@ -117,7 +162,7 @@ class AgentHarnessStep(BaseModel):
     action_result_code: str | None = Field(default=None, max_length=128)
     requested_capability: str | None = None
     validation_result: Literal["accepted", "rejected", "error"]
-    model_call_count: int = Field(default=0, ge=0, le=2)
+    model_calls: tuple[ModelCallRecord, ...] = Field(default_factory=tuple, max_length=2)
     state_before: str
     state_after: str | None = None
     summary: str = Field(default="", max_length=1024)
@@ -195,8 +240,19 @@ class AgentHarnessSummary(BaseModel):
     status: AgentHarnessStatus
     model_calls_used: int = Field(ge=0)
     model_calls_limit: int = Field(ge=1)
-    tool_proposals_used: int = Field(ge=0)
-    tool_proposals_limit: int = Field(ge=1)
+    action_proposals_used: int = Field(ge=0)
+    action_proposals_limit: int = Field(ge=1)
+    steps_used: int = Field(ge=0)
+    steps_limit: int = Field(ge=1)
+    repairs_used: int = Field(ge=0)
+    repairs_limit: int = Field(ge=0)
+    recovery_attempts_used: int = Field(ge=0)
+    recovery_attempts_limit: int = Field(ge=1)
+    input_tokens_used: int | None = Field(default=None, ge=0)
+    input_tokens_limit: int | None = Field(default=None, ge=1)
+    output_tokens_used: int | None = Field(default=None, ge=0)
+    output_tokens_limit: int | None = Field(default=None, ge=1)
+    actual_provider: str | None = None
     next_step: str | None = None
     terminal_reason: str | None = None
     latest_step_id: str | None = None
