@@ -6,9 +6,11 @@ from fastapi.testclient import TestClient
 
 from src.backend.app.api.dependencies import get_project_store
 from src.backend.app.main import app
+from src.backend.app.schemas.agent_trace import AgentTracePage
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
+from src.backend.app.services.agent_trace_service import AgentTraceService
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 from tests.unit.test_agent_task_read_model import ReadOnlyStore
 
@@ -44,6 +46,33 @@ def test_agent_task_events_reject_invalid_limit() -> None:
         assert response.status_code == 422
     finally:
         app.dependency_overrides.pop(get_project_store, None)
+
+
+def test_agent_task_trace_is_a_paginated_read_only_advanced_projection(monkeypatch) -> None:
+    store = ReadOnlyStore()
+    captured: dict[str, object] = {}
+
+    def page(self, **kwargs):
+        captured.update(kwargs)
+        return AgentTracePage(
+            trace_id="agent_trace:task-1", project_id="project-1", lifecycle_id="task-1",
+            integrity_status="complete", integrity_hash="trace-hash", final_state="CREATED",
+            entries=(), next_cursor=None,
+        )
+
+    monkeypatch.setattr(AgentTraceService, "page", page)
+    app.dependency_overrides[get_project_store] = lambda: store
+    try:
+        response = TestClient(app).get(
+            "/api/projects/project-1/agent/tasks/task-1/trace?after=0&limit=10"
+        )
+    finally:
+        app.dependency_overrides.pop(get_project_store, None)
+
+    assert response.status_code == 200
+    assert response.json()["integrity_hash"] == "trace-hash"
+    assert captured == {"project_id": "project-1", "lifecycle_id": "task-1", "after": 0, "limit": 10}
+    assert store.write_calls == []
 
 
 def test_agent_task_create_command_is_project_scoped_and_returns_projection(monkeypatch) -> None:

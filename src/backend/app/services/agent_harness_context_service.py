@@ -236,7 +236,8 @@ class HarnessContextBuilder:
         return self._safe_object({
             "step_id": self._safe_ref(getattr(step, "step_id", None)),
             "kind": self._safe_scalar(getattr(step, "kind", None)),
-            "output_hash": self._safe_ref(getattr(step, "output_hash", None)),
+            "action_hash": self._safe_ref(getattr(step, "action_hash", None)),
+            "action_result_hash": self._safe_ref(getattr(step, "action_result_hash", None)),
             "result_code": self._safe_scalar(getattr(step, "action_result_code", None) or getattr(step, "error_code", None)),
             "summary": self._short_text(getattr(step, "summary", ""), limit=256),
             "result_summary": self._safe_summary(result_summary),

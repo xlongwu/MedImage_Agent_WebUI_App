@@ -5,12 +5,12 @@ from datetime import UTC, datetime, timedelta
 from threading import Event
 
 from src.backend.app.core.config_schema import AgentHarnessConfig
-from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.planner.agent_model_adapter import ActionProposal
+from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_harness import ActionEnvelope, AgentHarnessStep, ModelCallRecord
 from src.backend.app.schemas.desktop import ProjectDetail
-from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.agent_harness_context_service import HarnessContextSources
+from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 
@@ -88,8 +88,13 @@ def test_expired_claim_recovers_completed_step_without_another_model_call(tmp_pa
     now = datetime(2026, 1, 1, tzinfo=UTC)
     service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter, now=lambda: now)
     attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
+    base_context = service.context_builder.build(sources=HarnessContextSources(
+        lifecycle=lifecycle, project=store.get_project("project-1"), attempt=attempt,
+    ))
+    skills = service.skill_loader.load_for_state(state=lifecycle.state, context=base_context)
     context = service.context_builder.build(sources=HarnessContextSources(
         lifecycle=lifecycle, project=store.get_project("project-1"), attempt=attempt,
+        skill_refs=skills.references, skill_error_codes=skills.error_codes,
     ))
     store.add_agent_harness_context(context)
     claimed = attempt.model_copy(update={
@@ -108,7 +113,7 @@ def test_expired_claim_recovers_completed_step_without_another_model_call(tmp_pa
         idempotency_key=f"{attempt.attempt_id}:1:{input_hash}",
         kind="read_evidence",
         input_hash=input_hash,
-        output_hash="output",
+        action_hash="output",
         requested_capability="read_evidence",
         validation_result="accepted",
         model_calls=(ModelCallRecord(
@@ -141,8 +146,13 @@ def test_crashed_started_provider_call_is_reconciled_without_retrying_provider(t
     now = datetime(2026, 1, 1, tzinfo=UTC)
     service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter, now=lambda: now)
     attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="openai_compatible")
+    base_context = service.context_builder.build(sources=HarnessContextSources(
+        lifecycle=lifecycle, project=store.get_project("project-1"), attempt=attempt,
+    ))
+    skills = service.skill_loader.load_for_state(state=lifecycle.state, context=base_context)
     context = service.context_builder.build(sources=HarnessContextSources(
         lifecycle=lifecycle, project=store.get_project("project-1"), attempt=attempt,
+        skill_refs=skills.references, skill_error_codes=skills.error_codes,
     ))
     store.add_agent_harness_context(context)
     claimed = attempt.model_copy(update={

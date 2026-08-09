@@ -85,6 +85,28 @@ recovery/token 预算、状态、下一步、让出次数、actual fallback 路�
 - `explain_result` 重新从绑定的 Observation 和 Goal Evaluation 计算 outcome、受试者计数、
   artifact/reload 状态、criterion 和限制。模型生成文本与这些字段分离；冲突文本以
   `AGENT_EXPLANATION_CONFLICT` 丢弃，确定性摘要仍可读取。
-- 每个 Harness step 仅保存 Observation、Evaluation、Recovery Proposal 和 explanation 的
-  引用/hash，不复制其正文；wake 和 explanation 都写入 lifecycle 审计事件。Recovery 仍只
+- 每个 Harness step 使用 schema v4，分别保存 canonical `action_hash`、
+  `action_result_hash` 以及 Observation、Evaluation、Recovery Proposal 和 explanation 的
+  引用/hash，不复制其正文；旧 `output_hash` 字段不再读取。wake 和 explanation 都写入
+  lifecycle 审计事件。Recovery 仍只
   是 proposal，所有 retry、重规划或 scope 变化仍要经过新的显式审批。
+
+## Trace、Replay 与离线评测
+
+- `AgentTraceService` 从 lifecycle、Harness attempt/context/step、生命周期事件、Reviewed
+  Plan、ticket、run、Observation、Goal Evaluation 与 Recovery 的权威记录组装一个只读
+  `AgentTraceBundle`。它不写入数据库，不复制这些记录，也不会补造缺失数据；缺失和跨项目
+  绑定冲突分别标为 `incomplete` 与 `conflict`，并进入 canonical `integrity_hash`。
+- Trace 只保存安全摘要和 typed ID/hash 引用，以及已经脱敏的 `ModelCallRecord` metadata。
+  Prompt、原始模型响应、绝对路径、secret、原始影像、完整日志与 Memory 正文都不进入 bundle
+  或 `/trace` 响应。高级只读 API 为
+  `GET /api/projects/{project_id}/agent/tasks/{task_id}/trace?after=0&limit=50`；entries 分页，
+  单页最多 100 项，且不会 wake、claim、调用模型、handler、Gateway 或 runner。
+- `AgentReplayService` 只对 bundle 执行 schema/hash、reference、step 顺序和幂等键、
+  capability/state、lifecycle reducer 与 budget ledger 校验。它没有 store、provider、
+  Evidence Service、Planner、Approval、Gateway、runner 或 filesystem 依赖，因此 replay
+  不能触发任何生产副作用。
+- `tests/fixtures/agent_eval/v1/manifest.json` 是版本化、无研究数据的离线评测集，覆盖正常、
+  recovery、provider、safety、stability 及中英文案例。`AgentEvaluationService` 只汇总显式
+  oracle 的 routing、提问、停止点、安全拒绝、schema repair/fallback、step/call/latency 和
+  交互指标；分数只用于版本比较，不自动发布策略，也不构成科学验证结论。

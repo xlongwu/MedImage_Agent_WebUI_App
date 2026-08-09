@@ -149,7 +149,7 @@ class AgentHarnessAttempt(BaseModel):
 class AgentHarnessStep(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[3] = 3
+    schema_version: Literal[4] = 4
     step_id: str
     attempt_id: str
     project_id: str
@@ -158,7 +158,8 @@ class AgentHarnessStep(BaseModel):
     kind: AgentHarnessActionKind | None = None
     input_hash: str
     skill_refs: tuple[SkillContextRef, ...] = Field(default_factory=tuple, max_length=3)
-    output_hash: str | None = None
+    action_hash: str | None = Field(default=None, max_length=128)
+    action_result_hash: str | None = Field(default=None, max_length=128)
     observation_ref: str | None = Field(default=None, max_length=256)
     evaluation_ref: str | None = Field(default=None, max_length=256)
     recovery_proposal_ref: str | None = Field(default=None, max_length=256)

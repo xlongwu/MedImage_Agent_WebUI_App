@@ -21,8 +21,10 @@ from src.backend.app.schemas.agent_task import (
     CancelAgentTaskRequest,
     CreateAgentTaskRequest,
 )
+from src.backend.app.schemas.agent_trace import AgentTracePage
 from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
 from src.backend.app.services.agent_task_read_model import AgentTaskReadModel
+from src.backend.app.services.agent_trace_service import AgentTraceService
 
 router = APIRouter(prefix="/api/projects/{project_id}/agent/tasks", tags=["agent-tasks"])
 
@@ -158,3 +160,23 @@ def list_agent_task_events(
         after=after,
         limit=limit,
     )
+
+
+@router.get("/{task_id}/trace", response_model=AgentTracePage)
+def get_agent_task_trace(
+    project_id: str,
+    task_id: str,
+    after: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    store: ProjectStore = Depends(get_project_store),
+) -> AgentTracePage:
+    """Return a paginated, redacted trace projection for advanced review only."""
+    try:
+        return AgentTraceService(store).page(
+            project_id=project_id,
+            lifecycle_id=task_id,
+            after=after,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise_api_error(exc)

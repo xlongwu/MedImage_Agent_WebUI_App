@@ -1,6 +1,6 @@
 # 10：Agent Trace、Replay 与评测体系方案
 
-> 状态：Draft，待人工 Review。
+> 状态：Implemented，已完成源码、focused backend 回归与人工 Review 待办；不代表发布或科学验证。
 > 依赖：03 Action result、05 计划版本、06 结果/恢复、07 Context、08 ModelCallRecord、09 Skill refs。
 
 ## 1. 目标
@@ -152,3 +152,22 @@ python -m pytest tests/unit/test_agent_harness_replay.py tests/unit/test_agent_t
 6. 增加端到端评测集和指标脚本；
 7. 接入高级只读 API；
 8. 建立策略变更前的固定回归 Gate。
+
+## 11. 实施结果（2026-08-09）
+
+- 新增 `AgentTraceBundle`/`AgentTraceEntry`/`AgentReplayResult` 只读 schema；Trace
+  从已有 lifecycle、Harness、plan、ticket、run、Observation、Evaluation 与 Recovery
+  记录引用组装，未创建第二权威表。缺失记录显式为 `incomplete`，跨项目绑定显式为
+  `conflict`，不会自动补齐。
+- `AgentReplayService` 没有 store 或运行时依赖，只复算 integrity hash、引用、step
+  顺序/幂等、capability/state、lifecycle reducer 与 budget；测试证明其不会触发模型、
+  handler、Gateway、runner 或文件写入。
+- 既有 30+ 中英文 safety corpus 现同时经纯 Replay runner 断言；
+  `tests/fixtures/agent_eval/v1/manifest.json` 提供版本化、无真实研究数据的正常、恢复、
+  provider、安全和稳定性固定 oracle，`AgentEvaluationService` 汇总比较指标但不自动
+  更改策略。
+- 新增高级、分页、只读 Trace API：
+  `GET /api/projects/{project_id}/agent/tasks/{task_id}/trace`。它只返回脱敏 entry，
+  不调用 scheduler、provider、Planner、审批、Gateway 或 runner。
+- 本次 focused 验证：
+  `python -m pytest tests/unit/test_agent_trace_service.py tests/unit/test_agent_harness_replay.py tests/unit/test_agent_evaluation_service.py tests/unit/test_agent_harness_execution_boundary.py --tb=short --basetemp=.pytest_tmp`，67 passed。

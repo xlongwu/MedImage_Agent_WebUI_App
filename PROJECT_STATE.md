@@ -105,6 +105,15 @@ their tag state.
   is prompt-governance only: it does not add data, approval, execution, or
   scientific-computation capability. Source-level regression coverage exists;
   packaged smoke/release evidence remains separate and is not inferred here.
+- A read-only, redacted Agent Trace and pure Replay capability is available for
+  the controlled Harness. Trace bundles reconstruct canonical context/action/
+  result/lifecycle/evidence references and report missing or conflicting
+  bindings through an integrity hash; replay validates those bundles without a
+  provider, handler, planner, approval, Gateway, runner, filesystem write, or
+  scientific recomputation. A versioned, data-free offline evaluation manifest
+  covers normal, recovery, provider, safety, stability and bilingual cases;
+  its metrics are comparison-only and do not change production policy or prove
+  scientific validation.
 - The Phase 10 source tree adds an Agent-first project workspace backed by a
   project-scoped Agent Task read projection. Goal commands stop for unresolved
   science decisions, produce one hashed Approval Summary, and reuse the

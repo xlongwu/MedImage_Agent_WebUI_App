@@ -289,7 +289,8 @@ class AgentHarnessService:
             applied = self._apply(envelope, lifecycle, actor)
             explanation = applied.result_explanation
             completed = step.model_copy(update={
-                "kind": envelope.kind, "output_hash": stable_hash(envelope.model_dump(mode="json")),
+                "kind": envelope.kind,
+                "action_hash": stable_hash(envelope.model_dump(mode="json")),
                 "requested_capability": envelope.kind, "validation_result": "accepted",
                 "state_after": applied.lifecycle.state, "summary": self._summary(envelope.reason),
                 "observation_ref": lifecycle.observation_id,
@@ -300,6 +301,16 @@ class AgentHarnessService:
                 ),
                 "generated_text": explanation.generated_text if explanation is not None else None,
                 "action_result_code": applied.action_result_code,
+                "action_result_hash": stable_hash({
+                    "lifecycle_id": applied.lifecycle.lifecycle_id,
+                    "state_after": applied.lifecycle.state,
+                    "attempt_status": applied.attempt_status,
+                    "terminal_reason": applied.terminal_reason,
+                    "result_explanation_hash": (
+                        stable_hash(explanation.model_dump(mode="json")) if explanation is not None else None
+                    ),
+                    "action_result_code": applied.action_result_code,
+                }),
                 "completed_at": self.now(),
             })
             self.store.update_agent_harness_step(completed)
