@@ -24,6 +24,11 @@ function approvalTask(): AgentTaskResponse {
       decision_batch_id: null,
       disabled_reason: null,
     },
+    automation: {
+      level: "A1",
+      reason: "user_decision_required",
+      requires_user: true,
+    },
     progress: {
       phase: "plan_ready",
       percent: 25,
@@ -32,7 +37,6 @@ function approvalTask(): AgentTaskResponse {
       excluded_subjects: 0,
       total_subjects: 3,
     },
-    decisions: [],
     decision_batch: null,
     approval_summary: {
       summary_hash: "sha256:summary",
@@ -86,8 +90,10 @@ function controller(task: AgentTaskResponse | null): AgentTaskController {
     create: vi.fn(),
     dismissTask: vi.fn(),
     error: "",
+    harnessActivity: null,
     events: [],
     loading: false,
+    loadHarnessActivity: vi.fn(),
     mutating: false,
     refresh: vi.fn(),
     selectTask: vi.fn(),
@@ -356,7 +362,7 @@ describe("AgentWorkspace", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Agent workspace" })).toBeInTheDocument();
-    expect(screen.getByText("Waiting for one reviewed decision.")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for approval of the reviewed plan.")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Approve plan" })).toHaveLength(1);
     expect(document.querySelectorAll('[data-primary-action="true"]')).toHaveLength(1);
     expect(screen.queryByText("sha256:plan")).not.toBeInTheDocument();
@@ -590,7 +596,6 @@ describe("AgentWorkspace", () => {
         total_subjects: null,
       },
       approval_summary: null,
-      decisions: [],
       result_summary: {
         outcome: "succeeded",
         title: "Preprocessing plan prepared",
@@ -652,19 +657,27 @@ describe("AgentWorkspace", () => {
         decision_batch_id: "batch-revise",
         disabled_reason: null,
       },
-      decisions: [
-        {
-          item_id: "goal_revision",
-          kind: "goal_revision",
-          question: "Revise the research goal.",
-          impact: "UNSUPPORTED_GOAL",
-          options: [],
-          recommended_option: null,
-          answer_type: "text",
-          required: true,
-          evidence_refs: [],
-        },
-      ],
+      decision_batch: {
+        batch_id: "batch-revise",
+        evidence_snapshot_hash: "evidence-revise",
+        plan_hash_before: null,
+        expires_at: "2027-07-16T00:00:00Z",
+        items: [
+          {
+            item_id: "goal_revision",
+            kind: "goal_revision",
+            question: "Revise the research goal.",
+            impact: "UNSUPPORTED_GOAL",
+            options: [],
+            recommended_option: null,
+            answer_type: "text",
+            min_value: null,
+            max_value: null,
+            required: true,
+            evidence_refs: [],
+          },
+        ],
+      },
       approval_summary: null,
     };
     const { rerender } = render(
@@ -680,7 +693,7 @@ describe("AgentWorkspace", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByRole("heading", { name: "请修改研究目标" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "审查所需决策" })).toBeInTheDocument();
     expect(screen.getByLabelText("新的研究目标")).toBeInTheDocument();
     expect(screen.queryByText("Waiting for one reviewed decision.")).not.toBeInTheDocument();
 
@@ -697,7 +710,7 @@ describe("AgentWorkspace", () => {
         decision_batch_id: null,
         disabled_reason: null,
       },
-      decisions: [],
+      decision_batch: null,
     };
     rerender(
       <I18nProvider locale="zh-CN">
@@ -718,5 +731,105 @@ describe("AgentWorkspace", () => {
     expect(screen.getAllByText("任务在执行前被取消，已跳过")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "取消任务" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("submits one complete decision batch with option, boolean, number, and text values", () => {
+    const onAnswer = vi.fn().mockResolvedValue(undefined);
+    const task: AgentTaskResponse = {
+      ...approvalTask(),
+      next_action: {
+        type: "answer_science_decision",
+        title: "Answer decisions",
+        description: null,
+        requires_user: true,
+        decision_batch_id: "batch-choices",
+        disabled_reason: null,
+      },
+      decision_batch: {
+        batch_id: "batch-choices",
+        evidence_snapshot_hash: "evidence-choices",
+        plan_hash_before: null,
+        expires_at: "2027-07-16T00:00:00Z",
+        items: [
+          {
+            item_id: "atlas",
+            kind: "atlas",
+            question: "Choose an atlas",
+            impact: "Changes the analysis.",
+            options: [{ id: "aal", label: "AAL", description: "Atlas A", recommended: true }],
+            recommended_option: "aal",
+            answer_type: "option",
+            min_value: null,
+            max_value: null,
+            required: true,
+            evidence_refs: [],
+          },
+          {
+            item_id: "gsr",
+            kind: "global_signal_regression",
+            question: "Include GSR",
+            impact: "Changes correlations.",
+            options: [],
+            recommended_option: null,
+            answer_type: "boolean",
+            min_value: null,
+            max_value: null,
+            required: true,
+            evidence_refs: [],
+          },
+          {
+            item_id: "tr",
+            kind: "repetition_time",
+            question: "TR seconds",
+            impact: "Controls filtering.",
+            options: [],
+            recommended_option: null,
+            answer_type: "number",
+            min_value: 0.1,
+            max_value: 10,
+            required: true,
+            evidence_refs: [],
+          },
+          {
+            item_id: "other",
+            kind: "other",
+            question: "Explain the scope",
+            impact: "Documents the request.",
+            options: [],
+            recommended_option: null,
+            answer_type: "text",
+            min_value: null,
+            max_value: null,
+            required: true,
+            evidence_refs: [],
+          },
+        ],
+      },
+    };
+
+    render(
+      <I18nProvider locale="en">
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={{ ...controller(task), answer: onAnswer }}
+          dataStateLabel="Converted BIDS/NIfTI"
+          onOpenLegacyWorkspace={vi.fn()}
+          onOpenRuns={vi.fn()}
+          projectName="Demo Project"
+        />
+      </I18nProvider>,
+    );
+
+    fireEvent.click(screen.getByLabelText("Yes"));
+    fireEvent.change(screen.getByLabelText("TR seconds"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "All subjects" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit decisions" }));
+
+    expect(onAnswer).toHaveBeenCalledWith("batch-choices", [
+      { item_id: "atlas", value: "aal" },
+      { item_id: "gsr", value: "true" },
+      { item_id: "tr", value: "2" },
+      { item_id: "other", value: "All subjects" },
+    ]);
   });
 });

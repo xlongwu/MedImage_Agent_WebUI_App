@@ -100,8 +100,9 @@ recovery/token 预算、状态、下一步、让出次数、actual fallback 路�
 - Trace 只保存安全摘要和 typed ID/hash 引用，以及已经脱敏的 `ModelCallRecord` metadata。
   Prompt、原始模型响应、绝对路径、secret、原始影像、完整日志与 Memory 正文都不进入 bundle
   或 `/trace` 响应。高级只读 API 为
-  `GET /api/projects/{project_id}/agent/tasks/{task_id}/trace?after=0&limit=50`；entries 分页，
-  单页最多 100 项，且不会 wake、claim、调用模型、handler、Gateway 或 runner。
+  `GET /api/projects/{project_id}/agent/tasks/{task_id}/trace?after=0&limit=50`；前端高级详情
+  使用等价的 `/harness?after=0&limit=50` 只读投影。entries 分页，单页最多 100 项，且不会
+  wake、claim、调用模型、handler、Gateway 或 runner。
 - `AgentReplayService` 只对 bundle 执行 schema/hash、reference、step 顺序和幂等键、
   capability/state、lifecycle reducer 与 budget ledger 校验。它没有 store、provider、
   Evidence Service、Planner、Approval、Gateway、runner 或 filesystem 依赖，因此 replay

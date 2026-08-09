@@ -34,6 +34,14 @@ AgentTaskNextActionType = Literal[
     "view_attention",
     "contact_support",
 ]
+AgentTaskAutomationLevel = Literal["A0", "A1", "A2", "A3", "A4"]
+AgentTaskAutomationReason = Literal[
+    "human_handoff_required",
+    "user_decision_required",
+    "preparing_automatically",
+    "execution_or_validation_automatically",
+    "task_terminal",
+]
 AgentTaskProgressPhase = Literal[
     "context",
     "planning",
@@ -82,6 +90,16 @@ class AgentTaskNextAction(BaseModel):
     disabled_reason: str | None = None
 
 
+class AgentTaskAutomation(BaseModel):
+    """Backend-authoritative automation level for the current lifecycle state."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    level: AgentTaskAutomationLevel
+    reason: AgentTaskAutomationReason
+    requires_user: bool
+
+
 class AgentTaskProgress(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -125,7 +143,9 @@ class AgentTaskDecision(BaseModel):
     source: Literal["planner", "memory_suggestion"] = "planner"
     memory_id: str | None = None
     recommendation_source: str | None = None
-    answer_type: Literal["option", "text"] = "option"
+    answer_type: Literal["option", "boolean", "number", "text"] = "option"
+    min_value: float | None = None
+    max_value: float | None = None
     required: bool = True
     evidence_refs: tuple[str, ...] = ()
 
@@ -136,6 +156,7 @@ class AgentTaskDecisionBatch(BaseModel):
     batch_id: str
     evidence_snapshot_hash: str
     plan_hash_before: str | None = None
+    items: tuple[AgentTaskDecision, ...] = Field(min_length=1, max_length=6)
     expires_at: datetime
 
 
@@ -303,8 +324,8 @@ class AgentTaskResponse(BaseModel):
     goal_summary: str
     current_action: str
     next_action: AgentTaskNextAction
+    automation: AgentTaskAutomation
     progress: AgentTaskProgress
-    decisions: tuple[AgentTaskDecision, ...] = ()
     decision_batch: AgentTaskDecisionBatch | None = None
     approval_summary: AgentTaskApprovalSummary | None = None
     result_summary: AgentTaskResultSummary | None = None

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+import math
 from typing import Any
 from uuid import uuid4
 
@@ -215,6 +216,20 @@ class AgentTaskCommandService:
                 errors[item_id] = "required"
             elif item.answer_type == "option" and value not in {option.id for option in item.options}:
                 errors[item_id] = "invalid_option"
+            elif item.answer_type == "boolean" and value not in {"true", "false"}:
+                errors[item_id] = "invalid_boolean"
+            elif item.answer_type == "number":
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    errors[item_id] = "invalid_number"
+                else:
+                    if not math.isfinite(number):
+                        errors[item_id] = "invalid_number"
+                    elif item.min_value is not None and number < item.min_value:
+                        errors[item_id] = "below_minimum"
+                    elif item.max_value is not None and number > item.max_value:
+                        errors[item_id] = "above_maximum"
         for item_id in supplied:
             if item_id not in items:
                 errors[item_id] = "unknown_item"

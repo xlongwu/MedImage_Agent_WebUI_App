@@ -74,7 +74,9 @@ class DecisionItem(BaseModel):
     source: Literal["planner", "memory_suggestion"] = "planner"
     memory_id: str | None = None
     recommendation_source: str | None = None
-    answer_type: Literal["option", "text"] = "option"
+    answer_type: Literal["option", "boolean", "number", "text"] = "option"
+    min_value: float | None = None
+    max_value: float | None = None
     required: bool = True
     evidence_refs: tuple[str, ...] = ()
 

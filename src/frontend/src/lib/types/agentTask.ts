@@ -88,7 +88,9 @@ export type AgentTaskDecision = {
   source?: "planner" | "memory_suggestion";
   memory_id?: string | null;
   recommendation_source?: string | null;
-  answer_type: "option" | "text";
+  answer_type: "option" | "boolean" | "number" | "text";
+  min_value: number | null;
+  max_value: number | null;
   required: boolean;
   evidence_refs: string[];
 };
@@ -97,6 +99,7 @@ export type AgentTaskDecisionBatch = {
   batch_id: string;
   evidence_snapshot_hash: string;
   plan_hash_before: string | null;
+  items: AgentTaskDecision[];
   expires_at: string;
 };
 
@@ -107,6 +110,17 @@ export type AgentTaskNextAction = {
   requires_user: boolean;
   decision_batch_id: string | null;
   disabled_reason: string | null;
+};
+
+export type AgentTaskAutomation = {
+  level: "A0" | "A1" | "A2" | "A3" | "A4";
+  reason:
+    | "human_handoff_required"
+    | "user_decision_required"
+    | "preparing_automatically"
+    | "execution_or_validation_automatically"
+    | "task_terminal";
+  requires_user: boolean;
 };
 
 export type AgentTaskProgress = {
@@ -277,6 +291,60 @@ export type AgentHarnessSummary = {
   fallback_reason: string | null;
 };
 
+export type AgentHarnessActivityReference = {
+  ref_type: string;
+  ref_id: string;
+  content_hash: string | null;
+  status: "present" | "missing" | "conflict";
+};
+
+export type AgentHarnessModelCall = {
+  call_id: string;
+  provider: string;
+  phase: string;
+  model: string | null;
+  endpoint_class: string;
+  prompt_template_version: string;
+  skill_hashes: string[];
+  schema_valid: boolean | null;
+  repair: boolean;
+  started_at: string;
+  completed_at: string | null;
+  latency_ms: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  status: "started" | "succeeded" | "failed" | "invalid_output" | "unknown";
+  error_code: string | null;
+  fallback_to: string | null;
+};
+
+export type AgentHarnessActivityEntry = {
+  step_id: string;
+  step_no: number;
+  context_refs: AgentHarnessActivityReference[];
+  model_calls: AgentHarnessModelCall[];
+  action_kind: string | null;
+  validation_result: "accepted" | "rejected" | "error";
+  action_result_code: string | null;
+  state_before: string;
+  state_after: string | null;
+  started_at: string;
+  completed_at: string | null;
+  references: AgentHarnessActivityReference[];
+};
+
+export type AgentHarnessActivityPage = {
+  trace_id: string;
+  project_id: string;
+  lifecycle_id: string;
+  integrity_status: "complete" | "incomplete" | "conflict";
+  integrity_hash: string;
+  final_state: string;
+  stop_reason: string | null;
+  entries: AgentHarnessActivityEntry[];
+  next_cursor: number | null;
+};
+
 export type AgentTaskResponse = {
   schema_version: 1;
   task_id: string;
@@ -286,8 +354,8 @@ export type AgentTaskResponse = {
   goal_summary: string;
   current_action: string;
   next_action: AgentTaskNextAction;
+  automation: AgentTaskAutomation;
   progress: AgentTaskProgress;
-  decisions: AgentTaskDecision[];
   decision_batch: AgentTaskDecisionBatch | null;
   approval_summary: AgentTaskApprovalSummary | null;
   result_summary: AgentTaskResultSummary | null;

@@ -7,10 +7,16 @@ import {
   cancelAgentTask,
   createAgentTask,
   getAgentTask,
+  getAgentTaskHarness,
   listAgentTaskEvents,
   listAgentTasks,
 } from "../../lib/api/agentTasks";
-import type { AgentTaskEvent, AgentTaskResponse } from "../../lib/types/agentTask";
+import { ApiError } from "../../lib/api/client";
+import type {
+  AgentHarnessActivityPage,
+  AgentTaskEvent,
+  AgentTaskResponse,
+} from "../../lib/types/agentTask";
 
 export type UseAgentTaskControllerOptions = {
   actor?: string;
@@ -26,12 +32,16 @@ export type AgentTaskController = {
   loading: boolean;
   mutating: boolean;
   error: string;
+  errorCode?: string | null;
+  errorDetails?: Record<string, unknown>;
+  harnessActivity: AgentHarnessActivityPage | null;
   create: (goal: string) => Promise<void>;
   answer: (batchId: string, answers: { item_id: string; value: string }[]) => Promise<void>;
   approve: () => Promise<void>;
   approveRecovery: () => Promise<void>;
   cancel: (reason?: string) => Promise<void>;
   dismissTask: () => void;
+  loadHarnessActivity: () => Promise<void>;
   refresh: () => Promise<void>;
   selectTask: (taskId: string) => Promise<void>;
 };
@@ -50,6 +60,14 @@ function commandId(kind: string): string {
 function errorMessage(error: unknown): string {
   if (error instanceof DOMException && error.name === "AbortError") return "";
   return error instanceof Error ? error.message : String(error);
+}
+
+function errorCode(error: unknown): string | null {
+  return error instanceof ApiError ? error.code : null;
+}
+
+function errorDetails(error: unknown): Record<string, unknown> {
+  return error instanceof ApiError ? error.details : {};
 }
 
 function mergeEvents(current: AgentTaskEvent[], incoming: AgentTaskEvent[]): AgentTaskEvent[] {
@@ -74,6 +92,9 @@ export function useAgentTaskController({
   const [loading, setLoading] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState("");
+  const [lastErrorCode, setLastErrorCode] = useState<string | null>(null);
+  const [lastErrorDetails, setLastErrorDetails] = useState<Record<string, unknown>>({});
+  const [harnessActivity, setHarnessActivity] = useState<AgentHarnessActivityPage | null>(null);
   const generationRef = useRef(0);
   const requestControllerRef = useRef<AbortController | null>(null);
   const eventCursorRef = useRef<string | null>(null);
@@ -110,9 +131,12 @@ export function useAgentTaskController({
       const controller = beginRequest();
       setLoading(true);
       setError("");
+      setLastErrorCode(null);
+      setLastErrorDetails({});
       selectedTaskIdRef.current = taskId;
       eventCursorRef.current = null;
       setEvents([]);
+      setHarnessActivity(null);
       try {
         const response = await getAgentTask(baseUrl, projectId, taskId, {
           signal: controller.signal,
@@ -126,7 +150,11 @@ export function useAgentTaskController({
         );
         await loadEvents(taskId, controller.signal, generation, true);
       } catch (requestError) {
-        if (generationRef.current === generation) setError(errorMessage(requestError));
+        if (generationRef.current === generation) {
+          setError(errorMessage(requestError));
+          setLastErrorCode(errorCode(requestError));
+          setLastErrorDetails(errorDetails(requestError));
+        }
       } finally {
         if (generationRef.current === generation) setLoading(false);
       }
@@ -140,6 +168,8 @@ export function useAgentTaskController({
     const controller = beginRequest();
     setLoading(true);
     setError("");
+    setLastErrorCode(null);
+    setLastErrorDetails({});
     try {
       const response = await listAgentTasks(baseUrl, projectId, {
         signal: controller.signal,
@@ -154,9 +184,14 @@ export function useAgentTaskController({
       eventCursorRef.current = null;
       setEvents([]);
       setTask(selected);
+      setHarnessActivity(null);
       if (selected) await loadEvents(selected.task_id, controller.signal, generation, true);
     } catch (requestError) {
-      if (generationRef.current === generation) setError(errorMessage(requestError));
+      if (generationRef.current === generation) {
+        setError(errorMessage(requestError));
+        setLastErrorCode(errorCode(requestError));
+        setLastErrorDetails(errorDetails(requestError));
+      }
     } finally {
       if (generationRef.current === generation) setLoading(false);
     }
@@ -182,8 +217,14 @@ export function useAgentTaskController({
       );
       await loadEvents(taskId, controller.signal, generation);
       setError("");
+      setLastErrorCode(null);
+      setLastErrorDetails({});
     } catch (requestError) {
-      if (generationRef.current === generation) setError(errorMessage(requestError));
+      if (generationRef.current === generation) {
+        setError(errorMessage(requestError));
+        setLastErrorCode(errorCode(requestError));
+        setLastErrorDetails(errorDetails(requestError));
+      }
     }
   }, [baseUrl, beginRequest, loadEvents, loadLatest, projectId]);
 
@@ -217,6 +258,8 @@ export function useAgentTaskController({
       const controller = beginRequest();
       setMutating(true);
       setError("");
+      setLastErrorCode(null);
+      setLastErrorDetails({});
       try {
         const response = await operation(controller.signal);
         if (generationRef.current !== generation || controller.signal.aborted) return;
@@ -230,9 +273,14 @@ export function useAgentTaskController({
         });
         eventCursorRef.current = null;
         setEvents([]);
+        setHarnessActivity(null);
         await loadEvents(response.task_id, controller.signal, generation, true);
       } catch (requestError) {
-        if (generationRef.current === generation) setError(errorMessage(requestError));
+        if (generationRef.current === generation) {
+          setError(errorMessage(requestError));
+          setLastErrorCode(errorCode(requestError));
+          setLastErrorDetails(errorDetails(requestError));
+        }
         throw requestError;
       } finally {
         if (generationRef.current === generation) setMutating(false);
@@ -326,13 +374,38 @@ export function useAgentTaskController({
     [actor, applyCommand, baseUrl, projectId, task],
   );
 
+  const loadHarnessActivity = useCallback(async () => {
+    if (!projectId || !selectedTaskIdRef.current) return;
+    const generation = generationRef.current;
+    const controller = beginRequest();
+    try {
+      const response = await getAgentTaskHarness(baseUrl, projectId, selectedTaskIdRef.current, {
+        signal: controller.signal,
+      });
+      if (generationRef.current !== generation || controller.signal.aborted) return;
+      setHarnessActivity(response);
+      setError("");
+      setLastErrorCode(null);
+      setLastErrorDetails({});
+    } catch (requestError) {
+      if (generationRef.current === generation) {
+        setError(errorMessage(requestError));
+        setLastErrorCode(errorCode(requestError));
+        setLastErrorDetails(errorDetails(requestError));
+      }
+    }
+  }, [baseUrl, beginRequest, projectId]);
+
   const dismissTask = useCallback(() => {
     requestControllerRef.current?.abort();
     selectedTaskIdRef.current = null;
     eventCursorRef.current = null;
     setTask(null);
     setEvents([]);
+    setHarnessActivity(null);
     setError("");
+    setLastErrorCode(null);
+    setLastErrorDetails({});
   }, []);
 
   return {
@@ -343,8 +416,12 @@ export function useAgentTaskController({
     create,
     dismissTask,
     error: projectId ? error : "",
+    errorCode: projectId ? lastErrorCode : null,
+    errorDetails: projectId ? lastErrorDetails : {},
     events: visibleTask ? events : [],
+    harnessActivity: visibleTask ? harnessActivity : null,
     loading: Boolean(projectId) && loading,
+    loadHarnessActivity,
     mutating,
     refresh,
     selectTask,

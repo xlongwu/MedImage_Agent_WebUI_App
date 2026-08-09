@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from src.backend.app.core.exceptions import NotFoundError, SafetyError
 from src.backend.app.schemas.agent_task import (
+    AgentTaskAutomation,
     AgentTaskApprovalSummary,
     AgentTaskBackendSelection,
     AgentTaskDecision,
@@ -259,8 +260,8 @@ class AgentTaskReadModel:
             goal_summary=goal,
             current_action=self._current_action(public_state, state),
             next_action=next_action,
+            automation=self._automation(public_state=public_state, next_action=next_action),
             progress=progress,
-            decisions=self._decisions(lifecycle),
             decision_batch=self._decision_batch(lifecycle),
             approval_summary=approval_summary,
             result_summary=result_summary,
@@ -271,6 +272,38 @@ class AgentTaskReadModel:
             harness_summary=harness_summary,
             created_at=lifecycle.created_at,
             updated_at=lifecycle.updated_at,
+        )
+
+    @staticmethod
+    def _automation(*, public_state: str, next_action: AgentTaskNextAction) -> AgentTaskAutomation:
+        if public_state == "needs_attention":
+            return AgentTaskAutomation(
+                level="A0",
+                reason="human_handoff_required",
+                requires_user=True,
+            )
+        if next_action.requires_user:
+            return AgentTaskAutomation(
+                level="A1",
+                reason="user_decision_required",
+                requires_user=True,
+            )
+        if public_state == "preparing":
+            return AgentTaskAutomation(
+                level="A2",
+                reason="preparing_automatically",
+                requires_user=False,
+            )
+        if public_state == "running":
+            return AgentTaskAutomation(
+                level="A3",
+                reason="execution_or_validation_automatically",
+                requires_user=False,
+            )
+        return AgentTaskAutomation(
+            level="A4",
+            reason="task_terminal",
+            requires_user=False,
         )
 
     def _harness_summary(self, lifecycle) -> AgentHarnessSummary | None:
@@ -568,7 +601,7 @@ class AgentTaskReadModel:
         )
 
     @staticmethod
-    def _decisions(lifecycle) -> tuple[AgentTaskDecision, ...]:
+    def _decision_items(lifecycle) -> tuple[AgentTaskDecision, ...]:
         pending = getattr(lifecycle, "pending_decision_batch", None)
         if pending is None:
             return ()
@@ -592,6 +625,8 @@ class AgentTaskReadModel:
                 memory_id=item.memory_id,
                 recommendation_source=item.recommendation_source,
                 answer_type=item.answer_type,
+                min_value=item.min_value,
+                max_value=item.max_value,
                 required=item.required,
                 evidence_refs=item.evidence_refs,
             )
@@ -609,6 +644,7 @@ class AgentTaskReadModel:
             batch_id=pending.batch_id,
             evidence_snapshot_hash=pending.evidence_snapshot_hash,
             plan_hash_before=pending.plan_hash_before,
+            items=AgentTaskReadModel._decision_items(lifecycle),
             expires_at=pending.expires_at,
         )
 

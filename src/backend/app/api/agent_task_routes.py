@@ -180,3 +180,23 @@ def get_agent_task_trace(
         )
     except Exception as exc:
         raise_api_error(exc)
+
+
+@router.get("/{task_id}/harness", response_model=AgentTracePage)
+def get_agent_task_harness(
+    project_id: str,
+    task_id: str,
+    after: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    store: ProjectStore = Depends(get_project_store),
+) -> AgentTracePage:
+    """Return the redacted Harness activity projection for advanced review."""
+    try:
+        return AgentTraceService(store).page(
+            project_id=project_id,
+            lifecycle_id=task_id,
+            after=after,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise_api_error(exc)

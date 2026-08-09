@@ -40,6 +40,11 @@ function agentTaskEvidence(): AgentTaskResponse {
       decision_batch_id: null,
       disabled_reason: null,
     },
+    automation: {
+      level: "A3",
+      reason: "execution_or_validation_automatically",
+      requires_user: false,
+    },
     progress: {
       phase: "execution",
       percent: 42,
@@ -48,7 +53,6 @@ function agentTaskEvidence(): AgentTaskResponse {
       excluded_subjects: 0,
       total_subjects: 3,
     },
-    decisions: [],
     decision_batch: null,
     approval_summary: null,
     result_summary: null,

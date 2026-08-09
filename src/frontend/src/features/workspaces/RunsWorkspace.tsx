@@ -21,7 +21,7 @@ import { WorkspaceHeader } from "../dashboard/DashboardChrome";
 import styles from "./RunsWorkspace.module.css";
 import layoutStyles from "./WorkspaceLayout.module.css";
 import { useI18n } from "../../i18n/useI18n";
-import { getAgentResultMessageKey } from "../agent/components/ResultSummaryCard";
+import { getAgentResultMessageKey } from "../agent/components/agentTaskMessages";
 import { useProjectRunDetails, type ProjectRunDetails } from "../runs/useProjectRunDetails";
 
 export interface RunsWorkspaceProps {

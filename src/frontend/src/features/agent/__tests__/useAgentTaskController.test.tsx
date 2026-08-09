@@ -5,6 +5,7 @@ import {
   approveAgentTask,
   approveAgentTaskRecovery,
   getAgentTask,
+  getAgentTaskHarness,
   listAgentTaskEvents,
   listAgentTasks,
 } from "../../../lib/api/agentTasks";
@@ -18,6 +19,7 @@ vi.mock("../../../lib/api/agentTasks", () => ({
   cancelAgentTask: vi.fn(),
   createAgentTask: vi.fn(),
   getAgentTask: vi.fn(),
+  getAgentTaskHarness: vi.fn(),
   listAgentTaskEvents: vi.fn(),
   listAgentTasks: vi.fn(),
 }));
@@ -43,6 +45,11 @@ function task(
       decision_batch_id: null,
       disabled_reason: null,
     },
+    automation: {
+      level: "A2",
+      reason: "preparing_automatically",
+      requires_user: false,
+    },
     progress: {
       phase: "planning",
       percent: null,
@@ -51,7 +58,6 @@ function task(
       excluded_subjects: null,
       total_subjects: null,
     },
-    decisions: [],
     decision_batch: null,
     approval_summary: null,
     result_summary: null,
@@ -77,6 +83,17 @@ describe("useAgentTaskController", () => {
     vi.mocked(listAgentTaskEvents).mockResolvedValue({
       schema_version: 1,
       items: [],
+      next_cursor: null,
+    });
+    vi.mocked(getAgentTaskHarness).mockResolvedValue({
+      trace_id: "agent_trace:task-a",
+      project_id: "project-a",
+      lifecycle_id: "task-a",
+      integrity_status: "complete",
+      integrity_hash: "trace-hash",
+      final_state: "RUNNING",
+      stop_reason: null,
+      entries: [],
       next_cursor: null,
     });
   });
@@ -247,6 +264,36 @@ describe("useAgentTaskController", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 35));
 
     expect(getAgentTask).not.toHaveBeenCalled();
+  });
+
+  it("loads only the redacted Harness activity for the selected task on demand", async () => {
+    const waitingTask = task("project-a", "task-a", "waiting_for_user");
+    vi.mocked(listAgentTasks).mockResolvedValue({
+      schema_version: 1,
+      items: [waitingTask],
+      total: 1,
+    });
+
+    const { result } = renderHook(() =>
+      useAgentTaskController({
+        baseUrl: "http://api",
+        projectId: "project-a",
+        pollIntervalMs: 60_000,
+      }),
+    );
+    await waitFor(() => expect(result.current.task?.task_id).toBe("task-a"));
+
+    await act(async () => {
+      await result.current.loadHarnessActivity();
+    });
+
+    expect(getAgentTaskHarness).toHaveBeenCalledWith(
+      "http://api",
+      "project-a",
+      "task-a",
+      expect.any(Object),
+    );
+    expect(result.current.harnessActivity?.trace_id).toBe("agent_trace:task-a");
   });
 
   it("replaces running state with the reconciled needs-attention terminal state", async () => {

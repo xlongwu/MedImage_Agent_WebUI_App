@@ -352,6 +352,8 @@ def test_projection_surfaces_only_persisted_guarded_reflector_text() -> None:
     assert projected.harness_summary.actual_provider == "rule_based"
     assert projected.harness_summary.steps_limit == 8
     assert projected.harness_summary.input_tokens_used is None
+    assert projected.automation.level == "A4"
+    assert projected.automation.reason == "task_terminal"
 
 
 def test_reload_failure_and_partial_evidence_never_project_completed() -> None:
@@ -466,7 +468,8 @@ def test_goal_revision_is_not_project_input_and_exposes_decision_batch_id() -> N
 
     assert projected.next_action.type == "revise_goal"
     assert projected.next_action.decision_batch_id == "decision-revise"
-    assert projected.decisions[0].kind == "goal_revision"
+    assert projected.decision_batch is not None
+    assert projected.decision_batch.items[0].kind == "goal_revision"
 
 
 def test_canceled_task_projects_as_terminal_without_attention() -> None:

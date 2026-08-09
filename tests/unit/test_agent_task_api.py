@@ -30,6 +30,7 @@ def test_agent_task_get_endpoints_are_project_scoped_and_read_only() -> None:
         assert listed.json()["items"][0]["task_id"] == "task-1"
         assert detail.status_code == 200
         assert detail.json()["state"] == "waiting_for_user"
+        assert "decisions" not in detail.json()
         assert events.status_code == 200
         assert events.json() == {"schema_version": 1, "items": [], "next_cursor": None}
         assert crossed.status_code == 404
@@ -65,6 +66,33 @@ def test_agent_task_trace_is_a_paginated_read_only_advanced_projection(monkeypat
     try:
         response = TestClient(app).get(
             "/api/projects/project-1/agent/tasks/task-1/trace?after=0&limit=10"
+        )
+    finally:
+        app.dependency_overrides.pop(get_project_store, None)
+
+    assert response.status_code == 200
+    assert response.json()["integrity_hash"] == "trace-hash"
+    assert captured == {"project_id": "project-1", "lifecycle_id": "task-1", "after": 0, "limit": 10}
+    assert store.write_calls == []
+
+
+def test_agent_task_harness_is_a_paginated_read_only_advanced_projection(monkeypatch) -> None:
+    store = ReadOnlyStore()
+    captured: dict[str, object] = {}
+
+    def page(self, **kwargs):
+        captured.update(kwargs)
+        return AgentTracePage(
+            trace_id="agent_trace:task-1", project_id="project-1", lifecycle_id="task-1",
+            integrity_status="complete", integrity_hash="trace-hash", final_state="CREATED",
+            entries=(), next_cursor=None,
+        )
+
+    monkeypatch.setattr(AgentTraceService, "page", page)
+    app.dependency_overrides[get_project_store] = lambda: store
+    try:
+        response = TestClient(app).get(
+            "/api/projects/project-1/agent/tasks/task-1/harness?after=0&limit=10"
         )
     finally:
         app.dependency_overrides.pop(get_project_store, None)

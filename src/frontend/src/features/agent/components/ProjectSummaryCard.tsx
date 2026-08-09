@@ -2,7 +2,7 @@ import { Badge, Card } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentTaskResponse } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
-import { getAgentResultMessageKey } from "./ResultSummaryCard";
+import { getAgentResultMessageKey } from "./agentTaskMessages";
 
 export function ProjectSummaryCard({
   dataStateLabel,

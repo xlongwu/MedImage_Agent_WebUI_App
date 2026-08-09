@@ -7,10 +7,11 @@ import type { ProjectInventory } from "../../lib/projectWorkflow";
 import type { LegacyWorkspace } from "../navigation/workspaceModel";
 import styles from "./AgentWorkspace.module.css";
 import { CurrentAction } from "./components/CurrentAction";
+import { DecisionBatchCard } from "./components/DecisionBatchCard";
 import { HarnessStatusCard } from "./components/HarnessStatusCard";
 import { GoalComposer } from "./components/GoalComposer";
 import { MacroProgress } from "./components/MacroProgress";
-import { NextActionCard } from "./components/NextActionCard";
+import { isDecisionAction, NextActionCard } from "./components/NextActionCard";
 import { ProjectSummaryCard } from "./components/ProjectSummaryCard";
 import { ResultSummaryCard } from "./components/ResultSummaryCard";
 import { RecoveryActionCard } from "./components/RecoveryActionCard";
@@ -23,7 +24,70 @@ type LocalizedAgentError = {
   title: string;
 };
 
-function localizeAgentError(error: string, t: I18nContextValue["t"]): LocalizedAgentError {
+function localizeAgentError(
+  error: string,
+  code: string | null | undefined,
+  t: I18nContextValue["t"],
+): LocalizedAgentError {
+  if (code === "AGENT_DECISION_STALE" || code === "AGENT_DECISION_PLAN_STALE") {
+    return {
+      message: t("agent.error.decisionStale"),
+      retryLabel: t("common.retry"),
+      title: t("agent.actionProblem"),
+    };
+  }
+  if (code === "AGENT_DECISION_BATCH_EXPIRED") {
+    return {
+      message: t("agent.error.decisionExpired"),
+      retryLabel: t("common.retry"),
+      title: t("agent.actionProblem"),
+    };
+  }
+  if (code === "AGENT_DECISION_BATCH_INVALID") {
+    return {
+      message: t("agent.error.decisionInvalid"),
+      retryLabel: null,
+      title: t("agent.actionProblem"),
+    };
+  }
+  if (code === "APPROVAL_SUMMARY_STALE" || code === "APPROVAL_SUMMARY_EXPIRED") {
+    return {
+      message: t("agent.error.approvalStale"),
+      retryLabel: t("common.retry"),
+      title: t("agent.actionProblem"),
+    };
+  }
+  if (code?.includes("BUDGET_EXHAUSTED")) {
+    return {
+      message: t("agent.error.budgetExhausted"),
+      retryLabel: null,
+      title: t("agent.actionProblem"),
+    };
+  }
+  if (code === "AGENT_HARNESS_CONTEXT_LIMIT_EXCEEDED") {
+    return {
+      message: t("agent.error.contextLimit"),
+      retryLabel: null,
+      title: t("agent.actionProblem"),
+    };
+  }
+  if (code?.includes("CAPABILITY_DENIED")) {
+    return {
+      message: t("agent.error.capabilityDenied"),
+      retryLabel: null,
+      title: t("agent.actionProblem"),
+    };
+  }
+  if (code === "RECOVERY_APPROVAL_STALE") {
+    return {
+      message: t("agent.error.recoveryStale"),
+      retryLabel: t("common.retry"),
+      title: t("agent.actionProblem"),
+    };
+  }
+  if (code === "HUMAN_HANDOFF_REQUIRED") {
+    return { message: t("agent.error.handoff"), retryLabel: null, title: t("agent.actionProblem") };
+  }
   if (error.includes("REVIEWED_EXECUTION_DISABLED")) {
     return {
       message: t("agent.error.reviewedExecutionDisabled.message"),
@@ -160,7 +224,9 @@ export function AgentWorkspaceView({
   const { t } = useI18n();
   const task = controller.task;
   const [confirmNewTask, setConfirmNewTask] = useState(false);
-  const localizedError = controller.error ? localizeAgentError(controller.error, t) : null;
+  const localizedError = controller.error
+    ? localizeAgentError(controller.error, controller.errorCode, t)
+    : null;
   const planOnlyResult = Boolean(
     task?.result_summary?.artifacts.some((artifact) => artifact.artifact_type === "reviewed_plan"),
   );
@@ -232,7 +298,12 @@ export function AgentWorkspaceView({
         <GoalComposer disabled={controller.mutating} onSubmit={controller.create} />
       ) : (
         <>
-          <CurrentAction action={task.current_action} outcome={task.outcome} state={task.state} />
+          <CurrentAction
+            nextActionType={task.next_action.type}
+            outcome={task.outcome}
+            progress={task.progress}
+            state={task.state}
+          />
           {task.harness_summary ? <HarnessStatusCard summary={task.harness_summary} /> : null}
           <MacroProgress
             outcome={task.outcome}
@@ -247,11 +318,17 @@ export function AgentWorkspaceView({
               onOpenDetails={onOpenRuns}
               recovery={task.recovery}
             />
-          ) : task.state === "completed" && planOnlyResult ? null : (
+          ) : task.state === "completed" && planOnlyResult ? null : isDecisionAction(task) ? (
+            <DecisionBatchCard
+              batch={task.decision_batch!}
+              errorDetails={controller.errorDetails}
+              mutating={controller.mutating}
+              onAnswer={controller.answer}
+            />
+          ) : (
             <NextActionCard
               key={task.next_action.decision_batch_id ?? task.next_action.type}
               mutating={controller.mutating}
-              onAnswer={controller.answer}
               onApprove={controller.approve}
               onCancel={controller.cancel}
               onOpenRuns={onOpenRuns}
@@ -273,6 +350,8 @@ export function AgentWorkspaceView({
           ) : null}
           <TaskDetails
             advancedMode={advancedMode}
+            harnessActivity={controller.harnessActivity}
+            onLoadHarnessActivity={controller.loadHarnessActivity}
             onOpenLegacyWorkspace={onOpenLegacyWorkspace}
             onOpenReviewedPlan={onOpenReviewedPlan ?? (() => onOpenLegacyWorkspace("plan"))}
             onOpenRuns={onOpenRuns}

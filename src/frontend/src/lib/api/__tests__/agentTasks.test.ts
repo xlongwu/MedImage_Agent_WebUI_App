@@ -7,6 +7,7 @@ import {
   cancelAgentTask,
   createAgentTask,
   getAgentTask,
+  getAgentTaskHarness,
   listAgentTaskEvents,
   listAgentTasks,
 } from "../agentTasks";
@@ -36,6 +37,7 @@ describe("Agent Task API", () => {
 
     await listAgentTasks("http://api", "project / 1");
     await getAgentTask("http://api", "project / 1", "task / 1", { signal });
+    await getAgentTaskHarness("http://api", "project / 1", "task / 1", { signal });
     await listAgentTaskEvents("http://api", "project / 1", "task / 1", {
       after: "cursor+/=",
       limit: 25,
@@ -54,6 +56,11 @@ describe("Agent Task API", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
+      "http://api/api/projects/project%20%2F%201/agent/tasks/task%20%2F%201/harness",
+      expect.objectContaining({ signal }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
       "http://api/api/projects/project%20%2F%201/agent/tasks/task%20%2F%201/events?after=cursor%2B%2F%3D&limit=25",
       expect.objectContaining({ signal }),
     );

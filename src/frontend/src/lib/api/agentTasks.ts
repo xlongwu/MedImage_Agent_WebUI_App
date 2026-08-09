@@ -1,5 +1,6 @@
 import type {
   AgentTaskEventPage,
+  AgentHarnessActivityPage,
   AgentTaskListResponse,
   AgentTaskResponse,
   AnswerAgentTaskRequest,
@@ -67,6 +68,18 @@ export function listAgentTaskEvents(
       signal: controls.signal,
     },
   );
+}
+
+export function getAgentTaskHarness(
+  baseUrl: string,
+  projectId: string,
+  taskId: string,
+  controls: RequestControls = {},
+): Promise<AgentHarnessActivityPage> {
+  return getJson<AgentHarnessActivityPage>(`${taskPath(projectId, taskId)}/harness`, {
+    baseUrl,
+    signal: controls.signal,
+  });
 }
 
 export function createAgentTask(
