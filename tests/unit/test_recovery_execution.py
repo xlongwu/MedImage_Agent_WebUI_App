@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from src.backend.app.api.dependencies import get_project_store
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.main import app
-from src.backend.app.runtime.execution_gateway import current_safe_allowlist_fingerprint
+from src.backend.app.runtime.execution_gateway import current_allowlist_hash
 from src.backend.app.services.execution_ticket_service import (
     ExecutionTicketService,
     calculate_ticket_hash,
@@ -149,8 +149,10 @@ def test_child_ticket_rejects_cross_project_and_duplicate_consumption_with_audit
         "plan_hash": child.plan_hash,
         "goal_contract_hash": child.goal_contract_hash,
         "evaluation_policy_version": child.evaluation_policy_version,
-        "approval_context_id": child.approval_context_id,
-        "safe_allowlist_fingerprint": current_safe_allowlist_fingerprint(),
+        "approval_summary_hash": child.approval_summary_hash,
+        "memory_context_hash": child.memory_context_hash,
+        "scope_hash": child.scope_hash,
+        "allowlist_hash": current_allowlist_hash(),
         "normalized_params_hash": child.normalized_params_hash,
         "contract_versions": child.contract_versions,
         "project_config_path": child.project_config_path,

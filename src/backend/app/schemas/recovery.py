@@ -220,8 +220,8 @@ class RecoveryExecutionSnapshot(BaseModel):
     artifact_types: tuple[tuple[str, tuple[str, ...]], ...]
     output_policy: tuple[tuple[str, str, str], ...]
     goal_contract_hash: str
-    approval_context_id: str
-    safe_allowlist_fingerprint: str
+    approval_summary_hash: str
+    allowlist_hash: str
 
 
 class CheckpointEvidence(BaseModel):
@@ -256,8 +256,8 @@ class RecoveryChangeRequest(BaseModel):
     session_scope: tuple[str, ...] | None = None
     output_scope: tuple[str, ...] | None = None
     goal_contract_hash: str | None = None
-    approval_context_id: str | None = None
-    safe_allowlist_fingerprint: str | None = None
+    approval_summary_hash: str | None = None
+    allowlist_hash: str | None = None
 
 
 class RecoveryCandidate(BaseModel):

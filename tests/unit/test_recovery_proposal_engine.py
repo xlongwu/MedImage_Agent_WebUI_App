@@ -71,7 +71,7 @@ def _ticket(**policy_overrides) -> ExecutionTicket:
         plan_hash="plan-hash",
         goal_contract_hash="goal-hash",
         evaluation_policy_version="goal-evaluator-v1",
-        approval_context_id="approval-1",
+        approval_summary_hash="approval-1",
         approved_actor="reviewer",
         approved_node_ids=(NODE,),
         approved_backend_ids=("python",),
@@ -80,7 +80,14 @@ def _ticket(**policy_overrides) -> ExecutionTicket:
         readonly_roots=("project/rawdata",),
         project_config_path="project/project.yaml",
         pipeline_path="project/pipeline.yaml",
-        safe_allowlist_fingerprint="allowlist-1",
+        scope_hash=stable_hash(
+            {
+                "input_roots": ["project/inputs"],
+                "output_roots": ["project/derivatives"],
+                "readonly_roots": ["project/rawdata"],
+            }
+        ),
+        allowlist_hash="allowlist-1",
         normalized_params_hash=stable_hash({NODE: {"roi_count": 4}}),
         contract_versions=((NODE, "1.0.0"),),
         audit_id="audit-1",
@@ -316,8 +323,8 @@ def test_parameter_backend_and_replan_actions_require_new_review():
         RecoveryChangeRequest(output_roots=("project/other-derivatives",)),
         RecoveryChangeRequest(subject_scope=("sub-01",)),
         RecoveryChangeRequest(goal_contract_hash="changed-goal"),
-        RecoveryChangeRequest(approval_context_id="changed-approval"),
-        RecoveryChangeRequest(safe_allowlist_fingerprint="changed-allowlist"),
+        RecoveryChangeRequest(approval_summary_hash="changed-approval"),
+        RecoveryChangeRequest(allowlist_hash="changed-allowlist"),
     ],
 )
 def test_every_reviewed_contract_dimension_change_is_canonical_and_never_safe(changes):

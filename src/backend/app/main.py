@@ -52,6 +52,7 @@ from src.backend.app.core.logging_config import setup_logging
 from src.backend.app.core.config import ConfigService
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.runtime.agent_harness_scheduler import AgentHarnessScheduler
+from src.backend.app.runtime.node_contract_consistency import assert_node_contract_consistency
 from src.backend.app.services.memory_candidate_service import MemoryCandidateService
 from src.backend.app.services.memory_consolidation_service import MemoryConsolidationService
 from src.backend.app.services.memory_maintenance_service import MemoryMaintenanceService
@@ -128,6 +129,7 @@ async def _lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     setup_logging()
+    assert_node_contract_consistency()
     app = FastAPI(
         title=API_TITLE,
         version=APP_VERSION,

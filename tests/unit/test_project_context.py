@@ -242,7 +242,7 @@ def test_plan_api_rejects_synthetic_node_for_created_project(
     def fake_generate_plan_from_goal(**kwargs):
         return PlannerResponse(
             ok=True,
-            provider="mock",
+            provider="rule_based",
             goal=str(kwargs["goal"]),
             plan={
                 "pipeline_id": "unsafe_synthetic",
@@ -430,7 +430,8 @@ def test_execute_reviewed_passes_real_config_to_mocked_executor(
                 "pipeline_path": pipeline_path,
             }
         )
-        return {"status": "SUCCESS", "run_id": "created-project-run"}
+        pipeline = yaml.safe_load(Path(pipeline_path).read_text(encoding="utf-8"))
+        return {"status": "SUCCESS", "run_id": pipeline["execution"]["run_id"]}
 
     monkeypatch.setenv("MEDIMAGE_ENABLE_REVIEWED_EXECUTION", "1")
     monkeypatch.setattr(
@@ -460,13 +461,20 @@ def test_execute_reviewed_passes_real_config_to_mocked_executor(
         },
     )
     assert saved.status_code == 200, saved.text
-    reviewed_plan_id = saved.json()["reviewed_plan"]["reviewed_plan_id"]
+    reviewed = saved.json()["reviewed_plan"]
+    reviewed_plan_id = reviewed["reviewed_plan_id"]
 
     response = client.post(
         "/api/plans/execute-reviewed",
         json={
             "plan": plan,
-            "approval": {"approved": True, "approved_nodes": ["*"]},
+            "approval": {
+                "approved": True,
+                "approved_nodes": ["*"],
+                "approval_summary_hash": reviewed["payload"]["approval_envelope"][
+                    "summary_hash"
+                ],
+            },
             "project_id": created_project["project_id"],
             "reviewed_plan_id": reviewed_plan_id,
             "project_config_path": created_project["project_config_path"],

@@ -28,8 +28,9 @@ vi.mock("../../../lib/api", () => ({
 }));
 
 const consent: MemoryConsentStatus = {
-  schema_version: 1 as const,
+  schema_version: 2 as const,
   project_id: "project-1",
+  status: "healthy",
   available: true,
   generation_available: true,
   use_available: true,
@@ -39,6 +40,17 @@ const consent: MemoryConsentStatus = {
   outbox_cutoff_sequence: 0,
   updated_at: null,
   degraded_reason: null,
+  retrieval_policy_version: "memory-retrieval-v1",
+  store_healthy: true,
+  outbox_max_sequence: 0,
+  processed_outbox_sequence: 0,
+  outbox_lag: 0,
+  retry_jobs: 0,
+  dead_letter_jobs: 0,
+  active_leases: 0,
+  expired_leases: 0,
+  pending_forget_records: 0,
+  last_forget_wal_truncate_at: null,
 };
 
 const candidate = {
@@ -170,9 +182,39 @@ describe("MemorySettingsPanel", () => {
     );
   });
 
+  it("renders partial health counts and hides restricted content", async () => {
+    vi.mocked(getMemoryConsent).mockResolvedValue({
+      ...consent,
+      status: "partial",
+      outbox_lag: 3,
+      retry_jobs: 1,
+      dead_letter_jobs: 2,
+      pending_forget_records: 1,
+    });
+    vi.mocked(listMemoryItems).mockImplementation(async (_projectId, _options, status) => ({
+      items:
+        status === "forgotten"
+          ? []
+          : [{ ...item, revision: { ...item.revision, sensitivity: "restricted" } }],
+      total: status === "forgotten" ? 0 : 1,
+      next_cursor: null,
+    }));
+    render(
+      <I18nProvider locale="en">
+        <MemorySettingsPanel baseUrl="http://localhost" projectId="project-1" />
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("Partially available")).toBeInTheDocument();
+    expect(screen.getByText(/Source lag: 3; retries: 1; dead letters: 2/)).toBeInTheDocument();
+    expect(screen.getByText("Sensitive content hidden")).toBeInTheDocument();
+    expect(screen.queryByText("Use Chinese reports.")).not.toBeInTheDocument();
+  });
+
   it("renders installation-disabled controls and Chinese text", async () => {
     vi.mocked(getMemoryConsent).mockResolvedValue({
       ...consent,
+      status: "failure",
       available: false,
       generation_available: false,
       use_available: false,
@@ -183,7 +225,8 @@ describe("MemorySettingsPanel", () => {
         <MemorySettingsPanel baseUrl="http://localhost" projectId="project-1" />
       </I18nProvider>,
     );
-    expect(await screen.findByText("已被安装级策略禁用")).toBeInTheDocument();
+    expect(await screen.findByText("健康检查失败，当前不可用")).toBeInTheDocument();
+    expect(screen.getByText("记忆已启用但当前不可用，请先修复健康问题。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "启用记忆生成" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "启用记忆提示" })).toBeDisabled();
   });

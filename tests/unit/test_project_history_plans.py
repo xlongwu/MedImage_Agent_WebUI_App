@@ -152,7 +152,7 @@ def test_reviewed_plan_is_stable_listed_and_snapshotted(tmp_path, monkeypatch):
     normalized_plan = first["payload"]["plan"]
     assert snapshot["payload"]["plan"] == normalized_plan
     assert normalized_plan["nodes"][0]["contract_version"] == "1.0.0"
-    assert normalized_plan["nodes"][1]["contract_version"] == "0.9.0-legacy"
+    assert normalized_plan["nodes"][1]["contract_version"] == "1.0.0"
     assert normalized_plan["metadata"]["normalized_params_hash"]
     assert first["payload"]["validation"]["contract_versions"]
     assert first["payload"]["validation"]["validation_evidence"]

@@ -99,7 +99,7 @@ def _make_plan(created: dict) -> dict:
     }
 
 
-def _save_plan(client: TestClient, created: dict, plan: dict) -> str:
+def _save_plan(client: TestClient, created: dict, plan: dict) -> dict:
     goal = "Manifest integration test"
     resp = client.post(
         f"/api/projects/{created['project_id']}/plans",
@@ -114,10 +114,10 @@ def _save_plan(client: TestClient, created: dict, plan: dict) -> str:
         },
     )
     assert resp.status_code == 200, resp.text
-    return resp.json()["reviewed_plan"]["reviewed_plan_id"]
+    return resp.json()["reviewed_plan"]
 
 
-def _execute(client: TestClient, created: dict, plan: dict, reviewed_plan_id: str) -> dict:
+def _execute(client: TestClient, created: dict, plan: dict, reviewed: dict) -> dict:
     resp = client.post(
         "/api/plans/execute-reviewed",
         json={
@@ -127,9 +127,12 @@ def _execute(client: TestClient, created: dict, plan: dict, reviewed_plan_id: st
                 "approved_by": "test",
                 "approved_nodes": ["*"],
                 "rejected_nodes": [],
+                "approval_summary_hash": reviewed["payload"]["approval_envelope"][
+                    "summary_hash"
+                ],
             },
             "project_id": created["project_id"],
-            "reviewed_plan_id": reviewed_plan_id,
+            "reviewed_plan_id": reviewed["reviewed_plan_id"],
             "project_config_path": created["project_config_path"],
             "dry_run": False,
             "confirm_execution": True,

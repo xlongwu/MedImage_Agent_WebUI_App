@@ -10,10 +10,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.backend.app.main import app
+from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.reviewed_plan_store import ReviewedPlanStoreError
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 
 client = TestClient(app)
+
+
+def _bound_success(**kwargs):
+    return {
+        "status": "SUCCESS",
+        "run_id": kwargs["execution_context"].dispatch.run_id,
+    }
 
 
 def _valid_body(**overrides):
@@ -914,10 +922,13 @@ def _attach_persisted_review_context(monkeypatch, tmp_path, body):
     from src.backend.app.api import execute_reviewed_routes
     from src.backend.app.planner import project_context, reviewed_plan_store
     from src.backend.app.schemas.desktop import ProjectDetail
+    from src.backend.app.services.approval_summary_service import ApprovalSummaryService
     from src.backend.app.services.mock_store import SQLiteDesktopStore
 
     project_id = f"reviewed-test-{uuid4().hex[:12]}"
-    project_dir = tmp_path / project_id
+    # The generated project_config used by these tests places work/log/report
+    # roots directly under tmp_path, so tmp_path is the persisted project root.
+    project_dir = tmp_path
     rawdata_dir = project_dir / "rawdata"
     dataset_index_path = project_dir / "dataset_index.json"
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -995,8 +1006,22 @@ def _attach_persisted_review_context(monkeypatch, tmp_path, body):
         goal_contract_candidate=goal_contract_candidate,
         reviewed_actor="test-reviewer",
     )
+    summary = ApprovalSummaryService().build(
+        project=store.get_project(project_id),
+        reviewed_plan=record,
+    )
+    record = store.update_reviewed_plan(
+        record.reviewed_plan_id,
+        payload={
+            **record.payload,
+            "approval_envelope": summary.model_dump(mode="json"),
+        },
+    )
+    assert record is not None
     body["project_id"] = project_id
     body["reviewed_plan_id"] = record.reviewed_plan_id
+    if isinstance(body.get("approval"), dict):
+        body["approval"]["approval_summary_hash"] = summary.summary_hash
     return body
 
 
@@ -1014,7 +1039,7 @@ def _preflight_body(monkeypatch, tmp_path, **overrides):
     # Default: mock executor to return success (tests can override)
     monkeypatch.setattr(
         "src.backend.app.runtime.execution_gateway.PIPELINE_EXECUTOR",
-        lambda **kw: {"status": "SUCCESS", "run_id": "mock-run-001"},
+        _bound_success,
     )
     cfg = tmp_path / "project_config.yaml"
     _write_project_config(cfg)
@@ -1655,7 +1680,7 @@ def test_m5t016_executor_called_once(monkeypatch, tmp_path):
 
     def _tracking_executor(**kw):
         calls.append(1)
-        return {"status": "SUCCESS", "run_id": "mock-001"}
+        return _bound_success(**kw)
 
     # _preflight_body monkeypatches run_pipeline too — override AFTER
     body = _preflight_body(monkeypatch, tmp_path)
@@ -1702,7 +1727,7 @@ def test_m5t016_execution_submitted_run_id(monkeypatch, tmp_path):
     resp = client.post("/api/plans/execute-reviewed", json=body)
     data = resp.json()
     assert data["execution"]["run_id"].startswith("run_")
-    assert data["executor_result"]["run_id"] == "mock-run-001"
+    assert data["executor_result"]["run_id"] == data["execution"]["run_id"]
 
 
 # ── 84. run_pipeline throws → EXECUTION_FAILED ──
@@ -1738,6 +1763,27 @@ def test_m5t016_executor_throws_executor_called(monkeypatch, tmp_path):
     )
     resp = client.post("/api/plans/execute-reviewed", json=body)
     assert resp.json()["execution"]["executor_called"] is True
+
+
+def test_gateway_safety_failure_preserves_code_and_recovery_guidance(monkeypatch, tmp_path):
+    def _expired_ticket(**_kw):
+        raise SafetyError("EXECUTION_TICKET_EXPIRED", code="EXECUTION_TICKET_EXPIRED")
+
+    body = _preflight_body(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "src.backend.app.runtime.execution_gateway.PIPELINE_EXECUTOR",
+        _expired_ticket,
+    )
+
+    response = client.post("/api/plans/execute-reviewed", json=body)
+    payload = response.json()
+
+    assert payload["status"] == "EXECUTION_TICKET_EXPIRED"
+    assert payload["errors"] == ["EXECUTION_TICKET_EXPIRED"]
+    assert payload["recovery"] == {
+        "recoverable": True,
+        "next_step": "REVIEW_AND_APPROVE_NEW_PLAN",
+    }
 
 
 # ── 86. dry_run=true not regressed ──
@@ -1916,7 +1962,7 @@ def test_m5t017_yaml_on_disk_before_executor(monkeypatch, tmp_path):
 
     def _capture_executor(**kw):
         captured_yaml_path.append(kw.get("pipeline_path"))
-        return {"status": "SUCCESS", "run_id": "mock-001"}
+        return _bound_success(**kw)
 
     body = _preflight_body(monkeypatch, tmp_path)
     monkeypatch.setattr(
@@ -2028,7 +2074,7 @@ def _spm_smoke_body(monkeypatch, tmp_path, **overrides):
     )
     monkeypatch.setattr(
         "src.backend.app.runtime.execution_gateway.PIPELINE_EXECUTOR",
-        lambda **kw: {"status": "SUCCESS", "run_id": "mock-spm-smoke-001"},
+        _bound_success,
     )
     cfg = tmp_path / "project_config.yaml"
     import yaml
@@ -2195,7 +2241,7 @@ def _sandbox_realign_body(monkeypatch, tmp_path, **overrides):
     )
     monkeypatch.setattr(
         "src.backend.app.runtime.execution_gateway.PIPELINE_EXECUTOR",
-        lambda **kw: {"status": "SUCCESS", "run_id": "mock-realign-001"},
+        _bound_success,
     )
     cfg = tmp_path / "project_config.yaml"
     import yaml
@@ -2394,7 +2440,7 @@ def _slice_timing_sandbox_body(monkeypatch, tmp_path, **overrides):
     )
     monkeypatch.setattr(
         "src.backend.app.runtime.execution_gateway.PIPELINE_EXECUTOR",
-        lambda **kw: {"status": "SUCCESS", "run_id": "mock-st-001"},
+        _bound_success,
     )
     cfg = tmp_path / "project_config.yaml"
     import yaml

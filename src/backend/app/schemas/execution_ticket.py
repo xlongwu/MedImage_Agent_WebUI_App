@@ -29,15 +29,16 @@ class ExecutionTicket(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    schema_version: int = 2
+    schema_version: int = 3
     ticket_kind: ExecutionTicketKind = "reviewed_execution"
     execution_ticket_id: str
     project_id: str
     reviewed_plan_id: str
     plan_hash: str
-    goal_contract_hash: str = "legacy-unreviewed"
-    evaluation_policy_version: str = "legacy"
-    approval_context_id: str
+    goal_contract_hash: str
+    evaluation_policy_version: str
+    approval_summary_hash: str
+    memory_context_hash: str | None = None
     approved_actor: str
     approved_node_ids: tuple[str, ...]
     approved_backend_ids: tuple[str, ...]
@@ -46,7 +47,8 @@ class ExecutionTicket(BaseModel):
     readonly_roots: tuple[str, ...] = ()
     project_config_path: str
     pipeline_path: str
-    safe_allowlist_fingerprint: str
+    scope_hash: str
+    allowlist_hash: str
     normalized_params_hash: str
     contract_versions: tuple[tuple[str, str], ...]
     audit_id: str

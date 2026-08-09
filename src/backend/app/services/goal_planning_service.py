@@ -24,7 +24,7 @@ class GoalPlanningService:
         self,
         *,
         goal: str,
-        provider: str = "mock",
+        provider: str = "rule_based",
         project_id: str | None = None,
         project_config_path: str | None = None,
         constraints: dict[str, Any] | None = None,

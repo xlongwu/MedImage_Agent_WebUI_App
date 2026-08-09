@@ -339,14 +339,49 @@ class MemoryRepository:
                     "SELECT value FROM store_meta WHERE key='schema_version'"
                 ).fetchone()
                 check = conn.execute("PRAGMA integrity_check").fetchone()[0]
+                last_forget = conn.execute(
+                    "SELECT value FROM store_meta WHERE key='last_forget_wal_truncate_at'"
+                ).fetchone()
             return {
                 "ok": version is not None and check == "ok",
                 "schema_version": version["value"] if version else None,
                 "integrity": check,
                 "path": str(self.db_path),
+                "last_forget_wal_truncate_at": (
+                    last_forget["value"] if last_forget else None
+                ),
             }
         except Exception as exc:
             return {"ok": False, "error_code": "MEMORY_STORE_UNHEALTHY", "detail": str(exc)}
+
+    def operational_counts(self, *, project_id: str) -> dict[str, int]:
+        """Return a read-only operational projection for one project."""
+
+        with self.connect() as conn:
+            jobs = conn.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN status='retry' THEN 1 ELSE 0 END) AS retry_jobs,
+                    SUM(CASE WHEN status='dead_letter' THEN 1 ELSE 0 END) AS dead_letter_jobs
+                FROM memory_jobs WHERE project_id=?
+                """,
+                (project_id,),
+            ).fetchone()
+            leases = conn.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN lease_expires_at>strftime('%Y-%m-%dT%H:%M:%SZ','now') THEN 1 ELSE 0 END) AS active_leases,
+                    SUM(CASE WHEN lease_expires_at<=strftime('%Y-%m-%dT%H:%M:%SZ','now') THEN 1 ELSE 0 END) AS expired_leases
+                FROM memory_leases WHERE project_id=?
+                """,
+                (project_id,),
+            ).fetchone()
+        return {
+            "retry_jobs": int(jobs["retry_jobs"] or 0),
+            "dead_letter_jobs": int(jobs["dead_letter_jobs"] or 0),
+            "active_leases": int(leases["active_leases"] or 0),
+            "expired_leases": int(leases["expired_leases"] or 0),
+        }
 
     @staticmethod
     def _parse_time(value: str | None) -> datetime | None:
@@ -1994,6 +2029,11 @@ class MemoryRepository:
         """Require every committed forget to remove recoverable WAL frames."""
 
         try:
+            with self._lock, self.connect(immediate=True) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO store_meta(key, value) VALUES('last_forget_wal_truncate_at', ?)",
+                    (utc_iso(),),
+                )
             with self._lock, self.connect() as conn:
                 checkpoint = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
         except sqlite3.Error as exc:

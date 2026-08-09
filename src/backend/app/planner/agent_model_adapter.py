@@ -14,17 +14,17 @@ class AgentModelAdapter(Protocol):
 
 
 class DefaultAgentModelAdapter:
-    """Small adapter that preserves deterministic planner availability.
+    """Small adapter for an explicitly selected Harness provider.
 
-    Rule-based and mock providers select the only productive initial action
+    The rule-based provider selects the only productive initial action
     deterministically. An OpenAI-compatible provider must be explicitly
-    configured; callers can safely fall back when it is not.
+    configured; provider failure stops the enabled Harness.
     """
 
     def propose_action(self, *, snapshot: dict, provider_ref: str, repair: bool = False) -> ActionEnvelope:
         state = str(snapshot.get("lifecycle_state") or "")
         provider = provider_ref.strip().casefold()
-        if provider in {"rule_based", "mock"}:
+        if provider == "rule_based":
             return ActionEnvelope(
                 kind="draft_plan" if state in {"CREATED", "CONTEXT_READY", "PLAN_DRAFTED"} else "finish",
                 reason="Use the existing deterministic reviewed-planning service.",

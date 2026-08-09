@@ -544,11 +544,15 @@ class RecoveryExecutionService:
                 plan_hash=child.plan_hash,
                 goal_contract_hash=child.goal_contract_hash,
                 evaluation_policy_version=child.evaluation_policy_version,
-                approval_context_id=child.approval_context_id,
+                approval_summary_hash=child.approval_summary_hash,
+                memory_context_hash=child.memory_context_hash,
+                scope_hash=child.scope_hash,
                 normalized_params_hash=child.normalized_params_hash,
                 contract_versions=child.contract_versions,
                 project_config_path=child.project_config_path,
                 pipeline_path=child.pipeline_path,
+                command_id=command_id,
+                run_id=child.recovery_run_id or attempt.recovery_run_id,
                 executor=tracked_executor,
             )
         except Exception as exc:

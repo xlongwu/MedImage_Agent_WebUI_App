@@ -12,7 +12,7 @@ from src.backend.app.main import app
 from src.backend.app.runtime.execution_gateway import (
     ExecutionGateway,
     VerifiedExecutionContext,
-    current_safe_allowlist_fingerprint,
+    current_allowlist_hash,
 )
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.execution_ticket_service import (
@@ -35,7 +35,10 @@ def _issue(service: ExecutionTicketService, tmp_path, **overrides):
         "project_id": "project-1",
         "reviewed_plan_id": "reviewed-1",
         "plan_hash": "plan-hash",
-        "approval_context_id": "approval-1",
+        "goal_contract_hash": "goal-contract-hash",
+        "evaluation_policy_version": "goal-evaluator-v1",
+        "approval_summary_hash": "approval-1",
+        "memory_context_hash": None,
         "approved_actor": "reviewer",
         "approved_node_ids": ["contract_smoke"],
         "approved_backend_ids": ["python"],
@@ -43,7 +46,7 @@ def _issue(service: ExecutionTicketService, tmp_path, **overrides):
         "output_roots": [str(tmp_path / "outputs")],
         "project_config_path": str(config),
         "pipeline_path": str(pipeline),
-        "safe_allowlist_fingerprint": current_safe_allowlist_fingerprint(),
+        "allowlist_hash": current_allowlist_hash(),
         "normalized_params_hash": "normalized-params-hash",
         "contract_versions": {"contract_smoke": "1.0.0"},
         "audit_id": "audit-1",
@@ -57,8 +60,10 @@ def _validate(service: ExecutionTicketService, ticket, **overrides):
         "project_id": ticket.project_id,
         "reviewed_plan_id": ticket.reviewed_plan_id,
         "plan_hash": ticket.plan_hash,
-        "approval_context_id": ticket.approval_context_id,
-        "safe_allowlist_fingerprint": ticket.safe_allowlist_fingerprint,
+        "approval_summary_hash": ticket.approval_summary_hash,
+        "memory_context_hash": ticket.memory_context_hash,
+        "scope_hash": ticket.scope_hash,
+        "allowlist_hash": ticket.allowlist_hash,
         "normalized_params_hash": ticket.normalized_params_hash,
         "contract_versions": ticket.contract_versions,
         "project_config_path": ticket.project_config_path,
@@ -91,8 +96,10 @@ def test_ticket_persists_validates_and_consumes_once(tmp_path):
     [
         ("project_id", "project-2", "EXECUTION_TICKET_PROJECT_MISMATCH"),
         ("plan_hash", "changed", "EXECUTION_TICKET_HASH_MISMATCH"),
-        ("approval_context_id", "changed", "EXECUTION_TICKET_APPROVAL_MISMATCH"),
-        ("safe_allowlist_fingerprint", "changed", "EXECUTION_TICKET_ALLOWLIST_MISMATCH"),
+        ("approval_summary_hash", "changed", "EXECUTION_TICKET_APPROVAL_MISMATCH"),
+        ("memory_context_hash", "changed", "EXECUTION_TICKET_MEMORY_CONTEXT_MISMATCH"),
+        ("scope_hash", "changed", "EXECUTION_TICKET_SCOPE_MISMATCH"),
+        ("allowlist_hash", "changed", "EXECUTION_TICKET_ALLOWLIST_MISMATCH"),
         ("normalized_params_hash", "changed", "EXECUTION_TICKET_PARAMETER_HASH_MISMATCH"),
         (
             "contract_versions",
@@ -164,11 +171,15 @@ def test_gateway_is_only_source_of_verified_runtime_context(tmp_path):
         project_id=ticket.project_id,
         reviewed_plan_id=ticket.reviewed_plan_id,
         plan_hash=ticket.plan_hash,
-        approval_context_id=ticket.approval_context_id,
+        approval_summary_hash=ticket.approval_summary_hash,
+        memory_context_hash=ticket.memory_context_hash,
+        scope_hash=ticket.scope_hash,
         normalized_params_hash=ticket.normalized_params_hash,
         contract_versions=ticket.contract_versions,
         project_config_path=ticket.project_config_path,
         pipeline_path=ticket.pipeline_path,
+        command_id="execute-command-1",
+        run_id="run-1",
         executor=fake_executor,
     )
 
@@ -176,6 +187,88 @@ def test_gateway_is_only_source_of_verified_runtime_context(tmp_path):
     assert consumed.status == "consumed"
     assert len(calls) == 1
     assert calls[0].ticket.execution_ticket_id == ticket.execution_ticket_id
+    assert calls[0].dispatch.dispatch_id == result["dispatch_id"]
+    dispatch = service.store.get_gateway_dispatch_by_ticket(ticket.execution_ticket_id)
+    assert dispatch is not None
+    assert dispatch.run_id == "run-1"
+    assert [
+        event.event_type
+        for event in service.store.list_gateway_dispatch_events(dispatch.dispatch_id)
+    ] == ["dispatch_started", "dispatch_succeeded"]
+
+    replay, replayed_ticket = ExecutionGateway(service).dispatch(
+        execution_ticket_id=ticket.execution_ticket_id,
+        project_id=ticket.project_id,
+        reviewed_plan_id=ticket.reviewed_plan_id,
+        plan_hash=ticket.plan_hash,
+        approval_summary_hash=ticket.approval_summary_hash,
+        memory_context_hash=ticket.memory_context_hash,
+        scope_hash=ticket.scope_hash,
+        normalized_params_hash=ticket.normalized_params_hash,
+        contract_versions=ticket.contract_versions,
+        project_config_path=ticket.project_config_path,
+        pipeline_path=ticket.pipeline_path,
+        command_id="execute-command-1",
+        run_id="run-1",
+        executor=fake_executor,
+    )
+    assert replay == result
+    assert replayed_ticket.status == "consumed"
+    assert len(calls) == 1
+
+
+def test_gateway_resumes_prepared_dispatch_but_never_replays_unknown_outcome(
+    tmp_path, monkeypatch
+):
+    service = _service(tmp_path)
+    ticket = _issue(service, tmp_path)
+    gateway = ExecutionGateway(service)
+    original_add_event = service.store.add_gateway_dispatch_event
+    fail_once = True
+
+    def fail_before_started(event):
+        nonlocal fail_once
+        if fail_once and event.event_type == "dispatch_started":
+            fail_once = False
+            raise OSError("simulated event write crash")
+        return original_add_event(event)
+
+    monkeypatch.setattr(service.store, "add_gateway_dispatch_event", fail_before_started)
+    common = {
+        "execution_ticket_id": ticket.execution_ticket_id,
+        "project_id": ticket.project_id,
+        "reviewed_plan_id": ticket.reviewed_plan_id,
+        "plan_hash": ticket.plan_hash,
+        "approval_summary_hash": ticket.approval_summary_hash,
+        "memory_context_hash": ticket.memory_context_hash,
+        "scope_hash": ticket.scope_hash,
+        "normalized_params_hash": ticket.normalized_params_hash,
+        "contract_versions": ticket.contract_versions,
+        "project_config_path": ticket.project_config_path,
+        "pipeline_path": ticket.pipeline_path,
+        "command_id": "crash-window-command",
+        "run_id": "run-crash-window",
+    }
+    with pytest.raises(Exception, match="GATEWAY_DISPATCH_EVENT_WRITE_FAILED"):
+        gateway.dispatch(
+            **common,
+            executor=lambda **_: {"status": "SUCCESS", "run_id": "run-crash-window"},
+        )
+
+    calls = 0
+
+    def crash_after_started(**kwargs):
+        nonlocal calls
+        calls += 1
+        raise KeyboardInterrupt("simulated process crash")
+
+    monkeypatch.setattr(service.store, "add_gateway_dispatch_event", original_add_event)
+    with pytest.raises(KeyboardInterrupt):
+        gateway.dispatch(**common, executor=crash_after_started)
+    assert calls == 1
+    with pytest.raises(SafetyError, match="GATEWAY_DISPATCH_OUTCOME_UNKNOWN"):
+        gateway.dispatch(**common, executor=crash_after_started)
+    assert calls == 1
 
 
 def test_gateway_rejects_before_executor_on_mismatch(tmp_path):
@@ -194,11 +287,15 @@ def test_gateway_rejects_before_executor_on_mismatch(tmp_path):
             project_id=ticket.project_id,
             reviewed_plan_id=ticket.reviewed_plan_id,
             plan_hash="wrong",
-            approval_context_id=ticket.approval_context_id,
+            approval_summary_hash=ticket.approval_summary_hash,
+            memory_context_hash=ticket.memory_context_hash,
+            scope_hash=ticket.scope_hash,
             normalized_params_hash=ticket.normalized_params_hash,
             contract_versions=ticket.contract_versions,
             project_config_path=ticket.project_config_path,
             pipeline_path=ticket.pipeline_path,
+            command_id="execute-command-1",
+            run_id="run-1",
             executor=fake_executor,
         )
     assert called is False

@@ -2,7 +2,7 @@
 
 The Approval Gate sits between Plan Validator and Pipeline Executor.
 It checks that: validation passed, required approvals are granted,
-no nodes are rejected, manual/GUI nodes are not yet executed, and
+no nodes are rejected, manual-required nodes are not yet executed, and
 high-risk backends (MATLAB/SPM/DPABI) have explicit approval.
 
 M6-T003: node-level + backend-level approval for high-risk backends.
@@ -382,7 +382,7 @@ def check_approval_gate(
     if manual_required_nodes:
         errors.append(ApprovalGateIssue(
             "MANUAL_REQUIRED_NODE",
-            f"Manual/GUI nodes not yet supported: {', '.join(manual_required_nodes)}",
+            f"Manual-required nodes not yet supported: {', '.join(manual_required_nodes)}",
         ))
         return ApprovalGateResult(
             ok=False, execution_allowed=False,

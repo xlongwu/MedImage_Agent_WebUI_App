@@ -25,6 +25,14 @@ class ExecutionTicketStore(Protocol):
         self, execution_ticket_id: str, **updates: object
     ) -> ExecutionTicket | None: ...
 
+    def consume_execution_ticket(
+        self,
+        execution_ticket_id: str,
+        *,
+        idempotency_key: str,
+        consumed_at: datetime,
+    ) -> tuple[ExecutionTicket | None, bool]: ...
+
     def add_execution_ticket_event(
         self, event: ExecutionTicketEvent
     ) -> ExecutionTicketEvent: ...
@@ -43,7 +51,8 @@ _IMMUTABLE_FIELDS = (
     "plan_hash",
     "goal_contract_hash",
     "evaluation_policy_version",
-    "approval_context_id",
+    "approval_summary_hash",
+    "memory_context_hash",
     "approved_actor",
     "approved_node_ids",
     "approved_backend_ids",
@@ -52,7 +61,8 @@ _IMMUTABLE_FIELDS = (
     "readonly_roots",
     "project_config_path",
     "pipeline_path",
-    "safe_allowlist_fingerprint",
+    "scope_hash",
+    "allowlist_hash",
     "normalized_params_hash",
     "contract_versions",
     "audit_id",
@@ -90,6 +100,26 @@ def calculate_ticket_hash(ticket: ExecutionTicket | dict[str, Any]) -> str:
     model = ticket if isinstance(ticket, ExecutionTicket) else ExecutionTicket(**ticket)
     payload = model.model_dump(mode="python")
     return stable_hash(_canonical_ticket_payload(payload))
+
+
+def calculate_execution_scope_hash(
+    *,
+    approved_node_ids: list[str] | tuple[str, ...],
+    approved_backend_ids: list[str] | tuple[str, ...],
+    input_roots: list[str] | tuple[str, ...],
+    output_roots: list[str] | tuple[str, ...],
+    readonly_roots: list[str] | tuple[str, ...] = (),
+) -> str:
+    """Hash the complete canonical execution scope bound to a ticket."""
+    return stable_hash(
+        {
+            "approved_node_ids": sorted(set(approved_node_ids)),
+            "approved_backend_ids": sorted(set(approved_backend_ids)),
+            "input_roots": sorted({_canonical_path(path) for path in input_roots}),
+            "output_roots": sorted({_canonical_path(path) for path in output_roots}),
+            "readonly_roots": sorted({_canonical_path(path) for path in readonly_roots}),
+        }
+    )
 
 
 class ExecutionTicketService:
@@ -152,7 +182,8 @@ class ExecutionTicketService:
         project_id: str,
         reviewed_plan_id: str,
         plan_hash: str,
-        approval_context_id: str,
+        approval_summary_hash: str,
+        memory_context_hash: str | None,
         approved_actor: str,
         approved_node_ids: list[str] | tuple[str, ...],
         approved_backend_ids: list[str] | tuple[str, ...],
@@ -161,12 +192,12 @@ class ExecutionTicketService:
         readonly_roots: list[str] | tuple[str, ...] = (),
         project_config_path: str,
         pipeline_path: str,
-        safe_allowlist_fingerprint: str,
+        allowlist_hash: str,
         normalized_params_hash: str,
         contract_versions: dict[str, str] | tuple[tuple[str, str], ...],
         audit_id: str,
-        goal_contract_hash: str = "legacy-unreviewed",
-        evaluation_policy_version: str = "legacy",
+        goal_contract_hash: str,
+        evaluation_policy_version: str,
         max_retry_count: int = 0,
         max_lifecycle_recovery_attempts: int | None = None,
         max_node_attempts: int | None = None,
@@ -177,7 +208,7 @@ class ExecutionTicketService:
     ) -> ExecutionTicket:
         if (
             not audit_id
-            or not approval_context_id
+            or not approval_summary_hash
             or not reviewed_plan_id
             or not normalized_params_hash
             or not contract_versions
@@ -189,14 +220,15 @@ class ExecutionTicketService:
         now = datetime.now(UTC)
         ticket_id = f"ticket_{uuid4().hex}"
         payload: dict[str, Any] = {
-            "schema_version": 2,
+            "schema_version": 3,
             "execution_ticket_id": ticket_id,
             "project_id": project_id,
             "reviewed_plan_id": reviewed_plan_id,
             "plan_hash": plan_hash,
             "goal_contract_hash": goal_contract_hash,
             "evaluation_policy_version": evaluation_policy_version,
-            "approval_context_id": approval_context_id,
+            "approval_summary_hash": approval_summary_hash,
+            "memory_context_hash": memory_context_hash,
             "approved_actor": approved_actor,
             "approved_node_ids": tuple(sorted(set(approved_node_ids))),
             "approved_backend_ids": tuple(sorted(set(approved_backend_ids))),
@@ -205,7 +237,14 @@ class ExecutionTicketService:
             "readonly_roots": tuple(sorted({_canonical_path(p) for p in readonly_roots})),
             "project_config_path": _canonical_path(project_config_path),
             "pipeline_path": _canonical_path(pipeline_path),
-            "safe_allowlist_fingerprint": safe_allowlist_fingerprint,
+            "scope_hash": calculate_execution_scope_hash(
+                approved_node_ids=approved_node_ids,
+                approved_backend_ids=approved_backend_ids,
+                input_roots=input_roots,
+                output_roots=output_roots,
+                readonly_roots=readonly_roots,
+            ),
+            "allowlist_hash": allowlist_hash,
             "normalized_params_hash": normalized_params_hash,
             "contract_versions": tuple(sorted(dict(contract_versions).items())),
             "audit_id": audit_id,
@@ -247,14 +286,17 @@ class ExecutionTicketService:
         project_id: str,
         reviewed_plan_id: str,
         plan_hash: str,
-        approval_context_id: str,
-        safe_allowlist_fingerprint: str,
+        approval_summary_hash: str,
+        memory_context_hash: str | None,
+        scope_hash: str,
+        allowlist_hash: str,
         normalized_params_hash: str,
         contract_versions: dict[str, str] | tuple[tuple[str, str], ...],
         project_config_path: str,
         pipeline_path: str,
         goal_contract_hash: str | None = None,
         evaluation_policy_version: str | None = None,
+        replay_idempotency_key: str | None = None,
     ) -> ExecutionTicket:
         ticket = self.store.get_execution_ticket(execution_ticket_id)
         if ticket is None:
@@ -282,9 +324,13 @@ class ExecutionTicketService:
             and ticket.evaluation_policy_version != evaluation_policy_version
         ):
             reason = "EXECUTION_TICKET_EVALUATION_POLICY_MISMATCH"
-        elif ticket.approval_context_id != approval_context_id:
+        elif ticket.approval_summary_hash != approval_summary_hash:
             reason = "EXECUTION_TICKET_APPROVAL_MISMATCH"
-        elif ticket.safe_allowlist_fingerprint != safe_allowlist_fingerprint:
+        elif ticket.memory_context_hash != memory_context_hash:
+            reason = "EXECUTION_TICKET_MEMORY_CONTEXT_MISMATCH"
+        elif ticket.scope_hash != scope_hash:
+            reason = "EXECUTION_TICKET_SCOPE_MISMATCH"
+        elif ticket.allowlist_hash != allowlist_hash:
             reason = "EXECUTION_TICKET_ALLOWLIST_MISMATCH"
         elif ticket.normalized_params_hash != normalized_params_hash:
             reason = "EXECUTION_TICKET_PARAMETER_HASH_MISMATCH"
@@ -296,12 +342,12 @@ class ExecutionTicketService:
             reason = "EXECUTION_TICKET_PIPELINE_MISMATCH"
         elif ticket.status == "revoked":
             reason = "EXECUTION_TICKET_REVOKED"
-        elif ticket.status == "consumed":
+        elif ticket.status == "consumed" and ticket.idempotency_key != replay_idempotency_key:
             reason = "EXECUTION_TICKET_REPLAYED"
         elif ticket.status == "expired" or ticket.is_expired():
             reason = "EXECUTION_TICKET_EXPIRED"
             self.store.update_execution_ticket(ticket.execution_ticket_id, status="expired")
-        elif ticket.status != "issued":
+        elif ticket.status not in {"issued", "consumed"}:
             reason = "EXECUTION_TICKET_INVALID_STATUS"
         elif ticket.ticket_kind == "recovery_child":
             try:
@@ -423,7 +469,7 @@ class ExecutionTicketService:
             for node_id in sorted(candidate.target_node_ids)
         )
         payload = {
-            "schema_version": 2,
+            "schema_version": 3,
             "ticket_kind": "recovery_child",
             "execution_ticket_id": child_id,
             "project_id": parent.project_id,
@@ -431,7 +477,8 @@ class ExecutionTicketService:
             "plan_hash": parent.plan_hash,
             "goal_contract_hash": parent.goal_contract_hash,
             "evaluation_policy_version": parent.evaluation_policy_version,
-            "approval_context_id": approval.recovery_approval_id,
+            "approval_summary_hash": approval.recovery_approval_id,
+            "memory_context_hash": parent.memory_context_hash,
             "approved_actor": approval.approved_actor,
             "approved_node_ids": tuple(sorted(candidate.target_node_ids)),
             "approved_backend_ids": parent.approved_backend_ids,
@@ -440,7 +487,14 @@ class ExecutionTicketService:
             "readonly_roots": parent.readonly_roots,
             "project_config_path": canonical_config,
             "pipeline_path": canonical_pipeline,
-            "safe_allowlist_fingerprint": parent.safe_allowlist_fingerprint,
+            "scope_hash": calculate_execution_scope_hash(
+                approved_node_ids=tuple(sorted(candidate.target_node_ids)),
+                approved_backend_ids=parent.approved_backend_ids,
+                input_roots=canonical_inputs,
+                output_roots=(canonical_output,),
+                readonly_roots=parent.readonly_roots,
+            ),
+            "allowlist_hash": parent.allowlist_hash,
             "normalized_params_hash": parent.normalized_params_hash,
             "contract_versions": contract_versions,
             "audit_id": approval.audit_id,
@@ -611,7 +665,7 @@ class ExecutionTicketService:
         )
 
     def consume(self, ticket: ExecutionTicket, *, idempotency_key: str) -> ExecutionTicket:
-        if ticket.status != "issued" or ticket.is_expired():
+        if ticket.is_expired():
             raise SafetyError(
                 "EXECUTION_TICKET_NOT_CONSUMABLE",
                 code="EXECUTION_TICKET_NOT_CONSUMABLE",
@@ -623,21 +677,25 @@ class ExecutionTicketService:
             RecoveryPolicyService(self.store).consume_reservation(
                 ticket.quota_reservation_id or ""
             )
-        updated = self.store.update_execution_ticket(
+        updated, newly_consumed = self.store.consume_execution_ticket(
             ticket.execution_ticket_id,
-            status="consumed",
-            consumed_at=consumed_at.isoformat(),
             idempotency_key=idempotency_key,
+            consumed_at=consumed_at,
         )
-        if updated is None:
+        if (
+            updated is None
+            or updated.status != "consumed"
+            or updated.idempotency_key != idempotency_key
+        ):
             raise StateStoreError("EXECUTION_TICKET_CONSUME_FAILED")
-        self._event(
-            ticket_id=ticket.execution_ticket_id,
-            project_id=ticket.project_id,
-            event_type="consumed",
-            audit_id=ticket.audit_id,
-            details={"idempotency_key": idempotency_key},
-        )
+        if newly_consumed:
+            self._event(
+                ticket_id=ticket.execution_ticket_id,
+                project_id=ticket.project_id,
+                event_type="consumed",
+                audit_id=ticket.audit_id,
+                details={"idempotency_key": idempotency_key},
+            )
         return updated
 
     def revoke(self, execution_ticket_id: str, *, reason: str) -> ExecutionTicket:

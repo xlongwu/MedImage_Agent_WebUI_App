@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from src.backend.app.schemas.planner_provenance import PlannerEvidence, PlannerInvocation
+
 TaskStatus = Literal["running", "completed", "failed", "pending", "disconnected"]
 ExecutionMode = Literal["simulated", "external_smoke", "rsfmri_python"]
 ExternalSmokeMode = Literal["manual_package", "approved_smoke"]
@@ -46,6 +48,8 @@ class ReviewedPlanRecord(BaseModel):
     memory_context_hash: str | None = None
     memory_context_refs: list[dict[str, Any]] = Field(default_factory=list)
     memory_retrieval_policy_version: str | None = None
+    planner_invocation: PlannerInvocation | None = None
+    planner_evidence: PlannerEvidence | None = None
     plan_path: str | None = None
     status: str = "REVIEWED"
     created_at: str
@@ -63,6 +67,7 @@ class RunLinkRecord(BaseModel):
     project_id: str
     reviewed_plan_id: str
     run_id: str
+    dispatch_id: str | None = None
     task_id: str | None = None
     pipeline_path: str | None = None
     summary_path: str | None = None

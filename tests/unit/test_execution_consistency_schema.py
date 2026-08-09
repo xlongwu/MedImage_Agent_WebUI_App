@@ -37,8 +37,8 @@ def _base(project_id: str = "p1", **kw) -> ExecutionConsistencyInput:
         "node_param_hashes": {"node_a": "ph_a", "node_b": "ph_b"},
         "output_root": "/outputs/work/run_1/",
         "output_manifest_ids": ["man_1"],
-        "safe_allowlist_fingerprint": "sha256:allowlist_v1",
-        "approval_context_id": "approval_001",
+        "allowlist_hash": "sha256:allowlist_v1",
+        "approval_summary_hash": "approval_001",
         "audit_id": "audit_001",
         "dry_run_status": "DRY_RUN_OK",
     }
@@ -298,8 +298,8 @@ def test_output_manifest_missing_when_required():
 
 
 def test_safe_allowlist_changed():
-    d = _base(safe_allowlist_fingerprint="sha256:v1")
-    e = _base(safe_allowlist_fingerprint="sha256:v2")
+    d = _base(allowlist_hash="sha256:v1")
+    e = _base(allowlist_hash="sha256:v2")
     report = verify_execution_consistency(reviewed=_base(), dry_run=d, execution=e)
     codes = {i.code for i in report.issues}
     assert "SAFE_ALLOWLIST_CHANGED" in codes
@@ -311,7 +311,7 @@ def test_safe_allowlist_changed():
 
 
 def test_approval_missing_when_required():
-    e = _base(approval_context_id=None)
+    e = _base(approval_summary_hash=None)
     report = verify_execution_consistency(
         reviewed=_base(),
         dry_run=_base(),
@@ -359,7 +359,7 @@ def test_bad_dry_run_status_cancelled():
 
 
 def test_require_approval_false_allows_missing():
-    e = _base(approval_context_id=None)
+    e = _base(approval_summary_hash=None)
     report = verify_execution_consistency(
         reviewed=_base(),
         dry_run=_base(),
@@ -433,7 +433,7 @@ def test_multiple_mismatches_produce_fail():
         plan_hash="h3",
         node_ids=["y"],
         project_context_path=None,
-        approval_context_id=None,
+        approval_summary_hash=None,
         audit_id=None,
     )
     report = verify_execution_consistency(reviewed=r, dry_run=d, execution=e)
@@ -523,8 +523,8 @@ def test_checked_fields_populated():
         "node_param_hashes",
         "output_root",
         "output_manifest_ids",
-        "safe_allowlist_fingerprint",
-        "approval_context_id",
+        "allowlist_hash",
+        "approval_summary_hash",
         "audit_id",
         "dry_run_status",
     }

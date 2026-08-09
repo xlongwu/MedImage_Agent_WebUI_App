@@ -12,7 +12,7 @@ from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.main import app
 from src.backend.app.runtime.execution_gateway import (
     ExecutionGateway,
-    current_safe_allowlist_fingerprint,
+    current_allowlist_hash,
 )
 from src.backend.app.schemas.agent_lifecycle import LifecycleObservation
 from src.backend.app.schemas.desktop import ProjectDetail
@@ -58,7 +58,10 @@ def _ticket(store: SQLiteDesktopStore, tmp_path: Path, *, retry_quota: int = 0):
         project_id="project-1",
         reviewed_plan_id="reviewed-1",
         plan_hash="plan-hash",
-        approval_context_id="approval-1",
+        goal_contract_hash="goal-contract-hash",
+        evaluation_policy_version="goal-evaluator-v1",
+        approval_summary_hash="approval-1",
+        memory_context_hash=None,
         approved_actor="reviewer",
         approved_node_ids=["data_inspection"],
         approved_backend_ids=["python"],
@@ -66,7 +69,7 @@ def _ticket(store: SQLiteDesktopStore, tmp_path: Path, *, retry_quota: int = 0):
         output_roots=[str(outputs)],
         project_config_path=str(config),
         pipeline_path=str(pipeline),
-        safe_allowlist_fingerprint=current_safe_allowlist_fingerprint(),
+        allowlist_hash=current_allowlist_hash(),
         normalized_params_hash="normalized-params-hash",
         contract_versions={"data_inspection": "1.0.0"},
         audit_id="audit-1",
@@ -101,11 +104,15 @@ def _dispatch(service, ticket, orchestrator, lifecycle, *, status="SUCCESS"):
             project_id=ticket.project_id,
             reviewed_plan_id=ticket.reviewed_plan_id,
             plan_hash=ticket.plan_hash,
-            approval_context_id=ticket.approval_context_id,
+            approval_summary_hash=ticket.approval_summary_hash,
+            memory_context_hash=ticket.memory_context_hash,
+            scope_hash=ticket.scope_hash,
             normalized_params_hash=ticket.normalized_params_hash,
             contract_versions=ticket.contract_versions,
             project_config_path=ticket.project_config_path,
             pipeline_path=ticket.pipeline_path,
+            command_id="agent-lifecycle-dispatch",
+            run_id="run-1",
             executor=fake_executor,
         ),
     )

@@ -15,7 +15,7 @@ import yaml
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.runtime.execution_gateway import (
     ExecutionGateway,
-    current_safe_allowlist_fingerprint,
+    current_allowlist_hash,
 )
 from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.runtime.pipeline_executor import load_project_config, run_pipeline
@@ -112,7 +112,10 @@ def _run_via_gateway(tmp_path: Path, config: Path, pipeline: Path) -> dict:
         project_id="executor-settings-test",
         reviewed_plan_id="reviewed-settings-test",
         plan_hash="settings-test-hash",
-        approval_context_id="settings-test-approval",
+        goal_contract_hash="goal-contract-hash",
+        evaluation_policy_version="goal-evaluator-v1",
+        approval_summary_hash="settings-test-approval",
+        memory_context_hash=None,
         approved_actor="test",
         approved_node_ids=node_ids,
         approved_backend_ids=backends,
@@ -120,7 +123,7 @@ def _run_via_gateway(tmp_path: Path, config: Path, pipeline: Path) -> dict:
         output_roots=[str(tmp_path)],
         project_config_path=str(config),
         pipeline_path=str(pipeline),
-        safe_allowlist_fingerprint=current_safe_allowlist_fingerprint(),
+        allowlist_hash=current_allowlist_hash(),
         normalized_params_hash="normalized-params-hash",
         contract_versions={
             node_id: (
@@ -137,11 +140,15 @@ def _run_via_gateway(tmp_path: Path, config: Path, pipeline: Path) -> dict:
         project_id=ticket.project_id,
         reviewed_plan_id=ticket.reviewed_plan_id,
         plan_hash=ticket.plan_hash,
-        approval_context_id=ticket.approval_context_id,
+        approval_summary_hash=ticket.approval_summary_hash,
+        memory_context_hash=ticket.memory_context_hash,
+        scope_hash=ticket.scope_hash,
         normalized_params_hash=ticket.normalized_params_hash,
         contract_versions=ticket.contract_versions,
         project_config_path=str(config),
         pipeline_path=str(pipeline),
+        command_id="pipeline-settings-dispatch",
+        run_id="settings-run",
         executor=run_pipeline,
     )
     return result

@@ -90,7 +90,8 @@ API Layer (FastAPI + Pydantic)
     -> Services and Schemas
 Agent Runtime (Plan-then-Execute + Approval Gate)
     -> Pipeline Runtime (DAG Executor + Scheduler)
-    -> Plugin Node Registry + Tool Catalog
+    -> Plugin Node Registry + 权威 Node Contract
+    -> Tool Catalog（只读展示投影）
 ```
 
 状态保存在本地并按项目隔离：SQLite 存储项目元数据，JSON 存储运行状态和
@@ -100,7 +101,9 @@ artifact。运行时状态写入使用原子文件写入。Pipeline Runtime 是�
 项目记忆是默认关闭的可选功能。只有安装级门控和项目授权同时启用后，经过
 审核的偏好与项目经验才会写入独立的本地 Memory SQLite，并在规划前以有界、
 强类型上下文注入。科学记忆永远不是执行约束，必须在当前任务中重新确认，且
-实际使用的快照会绑定 Reviewed Plan 和 Approval Summary。详见
+实际使用的快照会绑定 Reviewed Plan 和 Approval Summary。显式关闭记忆时返回
+强类型 disabled context；记忆已启用但数据库或 outbox preflight 失败时，以结构化
+错误阻断规划，不会静默使用空 context 继续；运营积压则投影为 partial。详见
 [记忆系统设计方案](docs/架构与决策/记忆系统设计方案.md)。
 
 当前 router、service、schema、node registry、前端 API、存储和桌面边界见
@@ -124,6 +127,9 @@ Agent Task API 和源码界面只是既有 lifecycle、Reviewed Plan、Approval 
 Execution Ticket、唯一 Execution Gateway、Pipeline Runtime 和 artifact 证据之上的
 投影与命令入口，不建立第二条执行路径。该源码能力尚不代表已经打包或发布
 `v0.7.0`；当前各版本面仍为 `v0.6.0-rc1`。
+每次执行都会持久化不可变 dispatch 和有序 Gateway 事件；相同 command 重放只返回
+已持久化结果，不会再次运行 executor。已经进入 started 但缺少终态的崩溃窗口会
+报告 outcome-unknown 并要求检查证据，不会自动重复执行。
 
 DICOM/FunRaw/T1Raw 数据支持只读检测和转换 dry-run 预览。只有存在有效的 release
 readiness 证据时，原生转换才能进入受审网关路径；旧公共转换端点继续 fail-closed，

@@ -68,24 +68,32 @@ def get_memory_consent(
 ) -> MemoryConsentStatus:
     _require_project(store, project_id)
     consent = store.get_memory_consent(project_id)
-    healthy = repository.health_check().get("ok") is True
+    health = MemoryRetrievalService(
+        repository=repository, project_store=store, config=config
+    ).operational_health(project_id=project_id, consent=consent)
     return MemoryConsentStatus(
         project_id=project_id,
-        available=config.enabled and healthy,
-        generation_available=config.enabled and config.generation_enabled and healthy,
-        use_available=config.enabled and config.use_enabled and healthy,
+        status=health["status"],
+        available=bool(config.enabled and health["store_healthy"]),
+        generation_available=bool(health["generation_available"]),
+        use_available=bool(health["use_available"]),
         generate_enabled=bool(consent.get("generate_enabled")),
         use_enabled=bool(consent.get("use_enabled")),
         consent_epoch=int(consent.get("consent_epoch") or 0),
         outbox_cutoff_sequence=int(consent.get("outbox_cutoff_sequence") or 0),
         updated_at=consent.get("updated_at"),
-        degraded_reason=(
-            "MEMORY_DISABLED"
-            if not config.enabled
-            else None
-            if healthy
-            else "MEMORY_STORE_UNHEALTHY"
-        ),
+        degraded_reason=health["degraded_reason"],
+        retrieval_policy_version="memory-retrieval-v1",
+        store_healthy=bool(health["store_healthy"]),
+        outbox_max_sequence=int(health["outbox_max_sequence"]),
+        processed_outbox_sequence=int(health["processed_outbox_sequence"]),
+        outbox_lag=int(health["outbox_lag"]),
+        retry_jobs=int(health["retry_jobs"]),
+        dead_letter_jobs=int(health["dead_letter_jobs"]),
+        active_leases=int(health["active_leases"]),
+        expired_leases=int(health["expired_leases"]),
+        pending_forget_records=int(health["pending_forget_records"]),
+        last_forget_wal_truncate_at=health["last_forget_wal_truncate_at"],
     )
 
 
@@ -379,6 +387,9 @@ def preview_memory_context(
     # Intentionally read-only: no extraction, consolidation, projection, or
     # reconcile is permitted from this endpoint.
     _require_project(store, project_id)
-    return MemoryRetrievalService(
-        repository=repository, project_store=store, config=config
-    ).build_context(project_id=project_id, goal=request.goal)
+    try:
+        return MemoryRetrievalService(
+            repository=repository, project_store=store, config=config
+        ).build_context(project_id=project_id, goal=request.goal)
+    except Exception as exc:
+        _map_error(exc)

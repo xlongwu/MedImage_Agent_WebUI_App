@@ -109,7 +109,7 @@ def _save_contract_smoke_failure_plan(client, created: dict) -> dict:
     return save_resp.json()["reviewed_plan"]
 
 
-def _execute_body(created: dict, plan: dict, reviewed_plan_id: str) -> dict:
+def _execute_body(created: dict, plan: dict, reviewed: dict) -> dict:
     return {
         "plan": plan,
         "approval": {
@@ -117,9 +117,12 @@ def _execute_body(created: dict, plan: dict, reviewed_plan_id: str) -> dict:
             "approved_by": "contract-smoke-test",
             "approved_nodes": ["*"],
             "rejected_nodes": [],
+            "approval_summary_hash": reviewed["payload"]["approval_envelope"][
+                "summary_hash"
+            ],
         },
         "project_id": created["project_id"],
-        "reviewed_plan_id": reviewed_plan_id,
+        "reviewed_plan_id": reviewed["reviewed_plan_id"],
         "project_config_path": created["project_config_path"],
         "dry_run": False,
         "persist_audit": True,
@@ -169,7 +172,7 @@ def test_node_contract_happy_path(real_project_smoke, monkeypatch, tmp_path):  #
         },
         load_project_context(created["project_id"], created["project_config_path"]),
     )
-    body = _execute_body(created, happy_plan, reviewed["reviewed_plan_id"])
+    body = _execute_body(created, happy_plan, reviewed)
     response = client.post("/api/plans/execute-reviewed", json=body)
     assert response.status_code == 200, response.text
     payload = response.json()
@@ -318,6 +321,9 @@ def test_node_contract_failure_path(real_project_smoke, monkeypatch, tmp_path): 
             "approved_by": "contract-smoke-test",
             "approved_nodes": ["*"],
             "rejected_nodes": [],
+            "approval_summary_hash": reviewed["payload"]["approval_envelope"][
+                "summary_hash"
+            ],
         },
         "project_id": project_id,
         "reviewed_plan_id": reviewed["reviewed_plan_id"],

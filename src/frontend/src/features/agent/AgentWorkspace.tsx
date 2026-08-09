@@ -52,6 +52,37 @@ function localizeAgentError(error: string, t: I18nContextValue["t"]): LocalizedA
       title: t("agent.error.dryRunBlocked.title"),
     };
   }
+  if (error.includes("EXECUTION_TICKET_EXPIRED")) {
+    return {
+      message: t("agent.error.ticketExpired.message"),
+      retryLabel: null,
+      title: t("agent.error.ticketExpired.title"),
+    };
+  }
+  if (error.includes("GATEWAY_DISPATCH_OUTCOME_UNKNOWN")) {
+    return {
+      message: t("agent.error.dispatchUnknown.message"),
+      retryLabel: null,
+      title: t("agent.error.dispatchUnknown.title"),
+    };
+  }
+  if (error.includes("EXECUTION_DISPATCH_FAILED") || error.includes("EXECUTION_FAILED")) {
+    return {
+      message: t("agent.error.executionFailed.message"),
+      retryLabel: null,
+      title: t("agent.error.executionFailed.title"),
+    };
+  }
+  if (
+    error.includes("MEMORY_STORE_UNHEALTHY") ||
+    error.includes("MEMORY_OUTBOX_PREFLIGHT_FAILED")
+  ) {
+    return {
+      message: t("agent.error.memoryUnavailable.message"),
+      retryLabel: t("agent.error.checkAgain"),
+      title: t("agent.error.memoryUnavailable.title"),
+    };
+  }
   if (error.includes("LIFECYCLE_CANCEL_NOT_SUPPORTED")) {
     return {
       message: t("agent.error.alreadyTerminal"),

@@ -8,7 +8,7 @@ from uuid import uuid4
 import yaml
 
 from src.backend.app.planner.audit_record import stable_hash
-from src.backend.app.runtime.execution_gateway import current_safe_allowlist_fingerprint
+from src.backend.app.runtime.execution_gateway import current_allowlist_hash
 from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord, RunLinkRecord
@@ -19,6 +19,7 @@ from src.backend.app.schemas.goal_contract import (
     GoalEvaluationRecord,
     GoalScope,
 )
+from src.backend.app.schemas.gateway_dispatch import GatewayDispatch
 from src.backend.app.schemas.observation import (
     CapabilityObservation,
     NodeObservation,
@@ -186,7 +187,8 @@ def build_recovery_fixture(
         plan_hash=plan_hash,
         goal_contract_hash=goal.goal_contract_hash,
         evaluation_policy_version=goal.evaluation_policy_version,
-        approval_context_id="parent-approval",
+        approval_summary_hash="parent-approval",
+        memory_context_hash=None,
         approved_actor="test-reviewer",
         approved_node_ids=("contract_smoke",),
         approved_backend_ids=("python",),
@@ -195,7 +197,7 @@ def build_recovery_fixture(
         readonly_roots=(str(rawdata),),
         project_config_path=str(config_path),
         pipeline_path=str(pipeline_path),
-        safe_allowlist_fingerprint=current_safe_allowlist_fingerprint(),
+        allowlist_hash=current_allowlist_hash(),
         normalized_params_hash=stable_hash({"contract_smoke": plan["nodes"][0]["params"]}),
         contract_versions={"contract_smoke": contract.contract_version},
         audit_id="parent-audit",
@@ -209,6 +211,31 @@ def build_recovery_fixture(
         idempotency_key="parent-dispatch",
     )
     assert parent is not None
+    dispatch_identity = {
+        "schema_version": 1,
+        "command_id": "parent-dispatch-command",
+        "project_id": project_id,
+        "reviewed_plan_id": reviewed_plan_id,
+        "execution_ticket_id": parent.execution_ticket_id,
+        "approval_summary_hash": parent.approval_summary_hash,
+        "plan_hash": parent.plan_hash,
+        "memory_context_hash": parent.memory_context_hash,
+        "scope_hash": parent.scope_hash,
+        "allowlist_hash": parent.allowlist_hash,
+        "run_id": "parent-run",
+    }
+    parent_dispatch = store.add_gateway_dispatch(
+        GatewayDispatch(
+            dispatch_id="parent-dispatch",
+            created_at=datetime.now(UTC),
+            canonical_hash=stable_hash(dispatch_identity),
+            **{
+                key: value
+                for key, value in dispatch_identity.items()
+                if key != "schema_version"
+            },
+        )
+    )
     now_iso = datetime.now(UTC).isoformat()
     store.add_run_link(
         RunLinkRecord(
@@ -216,6 +243,7 @@ def build_recovery_fixture(
             project_id=project_id,
             reviewed_plan_id=reviewed_plan_id,
             run_id="parent-run",
+            dispatch_id=parent_dispatch.dispatch_id,
             pipeline_path=str(pipeline_path),
             project_config_path=str(config_path),
             audit_id=parent.audit_id,
@@ -237,6 +265,7 @@ def build_recovery_fixture(
             goal_contract_hash=goal.goal_contract_hash,
             run_id="parent-run",
             execution_ticket_id=parent.execution_ticket_id,
+            dispatch_id=parent_dispatch.dispatch_id,
         ),
         collected_at=now,
         sources=(

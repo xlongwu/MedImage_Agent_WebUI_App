@@ -78,7 +78,7 @@ def _safe_reviewed_plan(created: dict) -> dict:
 def _execute_body(
     created: dict,
     plan: dict,
-    reviewed_plan_id: str,
+    reviewed: dict,
     *,
     approved: bool = True,
     confirm_execution: bool = True,
@@ -90,9 +90,12 @@ def _execute_body(
             "approved_by": "safe-smoke-test",
             "approved_nodes": ["*"] if approved else [],
             "rejected_nodes": [],
+            "approval_summary_hash": reviewed["payload"]["approval_envelope"][
+                "summary_hash"
+            ],
         },
         "project_id": created["project_id"],
-        "reviewed_plan_id": reviewed_plan_id,
+        "reviewed_plan_id": reviewed["reviewed_plan_id"],
         "project_config_path": created["project_config_path"],
         "dry_run": False,
         "persist_audit": True,
@@ -197,7 +200,7 @@ def test_real_project_safe_reviewed_execute_uses_real_executor(
     body = _execute_body(
         created,
         plan,
-        reviewed["reviewed_plan_id"],
+        reviewed,
     )
     first = client.post("/api/plans/execute-reviewed", json=body)
     second = client.post("/api/plans/execute-reviewed", json=body)
@@ -206,32 +209,32 @@ def test_real_project_safe_reviewed_execute_uses_real_executor(
     assert second.status_code == 200, second.text
     first_payload = first.json()
     second_payload = second.json()
-    for payload in (first_payload, second_payload):
-        assert payload["status"] == "EXECUTION_SUBMITTED"
-        assert payload["reviewed_plan_id"] == reviewed["reviewed_plan_id"]
-        assert payload["executor_result"]["status"] == "SUCCESS"
-        assert Path(payload["pipeline_path"]).is_file()
-        assert Path(payload["summary_path"]).is_file()
+    assert first_payload["status"] == "EXECUTION_SUBMITTED"
+    assert first_payload["reviewed_plan_id"] == reviewed["reviewed_plan_id"]
+    assert first_payload["executor_result"]["status"] == "SUCCESS"
+    assert Path(first_payload["pipeline_path"]).is_file()
+    assert Path(first_payload["summary_path"]).is_file()
+    assert second_payload["status"] == "AGENT_LIFECYCLE_ID_REQUIRED"
+    assert second_payload["run_id"] is None
 
-        pipeline = yaml.safe_load(Path(payload["pipeline_path"]).read_text(encoding="utf-8"))
-        assert [node["id"] for node in pipeline["nodes"]] == ["data_inspection"]
-        assert pipeline["nodes"][0]["backend"] == "python"
-        assert (
-            Path(pipeline["nodes"][0]["params"]["rawdata_dir"]).resolve()
-            == real_project_smoke["rawdata_dir"]
-        )
-        assert (
-            Path(pipeline["nodes"][0]["params"]["output_dir"]).resolve()
-            == Path(created["dataset_index_path"]).parent.resolve()
-        )
+    pipeline = yaml.safe_load(
+        Path(first_payload["pipeline_path"]).read_text(encoding="utf-8")
+    )
+    assert [node["id"] for node in pipeline["nodes"]] == ["data_inspection"]
+    assert pipeline["nodes"][0]["backend"] == "python"
+    assert (
+        Path(pipeline["nodes"][0]["params"]["rawdata_dir"]).resolve()
+        == real_project_smoke["rawdata_dir"]
+    )
+    assert (
+        Path(pipeline["nodes"][0]["params"]["output_dir"]).resolve()
+        == Path(created["dataset_index_path"]).parent.resolve()
+    )
 
-        summary = json.loads(Path(payload["summary_path"]).read_text(encoding="utf-8"))
-        assert summary["run_id"] == payload["run_id"]
-        assert summary["status"] == "SUCCESS"
-
-    assert first_payload["run_id"] != second_payload["run_id"]
-    assert first_payload["run_link_id"] != second_payload["run_link_id"]
-    assert len(run_links_seen_before_executor) == 2
+    summary = json.loads(Path(first_payload["summary_path"]).read_text(encoding="utf-8"))
+    assert summary["run_id"] == first_payload["run_id"]
+    assert summary["status"] == "SUCCESS"
+    assert len(run_links_seen_before_executor) == 1
 
     plans = client.get(f"/api/projects/{created['project_id']}/plans")
     plan_detail = client.get(
@@ -241,18 +244,16 @@ def test_real_project_safe_reviewed_execute_uses_real_executor(
     assert plans.status_code == plan_detail.status_code == runs.status_code == 200
     assert len(plans.json()["reviewed_plans"]) == 1
     assert plan_detail.json()["reviewed_plan"]["reviewed_plan_id"] == reviewed["reviewed_plan_id"]
-    assert {run["run_id"] for run in runs.json()["runs"]} == {
-        first_payload["run_id"],
-        second_payload["run_id"],
-    }
+    assert {run["run_id"] for run in runs.json()["runs"]} == {first_payload["run_id"]}
 
-    for payload in (first_payload, second_payload):
-        run_detail = client.get(f"/api/projects/{created['project_id']}/runs/{payload['run_id']}")
-        assert run_detail.status_code == 200
-        run_link = run_detail.json()["run_link"]
-        assert run_link["status"] == "SUCCESS"
-        assert run_link["reviewed_plan_id"] == reviewed["reviewed_plan_id"]
-        assert Path(run_link["summary_path"]).is_file()
+    run_detail = client.get(
+        f"/api/projects/{created['project_id']}/runs/{first_payload['run_id']}"
+    )
+    assert run_detail.status_code == 200
+    run_link = run_detail.json()["run_link"]
+    assert run_link["status"] == "SUCCESS"
+    assert run_link["reviewed_plan_id"] == reviewed["reviewed_plan_id"]
+    assert Path(run_link["summary_path"]).is_file()
 
     assert (
         _rawdata_snapshot(real_project_smoke["rawdata_dir"]) == real_project_smoke["rawdata_before"]
@@ -279,7 +280,7 @@ def test_real_project_safe_reviewed_execute_still_requires_confirmation(
         json=_execute_body(
             real_project_smoke["created"],
             real_project_smoke["plan"],
-            real_project_smoke["reviewed"]["reviewed_plan_id"],
+            real_project_smoke["reviewed"],
             confirm_execution=False,
         ),
     )

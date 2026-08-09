@@ -30,6 +30,7 @@ class ObservationBindings(BaseModel):
     goal_contract_hash: str | None = None
     run_id: str
     execution_ticket_id: str
+    dispatch_id: str
     recovery_attempt_id: str | None = None
 
 
@@ -95,6 +96,8 @@ class ArtifactObservation(BaseModel):
     exists: bool = False
     size_bytes: int | None = None
     checksum_sha256: str | None = None
+    input_hashes: tuple[str, ...] = ()
+    parameter_hash: str | None = None
     shape: tuple[int, ...] = ()
     dtype: str | None = None
     reload_status: ReloadStatus = "unknown"

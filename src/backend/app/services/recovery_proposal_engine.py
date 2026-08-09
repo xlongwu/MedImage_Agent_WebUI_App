@@ -258,8 +258,8 @@ def build_execution_snapshot(
         artifact_types=artifacts,
         output_policy=output_policy,
         goal_contract_hash=ticket.goal_contract_hash,
-        approval_context_id=ticket.approval_context_id,
-        safe_allowlist_fingerprint=ticket.safe_allowlist_fingerprint,
+        approval_summary_hash=ticket.approval_summary_hash,
+        allowlist_hash=ticket.allowlist_hash,
     )
 
 
@@ -291,7 +291,7 @@ def apply_change_request(
         value = getattr(changes, field)
         if value is not None:
             payload[field] = tuple(sorted(value))
-    for field in ("goal_contract_hash", "approval_context_id", "safe_allowlist_fingerprint"):
+    for field in ("goal_contract_hash", "approval_summary_hash", "allowlist_hash"):
         value = getattr(changes, field)
         if value is not None:
             payload[field] = value
@@ -353,10 +353,10 @@ def canonical_recovery_diff(
         "artifact_types": (before["artifact_types"], after["artifact_types"]),
         "output_policy": (before["output_policy"], after["output_policy"]),
         "goal_contract": (before["goal_contract_hash"], after["goal_contract_hash"]),
-        "approval_context": (before["approval_context_id"], after["approval_context_id"]),
+        "approval_context": (before["approval_summary_hash"], after["approval_summary_hash"]),
         "safe_allowlist": (
-            before["safe_allowlist_fingerprint"],
-            after["safe_allowlist_fingerprint"],
+            before["allowlist_hash"],
+            after["allowlist_hash"],
         ),
     }
     entries = []

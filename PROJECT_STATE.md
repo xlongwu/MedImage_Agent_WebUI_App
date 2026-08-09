@@ -1,6 +1,6 @@
 # Project State
 
-Current as of 2026-07-26.
+Current as of 2026-08-09.
 
 ## Version and Branch
 
@@ -30,8 +30,12 @@ their tag state.
 - `ConfigService` backed configuration and legacy `get_backend_settings()`.
 - Project store dependency protocol for read-side routes.
 - Atomic runtime state JSON writes with `_schema_version`.
-- Plugin-based node registry with duplicate-ID checks and compatibility shim.
-- Tool Catalog and Approval Gate for file-writing or execution actions.
+- Plugin-based node registry with duplicate-ID checks and a canonical
+  `NodeContract` for every registered runner plus explicitly declared
+  planning-only groups. Startup consistency checks reject missing, duplicate,
+  incomplete, or conflicting contracts. Tool Catalog is a read-only
+  presentation projection and has no ID-prefix safety fallback.
+- Approval Gate for file-writing or execution actions.
 - Real-project creation from BIDS/rawdata directories, project config and
   dataset index generation, reviewed plan persistence, run links, run history,
   run summaries, and artifact previews.
@@ -65,9 +69,13 @@ their tag state.
   preprocessing-setup, and execution-run evidence, and never treats chat text
   as approval or execution authority. A real LLM provider remains disabled
   until explicitly configured.
-- A server-issued Execution Ticket and single Execution Gateway bind reviewed
-  plans, approvals, project identity, allowlists, paths, audit context, expiry,
-  and retry policy before Pipeline Runtime dispatch.
+- A server-issued Execution Ticket v3 and single Execution Gateway bind the
+  Reviewed Plan, Approval Summary, memory snapshot, project identity, goal and
+  evaluation, allowlists, paths, audit context, expiry, and retry policy before
+  Pipeline Runtime dispatch. Immutable dispatch records and ordered events
+  bind tickets to runs. Same-command replay returns the persisted result;
+  prepared work may resume before start, while started-without-outcome is
+  reported as unknown and is never automatically repeated.
 - Runner dispatch enforces node, backend, input-root, output-root, rawdata,
   allowlist-fingerprint, and ticket constraints before invoking registered
   execution code.
@@ -76,6 +84,12 @@ their tag state.
 - Observation, deterministic Goal Evaluation, side-effect-free recovery
   proposals, and controlled retry/resume/local-replan services are implemented
   and covered by source-level regression tests.
+- The optional controlled single-Agent Harness is default-disabled and bounded
+  to six schema-validated advisory actions. It persists redacted context and
+  ordered steps, processes one leased step at a time, and has no approval,
+  ticket, gateway, runner, shell, or file/database-write capability. Once
+  enabled, provider/config/schema/budget failures stop structurally and never
+  switch to a different planner.
 - The Phase 10 source tree adds an Agent-first project workspace backed by a
   project-scoped Agent Task read projection. Goal commands stop for unresolved
   science decisions, produce one hashed Approval Summary, and reuse the
@@ -120,6 +134,20 @@ their tag state.
   optional projection. Typed memory snapshots are frozen into Reviewed Plans
   and Approval Summaries. Scientific memories remain advisory and always stop
   for current-task confirmation before they can influence a plan.
+- Memory retrieval now has explicit disabled, enabled, and partial typed
+  contexts plus an operational health projection. Disabled mode does not probe
+  storage. When enabled, failed memory DB health or outbox preflight blocks
+  planning with structured errors instead of silently continuing empty;
+  recoverable lag/retry/dead-letter/lease/forget conditions remain visible as
+  partial warnings. GET projections are side-effect free.
+- Planner providers are explicitly `rule_based` or `openai_compatible`; the
+  former `mock` provider is removed. Both return the same strict Pydantic plan
+  schema and persist redacted invocation/evidence provenance. The remote path
+  permits one identical-input JSON repair and never falls back to another plan.
+- Automatic AC-PC alignment remains a real computed Python workflow with
+  reloadable artifacts and provenance, but is not claimed `validated` without
+  an independent manual-reference dataset. The former GUI Agent product routes,
+  nodes, schemas and configuration are removed; old route/node IDs are rejected.
 
 ## Current Execution Boundaries
 

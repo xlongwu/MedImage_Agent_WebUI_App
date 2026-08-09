@@ -23,7 +23,7 @@ def test_harness_rejects_execution_request_without_invoking_execution_callback(t
         store, config=AgentHarnessConfig(enabled=True), adapter=MaliciousAdapter(),
         draft_plan=lambda **_kwargs: calls.append("draft"),
     )
-    service.ensure_attempt(lifecycle=lifecycle, provider_ref="mock")
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
 
     result = service.run_one(lifecycle=lifecycle, actor="user")
 

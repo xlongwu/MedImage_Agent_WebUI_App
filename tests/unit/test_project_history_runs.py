@@ -179,7 +179,12 @@ def _add_run_link(
     return store.add_run_link(record)
 
 
-def _execute_body(created: dict, plan: dict, reviewed_plan_id: str) -> dict:
+def _execute_body(
+    created: dict,
+    plan: dict,
+    reviewed_plan_id: str,
+    approval_summary_hash: str | None = None,
+) -> dict:
     return {
         "plan": plan,
         "approval": {
@@ -187,6 +192,11 @@ def _execute_body(created: dict, plan: dict, reviewed_plan_id: str) -> dict:
             "approved_by": "test-user",
             "approved_nodes": ["*"],
             "rejected_nodes": [],
+            **(
+                {"approval_summary_hash": approval_summary_hash}
+                if approval_summary_hash
+                else {}
+            ),
         },
         "project_id": created["project_id"],
         "reviewed_plan_id": reviewed_plan_id,
@@ -230,7 +240,12 @@ def test_real_execution_persists_run_link_before_executor_and_exposes_history(
     )
     response = client.post(
         "/api/plans/execute-reviewed",
-        json=_execute_body(created, plan, reviewed["reviewed_plan_id"]),
+        json=_execute_body(
+            created,
+            plan,
+            reviewed["reviewed_plan_id"],
+            reviewed["payload"]["approval_envelope"]["summary_hash"],
+        ),
     )
 
     assert response.status_code == 200
@@ -324,7 +339,12 @@ def test_reviewed_plan_console_cannot_retry_agent_bound_execution_without_lifecy
     monkeypatch.setattr(
         "src.backend.app.runtime.execution_gateway.PIPELINE_EXECUTOR", fake_executor
     )
-    body = _execute_body(created, plan, reviewed["reviewed_plan_id"])
+    body = _execute_body(
+        created,
+        plan,
+        reviewed["reviewed_plan_id"],
+        reviewed["payload"]["approval_envelope"]["summary_hash"],
+    )
     first_response = client.post("/api/plans/execute-reviewed", json=body)
     second_response = client.post("/api/plans/execute-reviewed", json=body)
 
@@ -374,7 +394,12 @@ def test_run_link_write_failure_blocks_executor(tmp_path, monkeypatch):
     )
     response = client.post(
         "/api/plans/execute-reviewed",
-        json=_execute_body(created, plan, reviewed["reviewed_plan_id"]),
+        json=_execute_body(
+            created,
+            plan,
+            reviewed["reviewed_plan_id"],
+            reviewed["payload"]["approval_envelope"]["summary_hash"],
+        ),
     )
 
     assert response.status_code == 200

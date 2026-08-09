@@ -7,12 +7,10 @@ Purpose:
   Registry maps node_id → runner function; Tool Catalog maps node_id →
   metadata for planning / validation / display.
 
-Design (MVP):
-  - TOOL_METADATA hard-codes metadata for ~30 core nodes.
-  - build_tool_catalog() iterates ALL NODE_REGISTRY keys and applies
-    fallback rules for any node not in TOOL_METADATA.
-  - No node is ever silently dropped — every NODE_REGISTRY entry produces
-    exactly one ToolCatalogItem.
+Safety metadata is derived exclusively from the versioned NodeContract
+registry.  TOOL_METADATA supplies presentation-only name, description, and
+tags; it cannot override backend, approval, risk, write, input, or output
+contracts.
 """
 
 from __future__ import annotations
@@ -664,119 +662,42 @@ def _install_native_preproc_stage_metadata() -> None:
 _install_native_preproc_stage_metadata()
 
 
-# ── Fallback logic ────────────────────────────────────────────────────────────
-
-def _fallback(node_id: str) -> dict[str, Any]:
-    """Produce safe conservative metadata for nodes not in TOOL_METADATA."""
-    backend = "unknown"
-    parallel_level = "unknown"
-    requires_approval = False
-    manual_required = False
-    risk_level = "unknown"
-    tags: list[str] = ["uncataloged"]
-
-    # ── Prefix-based inference ──
-    if node_id.startswith("spm_"):
-        backend = "matlab-spm"
-        requires_approval = True
-        risk_level = "high"
-        tags = ["spm", "matlab"]
-    elif node_id.startswith("dpabi_"):
-        if "contract" in node_id or "capability" in node_id or "preflight" in node_id or "scaffold" in node_id or "signature" in node_id or "template" in node_id or "manifest" in node_id or "run_plan" in node_id:
-            backend = "python"
-            requires_approval = False
-            risk_level = "low"
-            tags = ["dpabi", "contract"]
-        elif "sandbox" in node_id or "single_function" in node_id:
-            backend = "matlab"
-            requires_approval = True
-            risk_level = "high"
-            tags = ["dpabi", "matlab"]
-        else:
-            backend = "dpabi"
-            requires_approval = True
-            risk_level = "high"
-            tags = ["dpabi", "matlab"]
-    elif node_id.startswith("gpu_"):
-        backend = "gpu"
-        risk_level = "medium"
-        tags = ["gpu"]
-    elif "_qc_" in node_id or node_id.endswith("_dataset_report"):
-        requires_approval = False
-        risk_level = "low"
-        tags = ["qc", "report"]
-    elif node_id.endswith("_contract") or "candidate_contract" in node_id:
-        requires_approval = False
-        risk_level = "low"
-        tags = ["contract"]
-    return {
-        "name": node_id.replace("_", " ").title(),
-        "backend": backend,
-        "parallel_level": parallel_level,
-        "description": f"No catalog metadata yet for node '{node_id}'.",
-        "requires_approval": requires_approval,
-        "manual_required": manual_required,
-        "risk_level": risk_level,
-        "inputs": [],
-        "outputs": [],
-        "tags": tags,
-    }
-
-
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def build_tool_catalog() -> list[ToolCatalogItem]:
-    """Build a ToolCatalogItem for every registered node and contract node.
-
-    Returns one item per NODE_REGISTRY key plus any TOOL_METADATA entries
-    with backend='contract' that are not in NODE_REGISTRY.  Nodes with
-    metadata in TOOL_METADATA use explicit values; all others receive
-    fallback metadata derived from their node id prefix.
-    """
-    from src.backend.app.runtime.node_registry import NODE_REGISTRY  # noqa: E402
+    """Build one read-only presentation item from each authoritative contract."""
+    from src.backend.app.runtime.node_contract_registry import NODE_CONTRACTS  # noqa: E402
 
     items: list[ToolCatalogItem] = []
-    seen: set[str] = set()
-
-    for node_id in sorted(NODE_REGISTRY):
-        if node_id in seen:
-            continue
-        seen.add(node_id)
-        meta = TOOL_METADATA.get(node_id)
-        if meta is None:
-            meta = _fallback(node_id)
-        items.append(ToolCatalogItem(id=node_id, **meta))
-
-    # Include contract-only nodes from TOOL_METADATA that aren't in NODE_REGISTRY
-    for node_id, meta in sorted(TOOL_METADATA.items()):
-        if node_id in seen:
-            continue
-        if meta.get("backend") != "contract":
-            continue
-        seen.add(node_id)
-        items.append(ToolCatalogItem(id=node_id, **meta))
-
+    for node_id, contract in sorted(NODE_CONTRACTS.items()):
+        presentation = TOOL_METADATA.get(node_id, {})
+        items.append(
+            ToolCatalogItem(
+                id=node_id,
+                name=str(presentation.get("name") or node_id.replace("_", " ").title()),
+                backend=contract.backend,
+                parallel_level=contract.parallel_level,
+                description=str(
+                    presentation.get("description")
+                    or f"Versioned NodeContract for '{node_id}'."
+                ),
+                requires_approval=contract.requires_approval,
+                manual_required=contract.manual_required,
+                risk_level=contract.risk_level,
+                inputs=[item.artifact_type for item in contract.input_schema],
+                outputs=[item.artifact_type for item in contract.output_schema],
+                tags=list(presentation.get("tags") or ["contract-derived"]),
+            )
+        )
     return items
 
 
 def get_tool_catalog_item(node_id: str) -> ToolCatalogItem:
-    """Look up a single node's metadata by id.
-
-    Checks TOOL_METADATA first, then NODE_REGISTRY.  Raises KeyError if
-    the node is neither in TOOL_METADATA (with backend='contract') nor
-    in NODE_REGISTRY.
-    """
-    from src.backend.app.runtime.node_registry import NODE_REGISTRY  # noqa: E402
-
-    # Contract nodes may only exist in TOOL_METADATA
-    meta = TOOL_METADATA.get(node_id)
-    if meta is not None:
-        return ToolCatalogItem(id=node_id, **meta)
-
-    if node_id not in NODE_REGISTRY:
-        raise KeyError(f"Unknown node id: {node_id}")
-    meta = _fallback(node_id)
-    return ToolCatalogItem(id=node_id, **meta)
+    """Look up one contract-derived catalog item and reject unknown ids."""
+    for item in build_tool_catalog():
+        if item.id == node_id:
+            return item
+    raise KeyError(f"Unknown node id: {node_id}")
 
 
 def catalog_as_dicts() -> list[dict[str, Any]]:

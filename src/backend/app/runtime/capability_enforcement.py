@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from src.backend.app.core.exceptions import SafetyError
-from src.backend.app.runtime.execution_gateway import current_safe_allowlist_fingerprint
+from src.backend.app.runtime.execution_gateway import current_allowlist_hash
 from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.runtime.tool_execution_context import ToolExecutionContext
 from src.backend.app.schemas.execution_ticket import ExecutionTicket
@@ -128,7 +128,7 @@ def enforce_node_capabilities(
     """Verify node/backend/path authority before any runner or input read occurs."""
     if context.ticket.is_expired():
         _reject(context, reason="EXECUTION_TICKET_EXPIRED", node=node)
-    if context.safe_allowlist_fingerprint != current_safe_allowlist_fingerprint():
+    if context.allowlist_hash != current_allowlist_hash():
         _reject(context, reason="EXECUTION_TICKET_ALLOWLIST_MISMATCH", node=node)
     if node.id not in context.approved_node_ids:
         _reject(context, reason="CAPABILITY_NODE_NOT_APPROVED", node=node)

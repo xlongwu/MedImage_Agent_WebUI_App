@@ -231,6 +231,9 @@ class AgentTaskTechnicalDetails(BaseModel):
     memory_context_hash: str | None = None
     memory_refs: tuple[dict[str, object], ...] = ()
     memory_retrieval_policy_version: str | None = None
+    memory_status: Literal["disabled", "enabled", "partial"] | None = None
+    memory_used_bytes: int | None = Field(default=None, ge=0)
+    memory_omitted_count: int | None = Field(default=None, ge=0)
     memory_warnings: tuple[str, ...] = ()
     memory_available: bool | None = None
     memory_generate_enabled: bool | None = None

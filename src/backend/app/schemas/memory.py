@@ -31,8 +31,9 @@ MemoryItemStatus = Literal["active", "expired", "forgotten", "conflicted", "merg
 class MemoryConsentStatus(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     project_id: str
+    status: Literal["disabled", "healthy", "partial", "failure"]
     available: bool
     generation_available: bool
     use_available: bool
@@ -42,6 +43,17 @@ class MemoryConsentStatus(BaseModel):
     outbox_cutoff_sequence: int = 0
     updated_at: datetime | None = None
     degraded_reason: str | None = None
+    retrieval_policy_version: str
+    store_healthy: bool
+    outbox_max_sequence: int = 0
+    processed_outbox_sequence: int = 0
+    outbox_lag: int = 0
+    retry_jobs: int = 0
+    dead_letter_jobs: int = 0
+    active_leases: int = 0
+    expired_leases: int = 0
+    pending_forget_records: int = 0
+    last_forget_wal_truncate_at: datetime | None = None
 
 
 class MemorySource(BaseModel):
@@ -192,15 +204,10 @@ class MemoryContext(BaseModel):
     decision_suggestions: tuple[MemoryDecisionSuggestion, ...] = ()
     evidence_refs: tuple[MemoryEvidenceRef, ...] = ()
     omitted_count: int = Field(default=0, ge=0)
+    used_bytes: int = Field(default=0, ge=0)
+    status: Literal["disabled", "enabled", "partial"]
+    warning_codes: tuple[str, ...] = ()
     context_hash: str
-
-
-class MemoryStatusResponse(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    ok: bool
-    status: Literal["enabled", "disabled", "degraded"]
-    consent: MemoryConsentStatus
 
 
 class MemoryPage(BaseModel):

@@ -26,7 +26,6 @@ from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 class HarnessRunResult:
     lifecycle: object
     attempt: AgentHarnessAttempt | None
-    fallback_required: bool = False
 
 
 class AgentHarnessService:
@@ -96,7 +95,7 @@ class AgentHarnessService:
     def run_one(self, *, lifecycle, actor: str, lease_owner: str | None = None) -> HarnessRunResult:
         attempt = self.store.get_agent_harness_attempt(lifecycle.lifecycle_id)
         if attempt is None:
-            return HarnessRunResult(lifecycle=lifecycle, attempt=None, fallback_required=True)
+            return HarnessRunResult(lifecycle=lifecycle, attempt=None)
         if lifecycle.project_id != attempt.project_id or lifecycle.state in {"CANCELED", "SUCCEEDED", "GOAL_SATISFIED", "HUMAN_HANDOFF"}:
             return HarnessRunResult(lifecycle=lifecycle, attempt=self.stop(lifecycle_id=lifecycle.lifecycle_id, reason="LIFECYCLE_TERMINAL"))
         if attempt.status in {"FINISHED", "STOPPED", "FAILED", "WAITING_FOR_USER"}:
@@ -128,10 +127,14 @@ class AgentHarnessService:
             self._validate_envelope(envelope, lifecycle, context)
         except RuntimeError as exc:
             code = str(exc).split(":", 1)[0]
-            completed = step.model_copy(update={"completed_at": self.now(), "error_code": code, "summary": "Harness provider unavailable; deterministic planning will continue."})
+            completed = step.model_copy(update={
+                "completed_at": self.now(),
+                "error_code": code,
+                "summary": "Harness provider failed; the enabled Harness stopped without creating a plan.",
+            })
             self.store.update_agent_harness_step(completed)
             failed = self._stop_claimed(claimed, code)
-            return HarnessRunResult(lifecycle=lifecycle, attempt=failed, fallback_required=True)
+            return HarnessRunResult(lifecycle=lifecycle, attempt=failed)
         except Exception as exc:
             code = str(exc).split(":", 1)[0] or "AGENT_MODEL_OUTPUT_INVALID"
             completed = step.model_copy(update={"completed_at": self.now(), "error_code": code, "summary": "Harness action was rejected safely."})

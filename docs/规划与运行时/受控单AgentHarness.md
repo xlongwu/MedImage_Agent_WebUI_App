@@ -25,8 +25,9 @@ Harness 是可选的单 Agent 控制层，默认由
 validator、Reviewed Plan 和 Approval Summary 流程决定后续状态。Harness 从不
 调用 dry-run、Execution Ticket、Execution Gateway、node runner、shell 或文件
 系统写入。取消和 lifecycle 终态会停止 attempt；应用 lifespan 只做一次有限的
-ready/stale lease 恢复扫描。未配置 provider 或 Harness 出错时，Agent Task 回退
-到原有确定性命令路径。
+ready/stale lease 恢复扫描。关闭 Harness 时，Agent Task 明确选择确定性命令路径；
+Harness 已启用但 provider 未配置或执行出错时，attempt 记录结构化停止原因并停止，
+不会静默改用另一种规划路径，也不会创建 plan、ticket 或执行副作用。
 
 前端只显示后端只读 `harness_summary`（预算、状态、下一步、停止原因和最新
 脱敏步骤摘要），不推断执行成功，也不会从 GET 触发模型调用。

@@ -39,7 +39,7 @@ def test_request_decision_is_persisted_and_waits_for_user(tmp_path) -> None:
         payload={"kind": "atlas", "question": "Choose atlas", "impact": "Changes regions", "options": [{"id": "aal", "label": "AAL"}]},
     ))
     service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter)
-    service.ensure_attempt(lifecycle=lifecycle, provider_ref="mock")
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
 
     result = service.run_one(lifecycle=lifecycle, actor="user")
 
@@ -53,7 +53,7 @@ def test_invalid_or_stale_action_stops_without_second_model_call(tmp_path) -> No
     lifecycle = _created(store)
     adapter = Adapter(ActionEnvelope(kind="finish", reason="wrong state", expected_state="PLAN_DRAFTED"))
     service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter)
-    service.ensure_attempt(lifecycle=lifecycle, provider_ref="mock")
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
 
     result = service.run_one(lifecycle=lifecycle, actor="user")
 
@@ -67,7 +67,7 @@ def test_budget_exhaustion_happens_before_model_call(tmp_path) -> None:
     lifecycle = _created(store)
     adapter = Adapter(ActionEnvelope(kind="finish", reason="done", expected_state="CREATED"))
     service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True, max_model_calls=1), adapter=adapter)
-    attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="mock").model_copy(update={"model_calls_used": 1})
+    attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based").model_copy(update={"model_calls_used": 1})
     store.update_agent_harness_attempt(attempt, expected_status="READY")
 
     result = service.run_one(lifecycle=lifecycle, actor="user")
@@ -91,7 +91,7 @@ def test_invalid_json_gets_one_repair_and_counts_both_model_calls(tmp_path) -> N
     lifecycle = _created(store)
     adapter = RepairAdapter()
     service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter)
-    service.ensure_attempt(lifecycle=lifecycle, provider_ref="mock")
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
 
     result = service.run_one(lifecycle=lifecycle, actor="user")
 

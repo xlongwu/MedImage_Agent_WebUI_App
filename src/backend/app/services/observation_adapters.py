@@ -582,6 +582,7 @@ def adapt_observation_sources(
 
     # Artifact registry is the authority for registration/provenance metadata.
     registry_by_path: dict[str, dict[str, Any]] = {}
+    registry_artifacts: list[dict[str, Any]] = []
     for registry_path in _registry_candidates(project_root, run_link.run_id):
         if not registry_path.exists():
             continue
@@ -676,6 +677,11 @@ def adapt_observation_sources(
         warnings=artifact_warnings,
     )
     facts.sources.append(artifact_source)
+    registry_by_id = {
+        str(item.get("artifact_id")): item
+        for item in registry_artifacts
+        if isinstance(item, dict) and item.get("artifact_id")
+    }
     for path, discovered_item, registry_item in candidate_paths.values():
         exists = path.exists() and path.is_file()
         artifact_type = str((registry_item or {}).get("artifact_type") or _artifact_type_from_path(path))
@@ -693,6 +699,48 @@ def adapt_observation_sources(
             or (registry_item or {}).get("provenance")
             or (registry_item or {}).get("source_artifact_ids")
         )
+        source_ids = tuple(
+            str(item)
+            for item in (registry_item or {}).get("source_artifact_ids", [])
+            if str(item)
+        )
+        declared_input_hashes = (
+            ((registry_item or {}).get("metadata") or {}).get("input_hashes") or []
+        )
+        input_hashes = tuple(
+            sorted(
+                {
+                    str(registry_by_id[source_id].get("checksum") or "")
+                    for source_id in source_ids
+                    if source_id in registry_by_id
+                    and str(registry_by_id[source_id].get("checksum") or "")
+                }
+                | {str(value) for value in declared_input_hashes if str(value)}
+            )
+        )
+        parameter_hash = str(
+            ((registry_item or {}).get("metadata") or {}).get("parameter_hash")
+            or ((registry_item or {}).get("metadata") or {}).get("params_hash")
+            or ""
+        ) or None
+        provenance_value = str((registry_item or {}).get("provenance_path") or "")
+        if parameter_hash is None and provenance_value:
+            provenance_path = Path(provenance_value)
+            if not provenance_path.is_absolute():
+                provenance_path = project_root / provenance_path
+            try:
+                provenance_payload = json.loads(
+                    provenance_path.read_text(encoding="utf-8")
+                )
+                parameters = (
+                    provenance_payload.get("parameters")
+                    or provenance_payload.get("params")
+                    or provenance_payload.get("parameter_snapshot")
+                )
+                if isinstance(parameters, dict) and parameters:
+                    parameter_hash = stable_hash(parameters)
+            except Exception:
+                parameter_hash = None
         evidence_ids = tuple(
             dict.fromkeys(
                 item
@@ -724,6 +772,8 @@ def adapt_observation_sources(
                 exists=exists,
                 size_bytes=path.stat().st_size if exists else None,
                 checksum_sha256=_sha256_file(path) if exists else None,
+                input_hashes=input_hashes,
+                parameter_hash=parameter_hash,
                 shape=shape,
                 dtype=dtype,
                 reload_status=reload_status,

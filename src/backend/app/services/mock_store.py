@@ -30,6 +30,7 @@ from src.backend.app.schemas.desktop import (
     TaskStatus,
 )
 from src.backend.app.schemas.execution_ticket import ExecutionTicket, ExecutionTicketEvent
+from src.backend.app.schemas.gateway_dispatch import GatewayDispatch, GatewayDispatchEvent
 from src.backend.app.schemas.goal_contract import GoalEvaluationRecord
 from src.backend.app.schemas.observation import ObservationRecord
 from src.backend.app.schemas.recovery import DiagnosisRecord, RecoveryProposal
@@ -184,6 +185,27 @@ class SQLiteDesktopStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_execution_ticket_events_ticket_time
                     ON execution_ticket_events(execution_ticket_id, occurred_at);
+                CREATE TABLE IF NOT EXISTS gateway_dispatches (
+                    dispatch_id TEXT PRIMARY KEY,
+                    command_id TEXT NOT NULL UNIQUE,
+                    execution_ticket_id TEXT NOT NULL UNIQUE,
+                    project_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_gateway_dispatches_project_created
+                    ON gateway_dispatches(project_id, created_at);
+                CREATE TABLE IF NOT EXISTS gateway_dispatch_events (
+                    event_id TEXT PRIMARY KEY,
+                    dispatch_id TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    UNIQUE(dispatch_id, event_type)
+                );
+                CREATE INDEX IF NOT EXISTS idx_gateway_dispatch_events_dispatch_time
+                    ON gateway_dispatch_events(dispatch_id, occurred_at);
                 CREATE TABLE IF NOT EXISTS agent_lifecycles (
                     lifecycle_id TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL,
@@ -1171,6 +1193,8 @@ class SQLiteDesktopStore:
             conn.execute("DELETE FROM reviewed_plans WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM execution_ticket_events WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM execution_tickets WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM gateway_dispatch_events WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM gateway_dispatches WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_harness_steps WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_harness_contexts WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_harness_attempts WHERE project_id = ?", (project_id,))
@@ -1493,6 +1517,48 @@ class SQLiteDesktopStore:
             )
         return updated
 
+    def consume_execution_ticket(
+        self,
+        execution_ticket_id: str,
+        *,
+        idempotency_key: str,
+        consumed_at: datetime,
+    ) -> tuple[ExecutionTicket | None, bool]:
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT payload FROM execution_tickets WHERE execution_ticket_id = ?",
+                (execution_ticket_id,),
+            ).fetchone()
+            if row is None:
+                return None, False
+            current = ExecutionTicket(**json.loads(row["payload"]))
+            if current.status == "consumed" and current.idempotency_key == idempotency_key:
+                return current, False
+            if current.status != "issued":
+                return current, False
+            updated = current.model_copy(
+                update={
+                    "status": "consumed",
+                    "consumed_at": consumed_at,
+                    "idempotency_key": idempotency_key,
+                }
+            )
+            conn.execute(
+                """
+                UPDATE execution_tickets
+                SET status = ?, payload = ?, updated_at = ?
+                WHERE execution_ticket_id = ? AND status = 'issued'
+                """,
+                (
+                    updated.status,
+                    self._dump_model(updated),
+                    consumed_at.isoformat(),
+                    execution_ticket_id,
+                ),
+            )
+            return updated, True
+
     def add_execution_ticket_event(
         self,
         event: ExecutionTicketEvent,
@@ -1528,6 +1594,101 @@ class SQLiteDesktopStore:
                 (execution_ticket_id,),
             ).fetchall()
         return [ExecutionTicketEvent(**json.loads(row["payload"])) for row in rows]
+
+    def add_gateway_dispatch(self, dispatch: GatewayDispatch) -> GatewayDispatch:
+        with self._lock, self._connect() as conn:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO gateway_dispatches
+                        (dispatch_id, command_id, execution_ticket_id, project_id, payload, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        dispatch.dispatch_id,
+                        dispatch.command_id,
+                        dispatch.execution_ticket_id,
+                        dispatch.project_id,
+                        self._dump_model(dispatch),
+                        dispatch.created_at.isoformat(),
+                    ),
+                )
+                return dispatch
+            except sqlite3.IntegrityError:
+                row = conn.execute(
+                    """
+                    SELECT payload FROM gateway_dispatches
+                    WHERE command_id = ? OR execution_ticket_id = ?
+                    ORDER BY rowid LIMIT 1
+                    """,
+                    (dispatch.command_id, dispatch.execution_ticket_id),
+                ).fetchone()
+                if row is None:
+                    raise
+                existing = GatewayDispatch(**json.loads(row["payload"]))
+                if existing.canonical_hash != dispatch.canonical_hash:
+                    raise
+                return existing
+
+    def get_gateway_dispatch(self, dispatch_id: str) -> GatewayDispatch | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM gateway_dispatches WHERE dispatch_id = ?",
+                (dispatch_id,),
+            ).fetchone()
+        return GatewayDispatch(**json.loads(row["payload"])) if row else None
+
+    def get_gateway_dispatch_by_command(self, command_id: str) -> GatewayDispatch | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM gateway_dispatches WHERE command_id = ?",
+                (command_id,),
+            ).fetchone()
+        return GatewayDispatch(**json.loads(row["payload"])) if row else None
+
+    def get_gateway_dispatch_by_ticket(
+        self, execution_ticket_id: str
+    ) -> GatewayDispatch | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM gateway_dispatches WHERE execution_ticket_id = ?",
+                (execution_ticket_id,),
+            ).fetchone()
+        return GatewayDispatch(**json.loads(row["payload"])) if row else None
+
+    def add_gateway_dispatch_event(
+        self, event: GatewayDispatchEvent
+    ) -> GatewayDispatchEvent:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO gateway_dispatch_events
+                    (event_id, dispatch_id, project_id, event_type, payload, occurred_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.event_id,
+                    event.dispatch_id,
+                    event.project_id,
+                    event.event_type,
+                    self._dump_model(event),
+                    event.occurred_at.isoformat(),
+                ),
+            )
+        return event
+
+    def list_gateway_dispatch_events(
+        self, dispatch_id: str
+    ) -> list[GatewayDispatchEvent]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload FROM gateway_dispatch_events
+                WHERE dispatch_id = ? ORDER BY rowid
+                """,
+                (dispatch_id,),
+            ).fetchall()
+        return [GatewayDispatchEvent(**json.loads(row["payload"])) for row in rows]
 
     def create_agent_lifecycle(
         self,
@@ -2678,7 +2839,7 @@ class SQLiteDesktopStore:
     @staticmethod
     def _dump_model(model: object, exclude: set[str] | None = None) -> str:
         if hasattr(model, "model_dump"):
-            payload = model.model_dump(exclude=exclude or set())
+            payload = model.model_dump(mode="json", exclude=exclude or set())
         else:
             payload = dict(model)  # type: ignore[arg-type]
         return json.dumps(payload, ensure_ascii=False)

@@ -25,7 +25,7 @@ from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.goal_planning_service import GoalPlanningService
-from src.backend.app.services.memory_repository import MemoryRepository
+from src.backend.app.services.memory_repository import MemoryRepository, MemoryRepositoryError
 from src.backend.app.services.memory_retrieval_service import MemoryRetrievalService
 from src.backend.app.services.recovery_execution_service import RecoveryExecutionService
 from src.backend.app.services.reviewed_conversion_service import ReviewedConversionService
@@ -138,7 +138,7 @@ class AgentTaskCommandService:
         self.memory_context_service = memory_context_service
         self.harness_service = harness_service
         self.harness_config = ConfigService().harness
-        self.memory_initialization_warning: str | None = None
+        self.memory_initialization_error: str | None = None
         if self.memory_context_service is None:
             config = ConfigService().memory
             if config.enabled and config.use_enabled:
@@ -149,9 +149,7 @@ class AgentTaskCommandService:
                         config=config,
                     )
                 except Exception:
-                    # Memory is advisory; an unhealthy optional store may not
-                    # block deterministic planning.
-                    self.memory_initialization_warning = "MEMORY_STORE_UNHEALTHY"
+                    self.memory_initialization_error = "MEMORY_STORE_UNHEALTHY"
 
     def create(self, *, project_id: str, goal: str, command_id: str, actor: str):
         replay = self._command_replay(project_id, command_id)
@@ -305,11 +303,14 @@ class AgentTaskCommandService:
                 confirm_execution=True,
                 actor=actor,
                 lifecycle_id=lifecycle_id,
+                command_id=command_id,
             )
         )
         if not result.get("ok"):
             blocked_status = str(result.get("status") or "UNKNOWN")
             details: dict[str, Any] = {"blocked_status": blocked_status}
+            if result.get("recovery") is not None:
+                details["recovery"] = result["recovery"]
             if blocked_status == "REVIEWED_EXECUTION_DISABLED":
                 details.update(
                     required_environment=["MEDIMAGE_ENABLE_REVIEWED_EXECUTION"],
@@ -393,7 +394,7 @@ class AgentTaskCommandService:
         return lifecycle
 
     def _harness_or_plan(self, *, lifecycle, command_id: str, actor: str, resume: bool = False):
-        """Use the optional Harness without changing the legacy path when disabled.
+        """Select the configured planning path without failure-time fallback.
 
         The callback deliberately points back to ``_plan``: candidate-plan
         construction, validation, reviewed-plan persistence, and the Approval
@@ -417,8 +418,6 @@ class AgentTaskCommandService:
             if resume
             else self._start_harness(harness=harness, lifecycle=lifecycle, provider=provider, actor=actor)
         )
-        if result.fallback_required:
-            return self._plan(lifecycle=lifecycle, command_id=command_id, actor=actor, resume=resume)
         return result.lifecycle
 
     @staticmethod
@@ -438,24 +437,25 @@ class AgentTaskCommandService:
                 reason="A registered project configuration is required before planning.",
             )
         command_context = dict(lifecycle.command_context)
+        if self.memory_initialization_error is not None:
+            raise SafetyError(
+                self.memory_initialization_error,
+                code=self.memory_initialization_error,
+            )
         memory_context: MemoryContext | None = None
         raw_memory_context = command_context.get("memory_context")
         if isinstance(raw_memory_context, dict):
             memory_context = MemoryContext.model_validate(raw_memory_context)
         elif self.memory_context_service is not None:
-            retrieval_warnings: tuple[str, ...] = ()
-            if hasattr(self.memory_context_service, "build_context_with_warnings"):
+            try:
                 memory_context, retrieval_warnings = (
                     self.memory_context_service.build_context_with_warnings(
                         project_id=lifecycle.project_id,
                         goal=str(lifecycle.goal_text or ""),
                     )
                 )
-            else:
-                memory_context = self.memory_context_service.build_context(
-                    project_id=lifecycle.project_id,
-                    goal=str(lifecycle.goal_text or ""),
-                )
+            except MemoryRepositoryError as exc:
+                raise SafetyError(str(exc), code=exc.code) from exc
             command_context["memory_context"] = memory_context.model_dump(mode="json")
             if hasattr(self.store, "get_memory_consent"):
                 consent = self.store.get_memory_consent(lifecycle.project_id)
@@ -467,15 +467,9 @@ class AgentTaskCommandService:
                     "generate_enabled": bool(consent.get("generate_enabled")),
                     "use_enabled": bool(consent.get("use_enabled")),
                     "consent_epoch": int(consent.get("consent_epoch") or 0),
+                    "status": memory_context.status,
                 }
-            command_context["memory_warnings"] = list(
-                dict.fromkeys(
-                    filter(
-                        None,
-                        (self.memory_initialization_warning, *retrieval_warnings),
-                    )
-                )
-            )
+            command_context["memory_warnings"] = list(dict.fromkeys(retrieval_warnings))
         if lifecycle.state in {"CREATED", "WAITING_FOR_INPUT"}:
             lifecycle = self.orchestrator.transition(
                 project_id=lifecycle.project_id,
@@ -603,6 +597,8 @@ class AgentTaskCommandService:
             goal_contract_candidate=candidate,
             reviewed_actor=actor,
             memory_context=memory_context,
+            planner_invocation=result.get("planner_invocation"),
+            planner_evidence=result.get("planner_evidence"),
             store=self.store,
         )
         if plan_only:

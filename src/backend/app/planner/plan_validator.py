@@ -2,8 +2,9 @@
 
 The Plan Validator sits between the LLM Planner and the Pipeline Executor.
 It validates that a candidate plan (dict) references only known nodes,
-has legal dependencies, is acyclic, and surfaces risk information from
-the Tool Catalog so that the Human Approval Gate can make informed decisions.
+has legal dependencies, is acyclic, and surfaces risk information from the
+authoritative NodeContract registry so that the Human Approval Gate can make
+informed decisions.
 
 This module is read-only: it never executes any node runner, never calls
 MATLAB/SPM/DPABI, and never writes files.
@@ -20,9 +21,11 @@ from typing import Any
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.runtime.node_contract_registry import (
+    NODE_CONTRACTS,
     get_node_contract,
     validate_and_normalize_parameters,
 )
+from src.backend.app.runtime.node_registry import NODE_REGISTRY
 from src.backend.app.schemas.goal_contract import GoalContract
 from src.backend.app.services.spm_realign_params import validate_spm_realign_params
 
@@ -184,9 +187,8 @@ def validate_plan(plan: dict[str, Any]) -> PlanValidationResult:
             ))
         seen.add(nid)
 
-    # ── 3. Tool Catalog validation ──
-    catalog = _build_catalog_map()
-    catalog_ids = set(catalog.keys())
+    # ── 3. Node Contract validation ──
+    contract_ids = set(NODE_CONTRACTS)
 
     unknown_nodes: list[str] = []
     for nid in node_ids:
@@ -201,11 +203,15 @@ def validate_plan(plan: dict[str, Any]) -> PlanValidationResult:
                 node_id=nid,
             ))
             continue
-        if nid not in catalog_ids:
+        if nid not in contract_ids:
             unknown_nodes.append(nid)
             errors.append(PlanValidationIssue(
-                code="UNKNOWN_NODE_ID",
-                message=f"Node id '{nid}' is not in the Tool Catalog.",
+                code=("NODE_CONTRACT_MISSING" if nid in NODE_REGISTRY else "UNKNOWN_NODE_ID"),
+                message=(
+                    f"Registered node id '{nid}' has no Node Contract."
+                    if nid in NODE_REGISTRY
+                    else f"Node id '{nid}' is not in the Node Contract registry."
+                ),
                 node_id=nid,
             ))
 
@@ -242,7 +248,7 @@ def validate_plan(plan: dict[str, Any]) -> PlanValidationResult:
                 message="The plan contains a dependency cycle.",
             ))
 
-    # ── 6. Approval / risk from Tool Catalog ──
+    # ── 6. Approval / risk from Node Contract ──
     approval_required: list[str] = []
     manual_required: list[str] = []
     high_risk: list[str] = []
@@ -258,10 +264,6 @@ def validate_plan(plan: dict[str, Any]) -> PlanValidationResult:
         nid = node.get("id")
         if not nid or nid in unknown_nodes:
             continue
-        item = catalog.get(nid)
-        if item is None:
-            continue
-
         try:
             contract = get_node_contract(nid)
         except KeyError:
@@ -289,7 +291,7 @@ def validate_plan(plan: dict[str, Any]) -> PlanValidationResult:
                 severity="warning",
             ))
 
-        if item.requires_approval:
+        if contract.requires_approval:
             approval_required.append(nid)
             node_params = node.get("params", {}) or {}
             if "approved" not in node_params:
@@ -300,20 +302,11 @@ def validate_plan(plan: dict[str, Any]) -> PlanValidationResult:
                     severity="warning",
                 ))
 
-        if item.manual_required:
+        if contract.manual_required:
             manual_required.append(nid)
 
-        if item.risk_level == "high":
+        if contract.risk_level == "high":
             high_risk.append(nid)
-
-        if "uncataloged" in item.tags or item.description.startswith("No catalog metadata yet"):
-            uncataloged_count += 1
-            warnings.append(PlanValidationIssue(
-                code="UNCATALOGED_METADATA",
-                message=f"Node '{nid}' uses fallback metadata — consider adding explicit catalog entry.",
-                node_id=nid,
-                severity="warning",
-            ))
 
         # Backend mismatches are contract violations, not advisory warnings.
         node_backend = node.get("backend")
@@ -538,12 +531,6 @@ def validate_goal_contract_reachability(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _build_catalog_map() -> dict[str, Any]:
-    """Build {node_id: ToolCatalogItem} lookup."""
-    from src.backend.app.runtime.tool_catalog import build_tool_catalog  # noqa: E402
-    return {item.id: item for item in build_tool_catalog()}
-
 
 def _topological_sort(node_ids: list[str], nodes: list[dict[str, Any]]) -> list[str]:
     """Kahn's algorithm. Returns topological order or partial on cycle."""

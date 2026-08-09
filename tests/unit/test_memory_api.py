@@ -34,6 +34,8 @@ def test_memory_api_consent_candidate_item_forget_restore_and_preview(tmp_path) 
     consent = client.get(f"/api/projects/{project_id}/memory/consent")
     assert consent.status_code == 200
     assert consent.json()["available"] is True
+    assert consent.json()["status"] == "disabled"
+    assert consent.json()["retrieval_policy_version"] == "memory-retrieval-v1"
     assert consent.json()["generate_enabled"] is False
 
     enabled = client.post(
@@ -46,6 +48,7 @@ def test_memory_api_consent_candidate_item_forget_restore_and_preview(tmp_path) 
     )
     assert enabled.status_code == 200
     assert enabled.json()["consent_epoch"] == 1
+    assert enabled.json()["status"] == "healthy"
 
     preference = client.post(
         f"/api/projects/{project_id}/memory/remember",
@@ -195,6 +198,7 @@ def test_memory_api_reports_unavailable_and_rejects_mutation_when_install_disabl
     status = client.get(f"/api/projects/{project_id}/memory/consent")
     assert status.status_code == 200
     assert status.json()["available"] is False
+    assert status.json()["status"] == "disabled"
     assert status.json()["degraded_reason"] == "MEMORY_DISABLED"
 
     mutation = client.post(
@@ -209,3 +213,65 @@ def test_memory_api_reports_unavailable_and_rejects_mutation_when_install_disabl
     assert mutation.json()["error"]["code"] == "MEMORY_DISABLED"
     assert store.get_memory_consent(project_id)["generate_enabled"] is False
     assert repository.list_events(project_id=project_id) == []
+
+
+def test_memory_api_surfaces_partial_operational_health_without_get_side_effects(
+    tmp_path,
+) -> None:
+    client, store, repository, _config, project_id = _client(tmp_path)
+    client.post(
+        f"/api/projects/{project_id}/memory/consent",
+        json={
+            "command_id": "api-health-consent-0001",
+            "generate_enabled": True,
+            "use_enabled": True,
+        },
+    )
+    for _ in range(3):
+        repository.record_source_failure(
+            project_id=project_id,
+            source_sequence=7,
+            consent_epoch=1,
+            error_code="MEMORY_TEST_FAILURE",
+        )
+    before = repository.operational_counts(project_id=project_id)
+
+    response = client.get(f"/api/projects/{project_id}/memory/consent")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "partial"
+    assert payload["dead_letter_jobs"] == 1
+    assert payload["store_healthy"] is True
+    assert repository.operational_counts(project_id=project_id) == before
+    assert store.get_memory_consent(project_id)["consent_epoch"] == 1
+
+
+def test_enabled_unhealthy_memory_blocks_context_preview_with_structured_error(
+    tmp_path, monkeypatch
+) -> None:
+    client, _store, repository, _config, project_id = _client(tmp_path)
+    client.post(
+        f"/api/projects/{project_id}/memory/consent",
+        json={
+            "command_id": "api-unhealthy-consent-0001",
+            "generate_enabled": True,
+            "use_enabled": True,
+        },
+    )
+    monkeypatch.setattr(
+        repository,
+        "health_check",
+        lambda: {"ok": False, "error_code": "MEMORY_STORE_UNHEALTHY"},
+    )
+
+    status = client.get(f"/api/projects/{project_id}/memory/consent")
+    preview = client.post(
+        f"/api/projects/{project_id}/memory/context-preview",
+        json={"goal": "plan"},
+    )
+
+    assert status.json()["status"] == "failure"
+    assert status.json()["degraded_reason"] == "MEMORY_STORE_UNHEALTHY"
+    assert preview.status_code == 400
+    assert preview.json()["error"]["code"] == "MEMORY_STORE_UNHEALTHY"

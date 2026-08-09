@@ -51,8 +51,8 @@ def _ci(**kw) -> ExecutionConsistencyInput:
         "node_param_hashes": {"a": "ph_a", "b": "ph_b"},
         "output_root": "/out/run1/",
         "output_manifest_ids": ["m1"],
-        "safe_allowlist_fingerprint": "sha256:al_v1",
-        "approval_context_id": "appr_001",
+        "allowlist_hash": "sha256:al_v1",
+        "approval_summary_hash": "appr_001",
         "audit_id": "aud_001",
         "dry_run_status": "DRY_RUN_OK",
     }
@@ -225,7 +225,7 @@ def test_project_id_mismatch_detected():
 def test_missing_approval_and_audit_detected():
     """Missing approval produces APPROVAL_CONTEXT_MISSING;
     missing audit produces AUDIT_CONTEXT_MISSING."""
-    e_no_appr = _ci(approval_context_id=None)
+    e_no_appr = _ci(approval_summary_hash=None)
     e_no_aud = _ci(audit_id=None)
     base = _ci()
 
@@ -254,7 +254,7 @@ def test_bad_dry_run_status_and_optional_flags():
     assert "DRY_RUN_STATUS_NOT_READY" in {i.code for i in report.issues}
 
     # Optional flags allow missing contexts
-    e = _ci(approval_context_id=None, audit_id=None, output_manifest_ids=[])
+    e = _ci(approval_summary_hash=None, audit_id=None, output_manifest_ids=[])
     report2 = verify_execution_consistency(
         reviewed=_ci(),
         dry_run=_ci(),

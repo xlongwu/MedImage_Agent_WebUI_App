@@ -75,6 +75,27 @@ export type ReviewedPlanRecord = {
   dataset_index_path: string | null;
   rawdata_dir: string | null;
   plan_hash: string;
+  planner_invocation?: {
+    schema_version: number;
+    invocation_id: string;
+    provider_id: string;
+    model_id: string;
+    prompt_template_version: string;
+    prompt_template_hash: string;
+    input_schema_version: string;
+    input_hash: string;
+    started_at: string;
+    timeout_ms: number;
+  } | null;
+  planner_evidence?: {
+    schema_version: number;
+    invocation_id: string;
+    output_hash: string | null;
+    validation_codes: string[];
+    fallback_used: boolean;
+    failure_code: string | null;
+    redacted_summary: string;
+  } | null;
   plan_path: string | null;
   status: string;
   created_at: string;
@@ -98,6 +119,7 @@ export type RunLinkRecord = {
   project_id: string;
   reviewed_plan_id: string;
   run_id: string;
+  dispatch_id?: string | null;
   task_id: string | null;
   pipeline_path: string | null;
   summary_path: string | null;

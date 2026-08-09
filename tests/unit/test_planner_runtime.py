@@ -51,23 +51,10 @@ def test_planner_history_returns_drafts():
     assert history["drafts"]
 
 
-def test_planner_rejects_malformed_llm_json(monkeypatch):
-    monkeypatch.setenv("MEDIMAGE_LLM_MOCK_RESPONSE", "not-json")
-
-    draft = draft_pipeline_plan({"downstream_task": "ALFF"})
-
-    assert draft["ok"] is False
-    assert "malformed JSON" in " ".join(draft["errors"])
-    assert draft["llm_used"] is True
-
-
-def test_planner_rejects_llm_path_traversal(monkeypatch):
-    monkeypatch.setenv(
-        "MEDIMAGE_LLM_MOCK_RESPONSE",
-        '{"recommended_pipeline_path": "../unsafe.yaml", "rationale": []}',
+def test_template_planner_rejects_explicit_path_traversal():
+    draft = draft_pipeline_plan(
+        {"downstream_task": "ALFF", "pipeline_path": "../unsafe.yaml"}
     )
-
-    draft = draft_pipeline_plan({"downstream_task": "ALFF"})
 
     assert draft["ok"] is False
     assert "pipeline path" in " ".join(draft["errors"]).lower()

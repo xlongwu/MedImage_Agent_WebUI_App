@@ -14,7 +14,7 @@ from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.main import app
 from src.backend.app.runtime.execution_gateway import (
     ExecutionGateway,
-    current_safe_allowlist_fingerprint,
+    current_allowlist_hash,
 )
 from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord, RunLinkRecord
@@ -94,9 +94,9 @@ def _prepared_run(
         else None
     )
     goal_contract_hash = (
-        str(goal_contract.get("goal_contract_hash") or "legacy-unreviewed")
+        str(goal_contract.get("goal_contract_hash") or "goal-contract-test-hash")
         if isinstance(goal_contract, dict)
-        else "legacy-unreviewed"
+        else "goal-contract-test-hash"
     )
 
     contract = get_node_contract(node_id)
@@ -105,7 +105,8 @@ def _prepared_run(
         project_id="project-1",
         reviewed_plan_id=reviewed.reviewed_plan_id,
         plan_hash=reviewed.plan_hash,
-        approval_context_id="approval-1",
+        approval_summary_hash="approval-1",
+        memory_context_hash=None,
         approved_actor="reviewer",
         approved_node_ids=[node_id],
         approved_backend_ids=[contract.backend],
@@ -114,7 +115,7 @@ def _prepared_run(
         readonly_roots=[str(rawdata)],
         project_config_path=str(project_config),
         pipeline_path=str(pipeline_path),
-        safe_allowlist_fingerprint=current_safe_allowlist_fingerprint(),
+        allowlist_hash=current_allowlist_hash(),
         normalized_params_hash="normalized-params-hash",
         contract_versions={node_id: contract.contract_version},
         audit_id="audit-1",
@@ -122,7 +123,7 @@ def _prepared_run(
         evaluation_policy_version=(
             str(goal_contract.get("evaluation_policy_version") or "goal-evaluator-v1")
             if isinstance(goal_contract, dict)
-            else "legacy"
+            else "goal-evaluator-v1"
         ),
     )
     orchestrator = AgentOrchestrator(store)
@@ -141,11 +142,15 @@ def _prepared_run(
             project_id=ticket.project_id,
             reviewed_plan_id=ticket.reviewed_plan_id,
             plan_hash=ticket.plan_hash,
-            approval_context_id=ticket.approval_context_id,
+            approval_summary_hash=ticket.approval_summary_hash,
+            memory_context_hash=ticket.memory_context_hash,
+            scope_hash=ticket.scope_hash,
             normalized_params_hash=ticket.normalized_params_hash,
             contract_versions=ticket.contract_versions,
             project_config_path=ticket.project_config_path,
             pipeline_path=ticket.pipeline_path,
+            command_id="observation-dispatch",
+            run_id="run-1",
             executor=lambda **_: {"status": "SUCCESS", "run_id": "run-1"},
         ),
     )
@@ -199,6 +204,10 @@ def _prepared_run(
                         "shape": [4, 4],
                         "dtype": "float32",
                         "provenance_id": "provenance-fc",
+                        "metadata": {
+                            "input_hashes": ["input-fc-hash"],
+                            "parameter_hash": "parameter-fc-hash",
+                        },
                     }
                 ]
             },
@@ -275,6 +284,8 @@ def test_registered_reloadable_fc_artifact_is_computed_and_checksum_bound(tmp_pa
     assert fc.provenance_id == "provenance-fc"
     assert fc.subject_id == "sub-001"
     assert len(fc.checksum_sha256 or "") == 64
+    assert fc.input_hashes == ("input-fc-hash",)
+    assert fc.parameter_hash == "parameter-fc-hash"
     assert observation.capability.defensible_level == "computed"
 
 
@@ -400,6 +411,8 @@ def _write_native_minimal_evidence(
                     "dtype": "float32",
                     "provenance_id": "provenance-realignment",
                     "metadata": {
+                        "input_hashes": ["input-realigned-hash"],
+                        "parameter_hash": "parameter-realigned-hash",
                         "stage_status": (
                             "simplified" if simplified_realignment else "succeeded"
                         ),
@@ -421,6 +434,8 @@ def _write_native_minimal_evidence(
                     "dtype": "float32",
                     "provenance_id": "provenance-residual",
                     "metadata": {
+                        "input_hashes": ["input-residual-hash"],
+                        "parameter_hash": "parameter-residual-hash",
                         "stage_status": "succeeded",
                         "capability_level": "numerically_implemented",
                     },
@@ -436,6 +451,8 @@ def _write_native_minimal_evidence(
                     "dtype": "float32",
                     "provenance_id": "provenance-filtered",
                     "metadata": {
+                        "input_hashes": ["input-filtered-hash"],
+                        "parameter_hash": "parameter-filtered-hash",
                         "stage_status": "succeeded",
                         "capability_level": "numerically_implemented",
                     },

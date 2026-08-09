@@ -14,7 +14,7 @@ from src.backend.app.runtime.capability_enforcement import (
 )
 from src.backend.app.runtime.execution_gateway import (
     ExecutionGateway,
-    current_safe_allowlist_fingerprint,
+    current_allowlist_hash,
 )
 from src.backend.app.runtime.node_registry import NODE_REGISTRY
 from src.backend.app.runtime.pipeline_executor import run_pipeline
@@ -50,7 +50,10 @@ def _issue(
         project_id="project-1",
         reviewed_plan_id="reviewed-1",
         plan_hash="hash-1",
-        approval_context_id="approval-1",
+        goal_contract_hash="goal-contract-hash",
+        evaluation_policy_version="goal-evaluator-v1",
+        approval_summary_hash="approval-1",
+        memory_context_hash=None,
         approved_actor="reviewer",
         approved_node_ids=approved_nodes,
         approved_backend_ids=approved_backends,
@@ -59,7 +62,7 @@ def _issue(
         readonly_roots=[str(rawdata)],
         project_config_path=str(config),
         pipeline_path=str(pipeline),
-        safe_allowlist_fingerprint=current_safe_allowlist_fingerprint(),
+        allowlist_hash=current_allowlist_hash(),
         normalized_params_hash="normalized-params-hash",
         contract_versions=dict.fromkeys(approved_nodes, "1.0.0"),
         audit_id="audit-1",
@@ -201,11 +204,15 @@ def test_unapproved_node_is_rejected_before_runner_call(tmp_path, monkeypatch):
             project_id=ticket.project_id,
             reviewed_plan_id=ticket.reviewed_plan_id,
             plan_hash=ticket.plan_hash,
-            approval_context_id=ticket.approval_context_id,
+            approval_summary_hash=ticket.approval_summary_hash,
+            memory_context_hash=ticket.memory_context_hash,
+            scope_hash=ticket.scope_hash,
             normalized_params_hash=ticket.normalized_params_hash,
             contract_versions=ticket.contract_versions,
             project_config_path=ticket.project_config_path,
             pipeline_path=ticket.pipeline_path,
+            command_id="capability-dispatch",
+            run_id="run-1",
             executor=run_pipeline,
         )
     assert called is False

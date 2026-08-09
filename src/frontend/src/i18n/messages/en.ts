@@ -108,6 +108,18 @@ export const messagesEn = {
   "agent.error.dryRunBlocked.message":
     "This plan did not pass the backend pre-execution check. No execution ticket or run was created; cancel this task and create a new plan.",
   "agent.error.checkAgain": "Check again",
+  "agent.error.ticketExpired.title": "Execution ticket expired",
+  "agent.error.ticketExpired.message":
+    "The bounded execution ticket expired before dispatch. Review and approve a new plan; the expired ticket cannot be reused.",
+  "agent.error.dispatchUnknown.title": "Dispatch outcome needs inspection",
+  "agent.error.dispatchUnknown.message":
+    "A persisted dispatch started but no terminal outcome was recorded. Inspect Runs and the dispatch evidence before deciding on recovery; the executor will not be called again automatically.",
+  "agent.error.executionFailed.title": "Reviewed execution failed",
+  "agent.error.executionFailed.message":
+    "The reviewed execution path recorded a failure. Inspect Runs and the persisted dispatch evidence before creating a newly approved attempt.",
+  "agent.error.memoryUnavailable.title": "Project memory is unavailable",
+  "agent.error.memoryUnavailable.message":
+    "Memory use was enabled, but its storage or source preflight failed. Planning stopped without substituting an empty memory context.",
   "agent.planOnlyResult.title": "Preprocessing plan prepared",
   "agent.planOnlyResult.summary":
     "A reviewed metadata-only plan was saved. No numerical computation ran and rawdata was not modified.",
@@ -166,7 +178,23 @@ export const messagesEn = {
   "agent.harness.title": "Planning trace",
   "agent.harness.budget":
     "Model calls: {calls}/{callLimit}; proposed actions: {proposals}/{proposalLimit}.",
+  "agent.harness.nextStep": "Next step: {step}",
   "agent.harness.stopped": "Stopped safely: {reason}",
+  "agent.harness.reason.budgetExhausted": "the configured budget was exhausted",
+  "agent.harness.reason.duplicateStep": "a duplicate step was rejected",
+  "agent.harness.reason.providerUnavailable": "the configured provider is unavailable",
+  "agent.harness.reason.modelFailed": "the model request failed",
+  "agent.harness.reason.invalidOutput": "the model returned invalid structured output",
+  "agent.harness.reason.staleAction": "the proposed action used stale task state",
+  "agent.harness.reason.referenceDenied": "the proposed action referenced disallowed context",
+  "agent.harness.reason.planUnavailable": "the planning service is unavailable",
+  "agent.harness.reason.recoveryUnavailable": "the recovery service is unavailable",
+  "agent.harness.reason.stepFailed": "the controlled step failed",
+  "agent.harness.reason.lifecycleTerminal": "the task already reached a terminal state",
+  "agent.harness.reason.waitingForApproval": "the reviewed plan is waiting for approval",
+  "agent.harness.reason.recoveryProposed": "a recovery proposal is ready for review",
+  "agent.harness.reason.modelFinished": "the model ended the planning attempt",
+  "agent.harness.reason.unknown": "an unrecognized safe-stop condition occurred",
   "agent.harness.status.READY": "Ready",
   "agent.harness.status.RUNNING": "Working",
   "agent.harness.status.WAITING_FOR_USER": "Waiting for you",
@@ -191,6 +219,9 @@ export const messagesEn = {
   "agent.technical.noFallback": "No fallback recorded",
   "agent.technical.memoryHash": "Memory context hash",
   "agent.technical.memoryPolicy": "Memory retrieval policy",
+  "agent.technical.memoryStatus": "Memory context status",
+  "agent.technical.memoryUsedBytes": "Memory context bytes",
+  "agent.technical.memoryOmitted": "Omitted memory entries",
   "agent.technical.memoryRefs": "Memory evidence",
   "agent.technical.memoryWarnings": "Memory warnings",
   "agent.technical.memoryAvailable": "Memory installation availability",
@@ -1927,6 +1958,7 @@ export const messagesEn = {
   "runs.audit.approval": "Approval",
   "runs.audit.noApproval": "No approval record required or available",
   "runs.audit.package": "Audit package",
+  "runs.audit.dispatch": "Persisted dispatch",
   "runs.audit.emptyTitle": "Audit package not generated",
   "runs.audit.emptyDescription":
     "Request backend audit package generation from the selected run when evidence export is needed.",
@@ -2920,10 +2952,8 @@ export const messagesEn = {
     "Real LLM provider selected: requires MEDIMAGE_LLM_API_KEY. If the key is missing, the backend blocks generation before any external API call.",
   "technical.PlanReviewConsole.provider.ruleBased":
     "Rule-based provider: local deterministic planner, no external API used.",
-  "technical.PlanReviewConsole.provider.mock":
-    "Mock provider: no external API used. Generates a deterministic metadata-only reviewed-plan draft.",
   "technical.PlanReviewConsole.provider.keyMissing":
-    "LLM provider disabled: API key not configured. MEDIMAGE_LLM_API_KEY is missing, so openai_compatible generation was blocked before any external API call. Select mock/rule_based for local deterministic planning or configure the key before using openai_compatible.",
+    "LLM provider disabled: API key not configured. MEDIMAGE_LLM_API_KEY is missing, so openai_compatible generation was blocked before any external API call. Select rule_based for local deterministic planning or configure the key before using openai_compatible.",
   "technical.PlanReviewConsole.provider.invalidPlan":
     "Plan generation did not produce a valid reviewed plan.",
   "nav.primary": "Primary navigation",
@@ -3059,9 +3089,20 @@ export const messagesEn = {
     "Review project-scoped memory, generation consent, and whether confirmed memory may be suggested to Agent Tasks.",
   "memory.controls": "Memory consent controls",
   "memory.available": "Available",
-  "memory.disabled": "Disabled by installation policy",
+  "memory.healthy": "Healthy and consent enabled",
+  "memory.partial": "Partially available",
+  "memory.failed": "Unavailable because a health check failed",
+  "memory.disabled": "Disabled by installation policy or project consent",
   "memory.loading": "Loading project memory…",
   "memory.failure": "Project memory could not be loaded.",
+  "memory.storeFailure": "Memory storage is unhealthy. Planning that requested memory was stopped.",
+  "memory.outboxFailure":
+    "Memory source preflight failed. Planning that requested memory was stopped.",
+  "memory.healthFailure":
+    "Memory is enabled but unavailable. Resolve the reported health issue before using it.",
+  "memory.operationalSummary":
+    "Source lag: {lag}; retries: {retry}; dead letters: {dead}; pending forget records: {forget}.",
+  "memory.sensitiveHidden": "Sensitive content hidden",
   "memory.noProject": "Select a project to manage memory.",
   "memory.empty": "No active memory or review candidates.",
   "memory.startGenerating": "Enable memory generation",

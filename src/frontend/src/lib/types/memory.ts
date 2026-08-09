@@ -1,6 +1,7 @@
 export interface MemoryConsentStatus {
-  schema_version: 1;
+  schema_version: 2;
   project_id: string;
+  status: "disabled" | "healthy" | "partial" | "failure";
   available: boolean;
   generation_available: boolean;
   use_available: boolean;
@@ -10,6 +11,17 @@ export interface MemoryConsentStatus {
   outbox_cutoff_sequence: number;
   updated_at: string | null;
   degraded_reason: string | null;
+  retrieval_policy_version: string;
+  store_healthy: boolean;
+  outbox_max_sequence: number;
+  processed_outbox_sequence: number;
+  outbox_lag: number;
+  retry_jobs: number;
+  dead_letter_jobs: number;
+  active_leases: number;
+  expired_leases: number;
+  pending_forget_records: number;
+  last_forget_wal_truncate_at: string | null;
 }
 
 export interface MemorySource {
@@ -28,6 +40,7 @@ export interface MemoryRevision {
   content_text: string;
   content_hash: string;
   impact_class: string;
+  sensitivity?: string;
 }
 
 export interface MemoryItem {
@@ -49,6 +62,7 @@ export interface MemoryCandidate {
   canonical_key: string;
   content_text: string;
   impact_class: string;
+  sensitivity?: string;
   candidate_version: number;
   candidate_hash: string;
   source: MemorySource;

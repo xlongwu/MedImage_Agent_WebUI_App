@@ -146,19 +146,19 @@ def test_preset_nodes_in_tool_catalog():
 
 
 def test_planner_maps_rsfmri_preprocessing_goal():
-    result = llm_planner.generate_plan_from_goal("rs-fMRI preprocessing", provider="mock")
+    result = llm_planner.generate_plan_from_goal("rs-fMRI preprocessing", provider="rule_based")
     assert result.ok, f"Planner failed: {result.errors}"
     assert result.plan.get("pipeline_id") == "rsfmri_preproc_mvp"
     assert len(result.plan.get("nodes", [])) == 6
 
 
 def test_planner_maps_motion_qc_goal():
-    result = llm_planner.generate_plan_from_goal("run motion QC", provider="mock")
+    result = llm_planner.generate_plan_from_goal("run motion QC", provider="rule_based")
     assert result.ok, f"Planner failed: {result.errors}"
     assert result.plan.get("pipeline_id") == "rsfmri_preproc_mvp"
 
 
 def test_planner_maps_chinese_goal():
-    result = llm_planner.generate_plan_from_goal("静息态预处理", provider="mock")
+    result = llm_planner.generate_plan_from_goal("静息态预处理", provider="rule_based")
     assert result.ok, f"Planner failed: {result.errors}"
     assert result.plan.get("pipeline_id") == "rsfmri_preproc_mvp"

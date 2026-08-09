@@ -99,8 +99,8 @@ class ExecutionConsistencyInput(BaseModel):
     node_param_hashes: dict[str, str] = Field(default_factory=dict)
     output_root: str | None = None
     output_manifest_ids: list[str] = Field(default_factory=list)
-    safe_allowlist_fingerprint: str | None = None
-    approval_context_id: str | None = None
+    allowlist_hash: str | None = None
+    approval_summary_hash: str | None = None
     audit_id: str | None = None
     dry_run_status: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -370,33 +370,33 @@ def verify_execution_consistency(
             )
         )
 
-    # ── 10. safe_allowlist_fingerprint ─────────────────────────────────
-    checked.append("safe_allowlist_fingerprint")
+    # ── 10. allowlist_hash ─────────────────────────────────
+    checked.append("allowlist_hash")
     if (
-        dry_run.safe_allowlist_fingerprint is not None
-        and execution.safe_allowlist_fingerprint is not None
-        and dry_run.safe_allowlist_fingerprint != execution.safe_allowlist_fingerprint
+        dry_run.allowlist_hash is not None
+        and execution.allowlist_hash is not None
+        and dry_run.allowlist_hash != execution.allowlist_hash
     ):
         issues.append(
             _issue(
                 "SAFE_ALLOWLIST_CHANGED",
                 f"safe allowlist fingerprint changed: dry_run "
-                f"'{dry_run.safe_allowlist_fingerprint}' != execution "
-                f"'{execution.safe_allowlist_fingerprint}'",
-                field="safe_allowlist_fingerprint",
-                expected=dry_run.safe_allowlist_fingerprint,
-                actual=execution.safe_allowlist_fingerprint,
+                f"'{dry_run.allowlist_hash}' != execution "
+                f"'{execution.allowlist_hash}'",
+                field="allowlist_hash",
+                expected=dry_run.allowlist_hash,
+                actual=execution.allowlist_hash,
             )
         )
 
-    # ── 11. approval_context_id ────────────────────────────────────────
-    checked.append("approval_context_id")
-    if require_approval and not execution.approval_context_id:
+    # ── 11. approval_summary_hash ────────────────────────────────────────
+    checked.append("approval_summary_hash")
+    if require_approval and not execution.approval_summary_hash:
         issues.append(
             _issue(
                 "APPROVAL_CONTEXT_MISSING",
-                "execution is missing approval_context_id (required)",
-                field="approval_context_id",
+                "execution is missing approval_summary_hash (required)",
+                field="approval_summary_hash",
             )
         )
 

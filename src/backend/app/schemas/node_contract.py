@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 ParameterType = Literal["string", "integer", "number", "boolean", "object", "array"]
 CapabilityLevel = Literal["unavailable", "scaffolded", "metadata_only", "computed", "validated"]
+RiskLevel = Literal["low", "medium", "high"]
 
 
 class ParameterContract(BaseModel):
@@ -103,6 +104,11 @@ class NodeContract(BaseModel):
     node_id: str
     contract_version: str
     backend: str
+    parallel_level: Literal["project", "subject"] = "project"
+    requires_approval: bool
+    manual_required: bool
+    risk_level: RiskLevel
+    write_roots: tuple[str, ...] = ()
     input_schema: tuple[ArtifactContract, ...] = ()
     parameter_schema: dict[str, ParameterContract] = Field(default_factory=dict)
     output_schema: tuple[ArtifactContract, ...] = ()

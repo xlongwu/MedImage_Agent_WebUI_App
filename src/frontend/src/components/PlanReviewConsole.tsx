@@ -88,10 +88,7 @@ function providerStatusMessage(provider: string, t: Translate): string {
   if (provider === "openai_compatible") {
     return t("technical.PlanReviewConsole.provider.openai");
   }
-  if (provider === "rule_based") {
-    return t("technical.PlanReviewConsole.provider.ruleBased");
-  }
-  return t("technical.PlanReviewConsole.provider.mock");
+  return t("technical.PlanReviewConsole.provider.ruleBased");
 }
 
 function providerFailureMessage(provider: string, errors: string[], t: Translate): string {
@@ -115,7 +112,7 @@ export default function PlanReviewConsole({
   const { t } = useI18n();
   const baseUrl = DEFAULT_API_BASE;
   const [goal, setGoal] = useState("");
-  const [provider, setProvider] = useState("mock");
+  const [provider, setProvider] = useState("rule_based");
   const [loadedPresetBanner, setLoadedPresetBanner] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PlanData>(null);
@@ -185,6 +182,7 @@ export default function PlanReviewConsole({
   const [planSaveStatus, setPlanSaveStatus] = useState("");
   const [goalContractJson, setGoalContractJson] = useState("");
   const [goalContractStatus, setGoalContractStatus] = useState("");
+  const [approvalSummaryHash, setApprovalSummaryHash] = useState("");
   const [goalContractReviewConfirmed, setGoalContractReviewConfirmed] = useState(false);
   const [goalContractReviewLoading, setGoalContractReviewLoading] = useState(false);
   const [goalContractReviewError, setGoalContractReviewError] = useState("");
@@ -277,6 +275,7 @@ export default function PlanReviewConsole({
     setPlanSaveStatus("");
     setGoalContractJson("");
     setGoalContractStatus("");
+    setApprovalSummaryHash("");
     setGoalContractReviewConfirmed(false);
     setGoalContractReviewError("");
     setLoadedPresetBanner(null);
@@ -367,6 +366,10 @@ export default function PlanReviewConsole({
       goalContractCandidate: Record<string, unknown>;
       reviewedActor: string;
     },
+    provenance?: {
+      plannerInvocation?: Record<string, unknown>;
+      plannerEvidence?: Record<string, unknown>;
+    },
   ) {
     const planIssues = reviewedPlanIssues(plan);
     if (planIssues.length > 0) {
@@ -387,6 +390,12 @@ export default function PlanReviewConsole({
         provider,
         goal_contract_candidate: review?.goalContractCandidate,
         reviewed_actor: review?.reviewedActor,
+        planner_invocation:
+          provenance?.plannerInvocation ??
+          (isRecord(result?.planner_invocation) ? result.planner_invocation : undefined),
+        planner_evidence:
+          provenance?.plannerEvidence ??
+          (isRecord(result?.planner_evidence) ? result.planner_evidence : undefined),
       });
       setReviewedPlanId(data.reviewed_plan.reviewed_plan_id);
       setPlanSaveStatus(`Saved ${data.reviewed_plan.reviewed_plan_id}`);
@@ -414,6 +423,12 @@ export default function PlanReviewConsole({
       ? record.payload.goal_contract_candidate
       : null;
     setGoalContractStatus(status);
+    const approvalEnvelope = isRecord(record.payload.approval_envelope)
+      ? record.payload.approval_envelope
+      : null;
+    setApprovalSummaryHash(
+      typeof approvalEnvelope?.summary_hash === "string" ? approvalEnvelope.summary_hash : "",
+    );
     if (candidate) {
       setGoalContractJson(JSON.stringify(candidate, null, 2));
     } else if (status === "reviewed") {
@@ -493,6 +508,7 @@ export default function PlanReviewConsole({
     setSelectedNodeId(null);
     setGoalContractJson("");
     setGoalContractStatus("");
+    setApprovalSummaryHash("");
     setGoalContractReviewConfirmed(false);
     setGoalContractReviewError("");
     if (!goal.trim()) {
@@ -529,7 +545,17 @@ export default function PlanReviewConsole({
         : null;
       setGoalContractJson(candidate ? JSON.stringify(candidate, null, 2) : "");
       setGoalContractStatus(candidate ? "needs_goal_review" : "");
-      await persistReviewedPlan(plan, (data?.validation ?? {}) as Record<string, unknown>);
+      await persistReviewedPlan(
+        plan,
+        (data?.validation ?? {}) as Record<string, unknown>,
+        undefined,
+        {
+          plannerInvocation: isRecord(data?.planner_invocation)
+            ? data.planner_invocation
+            : undefined,
+          plannerEvidence: isRecord(data?.planner_evidence) ? data.planner_evidence : undefined,
+        },
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -774,6 +800,7 @@ export default function PlanReviewConsole({
       ...baseApproval,
       ...externalToolApprovalFields(),
       ...nativePreprocApprovalFields(),
+      ...(approvalSummaryHash ? { approval_summary_hash: approvalSummaryHash } : {}),
     };
     setApprovalLoading(true);
     try {
@@ -826,6 +853,7 @@ export default function PlanReviewConsole({
       ...baseApproval,
       ...externalToolApprovalFields(),
       ...nativePreprocApprovalFields(),
+      ...(approvalSummaryHash ? { approval_summary_hash: approvalSummaryHash } : {}),
     };
     setDryRunLoading(true);
     try {
@@ -894,6 +922,7 @@ export default function PlanReviewConsole({
       ...baseApproval,
       ...externalToolApprovalFields(),
       ...nativePreprocApprovalFields(),
+      ...(approvalSummaryHash ? { approval_summary_hash: approvalSummaryHash } : {}),
     };
     setExecutionLoading(true);
     try {
@@ -1046,7 +1075,6 @@ export default function PlanReviewConsole({
           onChange={(e) => setProvider(e.target.value)}
           className={styles.providerSelect}
         >
-          <option value="mock">mock</option>
           <option value="rule_based">rule_based</option>
           <option value="openai_compatible">openai_compatible</option>
         </select>

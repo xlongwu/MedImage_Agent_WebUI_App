@@ -89,22 +89,19 @@ def test_report_exporter_has_report_tag(catalog_by_id: dict[str, ToolCatalogItem
     assert "report" in item.tags
 
 
-# ── Fallback coverage ──
+# ── Contract-derived coverage ──
 
 
-def test_fallback_nodes_exist_and_dont_crash(catalog: list[ToolCatalogItem]):
-    """Every node gets metadata — either explicit or fallback."""
-    fallback = [item for item in catalog if item.description.startswith("No catalog metadata yet")]
-    # All should be valid items
-    for fb in fallback:
-        assert fb.id, "fallback item missing id"
-        assert fb.backend, "fallback item missing backend"
-    # Sanity: at least some fallback nodes exist (34 DPABI/contract nodes)
-    assert len(fallback) >= 10, f"Expected >=10 fallback nodes, got {len(fallback)}"
+def test_catalog_has_no_inferred_safety_metadata(catalog: list[ToolCatalogItem]):
+    """Every item is derived from a complete NodeContract, never an id-prefix fallback."""
+    from src.backend.app.runtime.node_contract_registry import NODE_CONTRACTS
+
+    assert {item.id for item in catalog} == set(NODE_CONTRACTS)
+    assert all("No catalog metadata yet" not in item.description for item in catalog)
 
 
-def test_fallback_dpabi_contract_is_low_risk(catalog_by_id: dict[str, ToolCatalogItem]):
-    """DPABI contract/capability/preflight nodes should be low risk."""
+def test_blocked_dpabi_contracts_are_explicitly_high_risk(catalog_by_id: dict[str, ToolCatalogItem]):
+    """Default-disabled external DPABI declarations remain visibly blocked."""
     for nid in [
         "dpabi_capability_inspection",
         "dpabi_preflight",
@@ -113,9 +110,9 @@ def test_fallback_dpabi_contract_is_low_risk(catalog_by_id: dict[str, ToolCatalo
     ]:
         item = catalog_by_id.get(nid)
         if item:
-            assert item.risk_level in ("low", "medium"), (
-                f"{nid}: expected low/medium risk, got {item.risk_level}"
-            )
+            assert item.risk_level == "high"
+            assert item.requires_approval is True
+            assert item.manual_required is False
 
 
 def test_fallback_spm_nodes_are_high_risk(catalog_by_id: dict[str, ToolCatalogItem]):

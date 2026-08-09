@@ -13,6 +13,7 @@ from src.backend.app.schemas.memory import (
     MemoryEvidenceRef,
     MemoryItem,
 )
+from src.backend.app.services.memory_repository import MemoryRepositoryError
 
 RETRIEVAL_POLICY_VERSION = "memory-retrieval-v1"
 
@@ -22,6 +23,8 @@ class MemoryRetrievalResult:
     items: tuple[MemoryItem, ...]
     warnings: tuple[str, ...]
     omitted_count: int
+    used_bytes: int
+    status: str
 
 
 class MemoryRetrievalService:
@@ -39,15 +42,16 @@ class MemoryRetrievalService:
             and self.config.use_enabled
             and bool(consent.get("use_enabled"))
         ):
-            return MemoryRetrievalResult(items=(), warnings=(), omitted_count=0)
-        if not self.repository.health_check().get("ok"):
             return MemoryRetrievalResult(
-                items=(), warnings=("MEMORY_STORE_UNHEALTHY",), omitted_count=0
+                items=(), warnings=(), omitted_count=0, used_bytes=0, status="disabled"
             )
+        health = self.operational_health(project_id=project_id, consent=consent)
+        if health["status"] == "failure":
+            raise MemoryRepositoryError(str(health["degraded_reason"] or "MEMORY_STORE_UNHEALTHY"))
 
         forgotten = self._forgotten_generations(project_id)
         selected: list[MemoryItem] = []
-        warnings: list[str] = []
+        warnings: list[str] = list(health["warning_codes"])
         omitted = 0
         used_bytes = 0
         for item, _score in self.repository.retrieve_active_items(
@@ -77,7 +81,120 @@ class MemoryRetrievalService:
             items=tuple(selected),
             warnings=tuple(dict.fromkeys(warnings)),
             omitted_count=omitted,
+            used_bytes=used_bytes,
+            status="partial" if warnings or omitted else "enabled",
         )
+
+    def operational_health(
+        self, *, project_id: str, consent: dict[str, object] | None = None
+    ) -> dict[str, Any]:
+        consent = consent or self.project_store.get_memory_consent(project_id)
+        master_enabled = bool(self.config.enabled)
+        generation_available = master_enabled and bool(self.config.generation_enabled)
+        use_available = master_enabled and bool(self.config.use_enabled)
+        project_enabled = bool(consent.get("generate_enabled") or consent.get("use_enabled"))
+        if not master_enabled:
+            return self._health_payload(
+                status="disabled",
+                consent=consent,
+                generation_available=False,
+                use_available=False,
+                degraded_reason="MEMORY_DISABLED",
+            )
+        try:
+            store_health = self.repository.health_check()
+        except Exception:
+            store_health = {"ok": False, "error_code": "MEMORY_STORE_UNHEALTHY"}
+        if store_health.get("ok") is not True:
+            return self._health_payload(
+                status="failure" if project_enabled else "disabled",
+                consent=consent,
+                generation_available=False,
+                use_available=False,
+                degraded_reason=str(
+                    store_health.get("error_code") or "MEMORY_STORE_UNHEALTHY"
+                ),
+                store_healthy=False,
+            )
+        try:
+            counts = self.repository.operational_counts(project_id=project_id)
+            outbox_max = int(self.project_store.get_memory_outbox_max_sequence(project_id))
+            watermark = self.repository.get_watermark(
+                consumer="memory-phase1-v1", project_id=project_id
+            )
+            processed = int(watermark.get("source_sequence") or 0)
+            forget_records = self.project_store.list_memory_forget_ledger(project_id)
+            pending_forgets = sum(
+                1
+                for record in forget_records
+                if (
+                    (item := self.repository.get_item_by_canonical_key(
+                        project_id=project_id,
+                        canonical_key=str(record.get("canonical_key") or ""),
+                    ))
+                    is not None
+                    and item.status != "forgotten"
+                )
+            )
+        except Exception as exc:
+            return self._health_payload(
+                status="failure" if project_enabled else "disabled",
+                consent=consent,
+                generation_available=False,
+                use_available=False,
+                degraded_reason="MEMORY_OUTBOX_PREFLIGHT_FAILED",
+                store_healthy=True,
+                detail=type(exc).__name__,
+            )
+        lag = max(0, outbox_max - processed)
+        warnings = []
+        if lag:
+            warnings.append("MEMORY_OUTBOX_LAG")
+        if counts["retry_jobs"]:
+            warnings.append("MEMORY_RETRY_PENDING")
+        if counts["dead_letter_jobs"]:
+            warnings.append("MEMORY_DEAD_LETTER_PRESENT")
+        if counts["expired_leases"]:
+            warnings.append("MEMORY_EXPIRED_LEASE_PRESENT")
+        if pending_forgets:
+            warnings.append("MEMORY_FORGET_RECONCILIATION_PENDING")
+        status = "disabled" if not project_enabled else "partial" if warnings else "healthy"
+        return self._health_payload(
+            status=status,
+            consent=consent,
+            generation_available=generation_available,
+            use_available=use_available,
+            store_healthy=True,
+            outbox_max_sequence=outbox_max,
+            processed_outbox_sequence=processed,
+            outbox_lag=lag,
+            pending_forget_records=pending_forgets,
+            warning_codes=tuple(warnings),
+            last_forget_wal_truncate_at=store_health.get("last_forget_wal_truncate_at"),
+            **counts,
+        )
+
+    @staticmethod
+    def _health_payload(**values: Any) -> dict[str, Any]:
+        base = {
+            "status": "disabled",
+            "generation_available": False,
+            "use_available": False,
+            "degraded_reason": None,
+            "store_healthy": False,
+            "outbox_max_sequence": 0,
+            "processed_outbox_sequence": 0,
+            "outbox_lag": 0,
+            "retry_jobs": 0,
+            "dead_letter_jobs": 0,
+            "active_leases": 0,
+            "expired_leases": 0,
+            "pending_forget_records": 0,
+            "last_forget_wal_truncate_at": None,
+            "warning_codes": (),
+        }
+        base.update(values)
+        return base
 
     def build_context(self, *, project_id: str, goal: str) -> MemoryContext:
         result = self.retrieve(project_id=project_id, query=goal)
@@ -147,6 +264,9 @@ class MemoryRetrievalService:
             ],
             "evidence_refs": [item.model_dump(mode="json") for item in evidence],
             "omitted_count": result.omitted_count,
+            "used_bytes": result.used_bytes,
+            "status": result.status,
+            "warning_codes": list(result.warnings),
         }
         return MemoryContext(
             **identity,

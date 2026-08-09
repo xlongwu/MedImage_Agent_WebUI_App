@@ -44,6 +44,7 @@ def test_repository_restart_round_trip_and_project_isolation(tmp_path: Path) -> 
         "schema_version": MEMORY_SCHEMA_VERSION,
         "integrity": "ok",
         "path": str(path.resolve()),
+        "last_forget_wal_truncate_at": None,
     }
 
 

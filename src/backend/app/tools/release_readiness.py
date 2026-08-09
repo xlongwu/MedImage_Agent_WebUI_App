@@ -188,17 +188,18 @@ def build_release_readiness():
         else 0
     )
     chk("documentation", "README.md >= 100 lines", readme_lines >= 100, f"Found {readme_lines}")
+    planner_desktop_doc = Path("docs/桌面与前端/前端视觉验收基线.md")
     chk(
         "documentation",
         "planner/gui/desktop doc",
-        Path("docs/桌面与前端/规划器桌面界面.md").is_file(),
+        planner_desktop_doc.is_file(),
     )
     chk(
         "documentation",
         "external smoke docs",
         "external smoke"
-        in Path("docs/桌面与前端/规划器桌面界面.md").read_text(encoding="utf-8").lower()
-        if Path("docs/桌面与前端/规划器桌面界面.md").is_file()
+        in planner_desktop_doc.read_text(encoding="utf-8").lower()
+        if planner_desktop_doc.is_file()
         else False,
     )
     chk("safety_boundaries", "no DPARSF_run in codebase", True)

@@ -489,6 +489,18 @@ def _registered_subject_requests(
             )
         )
     warnings = [*context_warnings, *resource_warnings]
+    if subject_requests:
+        warnings.append(
+            "Resolved native preprocessing BOLD input from conversion artifact registry."
+        )
+        if not request.sidecar_json and any(item.sidecar_json for item in subject_requests):
+            warnings.append(
+                "Resolved native preprocessing sidecar input from conversion artifact registry."
+            )
+        if not request.t1w and any(item.t1w for item in subject_requests):
+            warnings.append(
+                "Resolved native preprocessing T1w input from conversion artifact registry."
+            )
     if len(subject_requests) > 1:
         warnings.append(
             f"Resolved {len(subject_requests)} native preprocessing subject input set(s) from conversion artifact registry."

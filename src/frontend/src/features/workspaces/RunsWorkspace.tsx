@@ -1072,6 +1072,12 @@ function RunDetailPanel({
                 description={t("runs.audit.emptyDescription")}
               />
             )}
+            {details?.detail.run_link.dispatch_id ? (
+              <div className={styles.auditRecord}>
+                <span>{t("runs.audit.dispatch")}</span>
+                <strong>{details.detail.run_link.dispatch_id}</strong>
+              </div>
+            ) : null}
           </section>
         ) : null}
       </div>

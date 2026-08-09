@@ -1,7 +1,20 @@
 # 计划 01：自动 AC-PC 定位并移除 GUI Agent
 
-> 状态：Proposed。任务模式：Scientific Validation + Architecture / Refactor。  
-> 目标：用确定性的影像算法生成 AC-PC 坐标和对齐结果，删除当前只用于该目的的 mock GUI Agent 表面。
+> 状态：**工程实现已存在；独立科学验证未完成。**任务模式：Scientific Validation。
+> 更新日期：2026-08-09。本文保留原始设计合同作为审计依据；不得再把下方实施清单当作从零开始的开发指令。
+
+## 当前实施记录与验收边界
+
+静态源码审查确认，以下工程交付已存在：
+
+- `native_preproc/stages/acpc_alignment.py`、`native_preproc/core/acpc.py` 和 `services/native_acpc.py` 已提供项目内、CPU-only 的 ACPC 对齐链；
+- checksum 固定的 `avg152T1.nii` 参考资源、`native_auto_acpc_align` 节点、规划/审批集成、artifact/QC/provenance 输出与单元、隔离项目 E2E 测试已存在；
+- GUI Agent 产品入口已移除。仅保留 `/api/gui-agent/*` 的 404 回归与旧 GUI node ID 的稳定拒绝测试；
+- 当前能力仍是 `computed`：输出是模板反投影得到的 `estimated_ac_mm`/`estimated_pc_mm`，不是人工解剖点的直接检测。
+
+本轮静态审查**不能**证明科学验收完成。原完成条件中“独立参考集误差、失败率和 QC 误判”的证据尚未提供；在锁定人工标注集、评价协议、容差与失败判定之前，禁止将该能力标为 `validated` 或 Release Ready。
+
+后续独立验证必须另建 Scientific Validation 任务，且至少覆盖：参考集与标注来源、AC/PC 三维误差、失败率、95th percentile、QC 假阳性/假阴性、失败样本审查和能力矩阵更新。该任务不得改写原始 T1w 或 `rawdata/`。
 
 ## 一页决策
 
@@ -21,9 +34,9 @@
 
 完成条件：
 
-- [ ] 合格 T1w 能生成重载成功的对齐 NIfTI、AC/PC 估计坐标和 transform。
-- [ ] 缺失 T1w、坏 affine、配准未收敛或 QC 不通过时，节点失败关闭且不生成“成功”产物。
-- [ ] 旧 GUI Agent 路由、runtime、schema、测试和用户入口均已移除；旧 GUI 节点 ID 被明确拒绝。
+- [x] 合格 T1w 能生成重载成功的对齐 NIfTI、AC/PC 估计坐标和 transform。
+- [x] 缺失 T1w、坏 affine、配准未收敛或 QC 不通过时，节点失败关闭且不生成“成功”产物。
+- [x] 旧 GUI Agent 路由、runtime、schema、测试、配置和用户入口均已移除；旧 GUI 节点 ID 被明确拒绝。
 - [ ] 独立参考集上的误差、失败率和 QC 判定已记录，能力矩阵结论与证据一致。
 
 ## 现有依据

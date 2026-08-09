@@ -19,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.backend.app.schemas.planner_plan import canonical_plan_payload
+
 # ── Config / Result dataclasses ──────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -114,12 +116,6 @@ OUTPUT (JSON only):
 # ── JSON parser ──────────────────────────────────────────────────────────────
 
 _CODE_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)```", re.DOTALL)
-_ALLOWED_PLAN_FIELDS = {
-    "pipeline_id", "nodes", "confidence", "missing_prerequisites", "risks",
-}
-_ALLOWED_NODE_FIELDS = {
-    "id", "backend", "depends_on", "params", "input_types", "output_types",
-}
 
 
 def parse_llm_plan_json(content: str) -> dict[str, Any]:
@@ -148,45 +144,10 @@ def parse_llm_plan_json(content: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("LLM_PLAN_JSON_PARSE_ERROR: parsed JSON is not a dict")
 
-    unknown_fields = sorted(set(data) - _ALLOWED_PLAN_FIELDS)
-    if unknown_fields:
-        raise ValueError(
-            f"LLM_PLAN_SCHEMA_ERROR: unknown top-level fields: {unknown_fields}"
-        )
-    if not isinstance(data.get("pipeline_id"), str) or not data["pipeline_id"].strip():
-        raise ValueError("LLM_PLAN_SCHEMA_ERROR: pipeline_id must be a non-empty string")
-    nodes = data.get("nodes")
-    if not isinstance(nodes, list):
-        raise ValueError("LLM_PLAN_SCHEMA_ERROR: nodes must be a list")
-    for index, node in enumerate(nodes):
-        if not isinstance(node, dict):
-            raise ValueError(f"LLM_PLAN_SCHEMA_ERROR: node {index} must be an object")
-        unknown_node_fields = sorted(set(node) - _ALLOWED_NODE_FIELDS)
-        if unknown_node_fields:
-            raise ValueError(
-                f"LLM_PLAN_SCHEMA_ERROR: node {index} has unknown fields: {unknown_node_fields}"
-            )
-        required = {"id", "backend", "depends_on", "params"}
-        missing = sorted(required - set(node))
-        if missing:
-            raise ValueError(
-                f"LLM_PLAN_SCHEMA_ERROR: node {index} is missing fields: {missing}"
-            )
-    confidence = data.get("confidence")
-    if confidence is not None and (
-        isinstance(confidence, bool)
-        or not isinstance(confidence, int | float)
-        or not 0 <= float(confidence) <= 1
-    ):
-        raise ValueError("LLM_PLAN_SCHEMA_ERROR: confidence must be between 0 and 1")
-    for field_name in ("missing_prerequisites", "risks"):
-        value = data.get(field_name)
-        if value is not None and (
-            not isinstance(value, list) or not all(isinstance(item, str) for item in value)
-        ):
-            raise ValueError(f"LLM_PLAN_SCHEMA_ERROR: {field_name} must be a list of strings")
-
-    return data
+    try:
+        return canonical_plan_payload(data)
+    except Exception as exc:
+        raise ValueError(f"LLM_PLAN_SCHEMA_ERROR: {exc}") from exc
 
 
 # ── Provider caller ──────────────────────────────────────────────────────────
@@ -235,69 +196,68 @@ def call_openai_compatible_provider(
     }
     url = f"{config.base_url.rstrip('/')}/chat/completions"
 
-    try:
-        if http_post is None:
-            import httpx  # noqa: E402
-            resp = httpx.post(url, headers=headers, json=body, timeout=60.0)
-            resp.raise_for_status()
-            raw = resp.json()
-        else:
-            resp = http_post(url, headers, body, 60.0)
-            if hasattr(resp, "raise_for_status"):
+    last_raw: dict[str, Any] | None = None
+    last_error = "PLANNER_OUTPUT_INVALID"
+    for attempt in range(2):
+        request_body = dict(body)
+        request_body["messages"] = list(body["messages"])
+        if attempt == 1:
+            request_body["messages"].append(
+                {
+                    "role": "user",
+                    "content": (
+                        "The prior response was invalid. Using the identical goal, constraints, "
+                        "and tool catalog, return only one corrected JSON object matching the schema."
+                    ),
+                }
+            )
+        try:
+            if http_post is None:
+                import httpx  # noqa: E402
+                resp = httpx.post(url, headers=headers, json=request_body, timeout=60.0)
                 resp.raise_for_status()
-            raw = resp.json() if hasattr(resp, "json") else resp
-    except Exception as exc:
-        return LLMProviderResult(
-            ok=False,
-            content="",
-            errors=[f"LLM_API_CALL_FAILED: {exc}"],
-        )
-
-    choices = raw.get("choices", [])
-    if not choices:
-        return LLMProviderResult(
-            ok=False,
-            content="",
-            raw=raw,
-            errors=["LLM_API_CALL_FAILED: no choices in response"],
-        )
-
-    content = (choices[0].get("message", {}) or {}).get("content", "")
-    if not content:
-        return LLMProviderResult(
-            ok=False,
-            content="",
-            raw=raw,
-            errors=["LLM_API_CALL_FAILED: empty content in response"],
-        )
-
-    try:
-        candidate = parse_llm_plan_json(content)
-        from src.backend.app.planner.plan_validator import validate_plan  # noqa: E402
-
-        validation = validate_plan(candidate)
-        if not validation.ok:
+                raw = resp.json()
+            else:
+                resp = http_post(url, headers, request_body, 60.0)
+                if hasattr(resp, "raise_for_status"):
+                    resp.raise_for_status()
+                raw = resp.json() if hasattr(resp, "json") else resp
+        except Exception as exc:
             return LLMProviderResult(
                 ok=False,
                 content="",
-                raw=raw,
-                errors=[
-                    "LLM_PLAN_VALIDATION_FAILED: "
-                    + "; ".join(f"{issue.code}: {issue.message}" for issue in validation.errors)
-                ],
+                errors=[f"LLM_API_CALL_FAILED: {type(exc).__name__}"],
             )
-    except ValueError as exc:
-        return LLMProviderResult(
-            ok=False,
-            content="",
-            raw=raw,
-            errors=[str(exc)],
+
+        last_raw = raw
+        choices = raw.get("choices", []) if isinstance(raw, dict) else []
+        content = (
+            (choices[0].get("message", {}) or {}).get("content", "")
+            if choices else ""
         )
+        try:
+            candidate = parse_llm_plan_json(content)
+            from src.backend.app.planner.plan_validator import validate_plan  # noqa: E402
+
+            validation = validate_plan(candidate)
+            if not validation.ok:
+                last_error = "; ".join(
+                    f"{issue.code}: {issue.message}" for issue in validation.errors
+                )
+                continue
+            return LLMProviderResult(
+                ok=True,
+                content=json.dumps(candidate, ensure_ascii=False),
+                raw=raw,
+            )
+        except ValueError as exc:
+            last_error = str(exc)
 
     return LLMProviderResult(
-        ok=True,
-        content=json.dumps(candidate, ensure_ascii=False),
-        raw=raw,
+        ok=False,
+        content="",
+        raw=last_raw,
+        errors=[f"PLANNER_OUTPUT_INVALID: {last_error}"],
     )
 
 
@@ -348,96 +308,3 @@ def call_openai_compatible_action_provider(
         return LLMProviderResult(ok=True, content=envelope.model_dump_json(), raw=raw)
     except Exception as exc:
         return LLMProviderResult(ok=False, content="", errors=[f"AGENT_HARNESS_MODEL_OUTPUT_INVALID: {exc}"])
-
-
-# ── Backward-compat stubs (used by pipeline_planner.py) ──────────────────────
-
-class PlannerProviderError(Exception):
-    """Generic planner provider error."""
-    pass
-
-
-class OpenAICompatiblePlannerProvider:
-    """Legacy OpenAI-compatible planner provider.
-
-    Backward-compat implementation for existing tests that construct
-    this class directly.  Uses MEDIMAGE_LLM_MOCK_RESPONSE env var or
-    urllib to call an OpenAI-compatible endpoint.
-    """
-
-    def __init__(self, base_url: str = "", api_key: str = "",
-                 model: str = "", timeout_seconds: int = 5):
-        self.base_url = base_url
-        self.api_key = api_key
-        self.model = model
-        self.timeout_seconds = timeout_seconds
-
-    def draft_plan(self, request: dict[str, Any],
-                   pipeline_paths: list[str]) -> Any:  # → DraftResponse
-        """Draft a plan via LLM call or mock env var."""
-        import json as _json
-
-        mock_raw = os.environ.get("MEDIMAGE_LLM_MOCK_RESPONSE")
-        if mock_raw:
-            try:
-                payload = _json.loads(mock_raw)
-            except Exception as exc:
-                raise PlannerProviderError(
-                    f"malformed JSON in MEDIMAGE_LLM_MOCK_RESPONSE: {exc}"
-                ) from exc
-            return _DraftResponse("openai_compatible", payload)
-
-        # Fallback: try urllib-based call
-        try:
-            import urllib.request  # noqa: E402
-            body = _json.dumps({
-                "model": self.model or "planner",
-                "messages": [
-                    {"role": "user", "content": _json.dumps(request)},
-                ],
-            }).encode("utf-8")
-            req = urllib.request.Request(
-                f"{self.base_url.rstrip('/')}/chat/completions",
-                data=body,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
-                raw = _json.loads(resp.read().decode("utf-8"))
-            content = (raw.get("choices", [{}])[0]
-                       .get("message", {}).get("content", "{}"))
-            payload = _json.loads(content)
-            return _DraftResponse("openai_compatible", payload)
-        except Exception as exc:
-            raise PlannerProviderError(str(exc)) from exc
-
-
-class _DraftResponse:
-    """Minimal response object for backward compat."""
-    def __init__(self, provider: str, payload: dict[str, Any]):
-        self.provider = provider
-        self.payload = payload
-        self.model = ""
-
-
-def get_planner_provider_from_env() -> Any:
-    """Return OpenAICompatiblePlannerProvider if keys are configured, else None.
-
-    Also activates when MEDIMAGE_LLM_MOCK_RESPONSE is set (for testing).
-    """
-    if os.environ.get("MEDIMAGE_LLM_MOCK_RESPONSE"):
-        return OpenAICompatiblePlannerProvider(
-            base_url="https://mock.test/v1",
-            api_key="mock-key",
-            model="mock-model",
-        )
-    config = _get_config()
-    if config.api_key_set:
-        return OpenAICompatiblePlannerProvider(
-            base_url=config.base_url,
-            api_key=os.environ["MEDIMAGE_LLM_API_KEY"],
-            model=config.model,
-        )
-    return None

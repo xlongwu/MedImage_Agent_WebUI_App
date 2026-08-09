@@ -59,8 +59,6 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
 
 def get_desktop_config(redacted: bool = True) -> dict[str, Any]:
     config = _merge(DEFAULT_DESKTOP_CONFIG, _read_config())
-    # Do not expose the retired configuration key retained in older local files.
-    config.pop("gui_agent", None)
     config["llm"] = _merge(
         config.get("llm", {}),
         {
@@ -77,9 +75,7 @@ def get_desktop_config(redacted: bool = True) -> dict[str, Any]:
 
 def save_desktop_config(payload: dict[str, Any]) -> dict[str, Any]:
     existing = get_desktop_config(redacted=False)
-    existing.pop("gui_agent", None)
     clean = dict(payload)
-    clean.pop("gui_agent", None)
     llm = dict(clean.get("llm", {}))
     if llm.get("api_key"):
         llm["api_key_set"] = True

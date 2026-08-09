@@ -16,6 +16,7 @@ from src.backend.app.services.memory_consolidation_service import (
 )
 from src.backend.app.services.memory_management_service import MemoryManagementService
 from src.backend.app.services.memory_repository import MemoryRepository
+from src.backend.app.services.memory_repository import MemoryRepositoryError
 from src.backend.app.services.memory_retrieval_service import MemoryRetrievalService
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 
@@ -93,6 +94,8 @@ def test_context_is_deterministic_bounded_and_scientific_values_are_advisory(
 
     assert first == second
     assert first.planner_constraints == {}
+    assert first.status == "enabled"
+    assert first.used_bytes > 0
     assert first.context_hash == stable_hash(
         first.model_dump(mode="json", exclude={"context_hash"})
     )
@@ -121,6 +124,43 @@ def test_install_and_project_use_gates_fail_closed(tmp_path: Path) -> None:
         config=retrieval.config.model_copy(update={"enabled": False}),
     )
     assert disabled.retrieve(project_id=project_id, query="atlas").items == ()
+
+
+def test_enabled_memory_store_failure_blocks_instead_of_returning_empty_context(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _store, repository, _manager, _consolidator, retrieval, project_id = _setup(tmp_path)
+    monkeypatch.setattr(
+        repository,
+        "health_check",
+        lambda: {"ok": False, "error_code": "MEMORY_STORE_UNHEALTHY"},
+    )
+
+    with pytest.raises(MemoryRepositoryError) as error:
+        retrieval.build_context(project_id=project_id, goal="plan")
+
+    assert error.value.code == "MEMORY_STORE_UNHEALTHY"
+
+
+def test_explicitly_disabled_memory_does_not_probe_an_unhealthy_store(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _store, repository, _manager, _consolidator, retrieval, project_id = _setup(tmp_path)
+    disabled = MemoryRetrievalService(
+        repository=repository,
+        project_store=_store,
+        config=retrieval.config.model_copy(update={"enabled": False}),
+    )
+    monkeypatch.setattr(
+        repository,
+        "health_check",
+        lambda: (_ for _ in ()).throw(AssertionError("health must not be called")),
+    )
+
+    context = disabled.build_context(project_id=project_id, goal="plan")
+
+    assert context.status == "disabled"
+    assert context.evidence_refs == ()
 
 
 def test_stale_authoritative_source_is_excluded(tmp_path: Path) -> None:

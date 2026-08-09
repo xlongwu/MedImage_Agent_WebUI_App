@@ -6,22 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.backend.app.planner.llm_provider import PlannerProviderError, get_planner_provider_from_env
 from src.backend.app.runtime.node_registry import get_node_runner
 from src.backend.app.schemas.pipeline_schema import PipelineValidationError, load_pipeline_yaml
 
 PLANNER_ROOT = Path("outputs/work/planner")
 EXTERNAL_BACKEND_TOKENS = ("matlab", "spm", "dpabi", "gui")
-CANDIDATE_PIPELINES = [
-    "examples/pipeline_mvp.yaml",
-    "examples/pipeline_rsfmri_core_plan.yaml",
-    "examples/pipeline_rsfmri_functional_connectivity.yaml",
-    "examples/pipeline_rsfmri_reho.yaml",
-    "examples/pipeline_rsfmri_alff_falff.yaml",
-    "examples/pipeline_gpu_alff.yaml",
-]
-
-
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -89,40 +78,6 @@ def _is_external_backend(backend: str, node_id: str = "") -> bool:
     return any(token in haystack for token in EXTERNAL_BACKEND_TOKENS)
 
 
-def _try_llm_pipeline(request: dict[str, Any]) -> tuple[str | None, dict[str, Any]]:
-    provider = get_planner_provider_from_env()
-    if provider is None:
-        return None, {
-            "llm_used": False,
-            "planner_mode": "deterministic_fallback",
-            "llm_note": "LLM planner disabled; deterministic disease/task mapping was used.",
-            "llm_errors": [],
-        }
-
-    try:
-        response = provider.draft_plan(request, CANDIDATE_PIPELINES)
-    except PlannerProviderError as exc:
-        return None, {
-            "llm_used": True,
-            "planner_mode": "llm_provider_error",
-            "llm_note": "LLM planner failed; draft is marked invalid until corrected.",
-            "llm_errors": [str(exc)],
-        }
-
-    pipeline_path = response.payload.get("recommended_pipeline_path")
-    ok, error = _validate_pipeline_path(str(pipeline_path) if pipeline_path else None)
-    provider_note = {
-        "llm_used": True,
-        "planner_mode": "llm_structured_draft",
-        "llm_provider": response.provider,
-        "llm_model": response.model,
-        "llm_payload": response.payload,
-        "llm_errors": [] if ok else [error],
-        "llm_note": "LLM produced a structured draft; deterministic validation still controls execution.",
-    }
-    return (str(pipeline_path) if ok else None), provider_note
-
-
 def draft_pipeline_plan(payload: dict[str, Any]) -> dict[str, Any]:
     request = {
         "disease_type": payload.get("disease_type", "unspecified"),
@@ -132,12 +87,10 @@ def draft_pipeline_plan(payload: dict[str, Any]) -> dict[str, Any]:
         "constraints": payload.get("constraints", []),
         "project_config_path": payload.get("project_config_path", "examples/project_config_dataset.yaml"),
     }
-    llm_pipeline_path, llm_note = _try_llm_pipeline(request)
-    pipeline_path = payload.get("pipeline_path") or llm_pipeline_path or _choose_pipeline_path(request)
+    pipeline_path = payload.get("pipeline_path") or _choose_pipeline_path(request)
     plan_id = payload.get("plan_id") or _stable_id("planner", request | {"pipeline_path": pipeline_path})
     path_ok, path_error = _validate_pipeline_path(pipeline_path)
     errors = [] if path_ok else [str(path_error)]
-    errors.extend(llm_note.get("llm_errors", []))
     candidate_nodes: list[dict[str, Any]] = []
     if path_ok:
         try:
@@ -146,11 +99,6 @@ def draft_pipeline_plan(payload: dict[str, Any]) -> dict[str, Any]:
             errors.append(str(exc))
 
     ok = not errors
-    # If LLM was explicitly enabled and produced errors, the draft is invalid
-    # — do not silently fall back to deterministic path selection.
-    if llm_note.get("llm_used") and llm_note.get("llm_errors"):
-        ok = False
-
     draft = {
         "ok": ok,
         "plan_id": plan_id,
@@ -160,6 +108,7 @@ def draft_pipeline_plan(payload: dict[str, Any]) -> dict[str, Any]:
         "will_execute_pipeline": False,
         "will_modify_data": False,
         "clinical_conclusion": False,
+        "planner_mode": "rule_based",
         "request": request,
         "recommended_pipeline_path": pipeline_path,
         "rationale": [
@@ -176,8 +125,6 @@ def draft_pipeline_plan(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "errors": errors,
     }
-    draft.update(llm_note)
-
     out_dir = PLANNER_ROOT / "drafts"
     out_dir.mkdir(parents=True, exist_ok=True)
     draft_path = out_dir / f"{plan_id}.json"

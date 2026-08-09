@@ -18,6 +18,15 @@ export function TechnicalEvidence({ details }: { details: AgentTaskTechnicalDeta
     [t("agent.technical.evaluation"), details.evaluation_id],
     [t("agent.technical.memoryHash"), details.memory_context_hash],
     [t("agent.technical.memoryPolicy"), details.memory_retrieval_policy_version],
+    [t("agent.technical.memoryStatus"), details.memory_status],
+    [
+      t("agent.technical.memoryUsedBytes"),
+      details.memory_used_bytes == null ? null : String(details.memory_used_bytes),
+    ],
+    [
+      t("agent.technical.memoryOmitted"),
+      details.memory_omitted_count == null ? null : String(details.memory_omitted_count),
+    ],
     [t("agent.technical.memoryAvailable"), gate(details.memory_available)],
     [t("agent.technical.memoryGeneration"), gate(details.memory_generate_enabled)],
     [t("agent.technical.memoryUse"), gate(details.memory_use_enabled)],

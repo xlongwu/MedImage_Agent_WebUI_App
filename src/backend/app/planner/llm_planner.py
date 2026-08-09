@@ -1,23 +1,34 @@
-"""LLM Planner — rule-based pipeline plan generation (MVP).
+"""Typed rule-based and OpenAI-compatible reviewed-plan generation.
 
 The Planner converts a natural-language goal into a candidate pipeline
-plan dict.  In this MVP the "LLM" is a mock / rule-based engine that
-maps keywords to pre-defined node sequences.  Every generated plan is
-validated through Plan Validator before being returned.
-
-Future providers (openai, claude) will replace the mock engine while
-keeping the same Planner → Validator → Response pipeline.
+plan dict. Both providers return the same canonical Pydantic plan and
+every generated plan passes through Plan Validator before it is returned.
 """
 
 from __future__ import annotations
 
 import re
+import os
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
+from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.planner.goal_contract_builder import build_goal_contract_semantics
 from src.backend.app.planner.plan_validator import validate_plan
+from src.backend.app.schemas.planner_plan import canonical_plan_payload
+from src.backend.app.schemas.planner_provenance import PlannerEvidence, PlannerInvocation
+
+
+PLANNER_PROMPT_TEMPLATE_VERSION = "planner-plan-v1"
+PLANNER_INPUT_SCHEMA_VERSION = "planner-request-v1"
+PLANNER_PROMPT_TEMPLATE_SIGNATURE = {
+    "system_policy": "strict canonical reviewed-plan JSON; no execution or approval",
+    "input_fields": ["goal", "constraints", "tool_catalog"],
+    "output_schema": "PlannerPlan",
+}
 
 # ── Dataclasses ──────────────────────────────────────────────────────────────
 
@@ -26,7 +37,7 @@ class PlannerRequest:
     """Input to the LLM Planner."""
 
     goal: str
-    provider: str = "mock"
+    provider: str = "rule_based"
     project_config_path: str | None = None
     constraints: dict[str, Any] | None = None
 
@@ -48,6 +59,8 @@ class PlannerResponse:
     risks: list[str] = field(default_factory=list)
     clarification_required: bool = False
     goal_contract_candidate: dict[str, Any] | None = None
+    planner_invocation: PlannerInvocation | None = None
+    planner_evidence: PlannerEvidence | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -64,6 +77,14 @@ class PlannerResponse:
             "risks": self.risks,
             "clarification_required": self.clarification_required,
             "goal_contract_candidate": self.goal_contract_candidate,
+            "planner_invocation": (
+                self.planner_invocation.model_dump(mode="json")
+                if self.planner_invocation else None
+            ),
+            "planner_evidence": (
+                self.planner_evidence.model_dump(mode="json")
+                if self.planner_evidence else None
+            ),
         }
 
 
@@ -241,23 +262,11 @@ _RULES: list[tuple[set[str], str, list[str]]] = [
 ]
 
 
-def _infer_backend(node_id: str) -> str:
-    """Infer a backend string for a node; falls back to 'python'."""
-    from src.backend.app.runtime.tool_catalog import get_tool_catalog_item
+def _contract_backend(node_id: str) -> str:
+    """Return the backend declared by the canonical Node Contract registry."""
+    from src.backend.app.runtime.node_contract_registry import get_node_contract
 
-    try:
-        return get_tool_catalog_item(node_id).backend
-    except KeyError:
-        pass
-    if node_id.startswith("native_preproc_"):
-        return "native_python"
-    if node_id.startswith("spm_"):
-        return "matlab-spm"
-    if node_id.startswith("dpabi_"):
-        return "dpabi"
-    if node_id.startswith("gpu_"):
-        return "gpu"
-    return "python"
+    return get_node_contract(node_id).backend
 
 
 def _build_plan(
@@ -272,7 +281,7 @@ def _build_plan(
     for nid in node_ids:
         node: dict[str, Any] = {
             "id": nid,
-            "backend": _infer_backend(nid),
+            "backend": _contract_backend(nid),
             "depends_on": [],
             "params": {},
         }
@@ -284,7 +293,6 @@ def _build_plan(
     for i in range(1, len(nodes)):
         nodes[i]["depends_on"] = [nodes[i - 1]["id"]]
 
-    is_rule_based = provider == "rule_based"
     return {
         "pipeline_id": pipeline_id,
         "project_context": {
@@ -292,13 +300,13 @@ def _build_plan(
             "project_config_path": None,
             "rawdata_dir": None,
             "dataset_index_path": None,
-            "source": "planner_rule_based_policy" if is_rule_based else "planner_minimal_mock",
+            "source": "planner_rule_based_policy",
             "diagnostics": {},
         },
         "goal": goal,
         "nodes": nodes,
         "metadata": {
-            "planner": "deterministic_stage_policy" if is_rule_based else "deterministic_keyword_mock",
+            "planner": "deterministic_stage_policy",
             "provider": provider,
             "capability_level": "metadata_only",
             "external_api_used": False,
@@ -424,7 +432,7 @@ def _build_acpc_plan(*, goal: str, provider: str, project_context: dict[str, Any
     project_dir = str(diagnostics.get("project_dir") or "")
     return {
         "pipeline_id": "native_auto_acpc_alignment",
-        "project_context": {"project_id": None, "project_config_path": None, "rawdata_dir": None, "dataset_index_path": None, "source": "planner_rule_based_policy" if provider == "rule_based" else "planner_minimal_mock", "diagnostics": {}},
+        "project_context": {"project_id": None, "project_config_path": None, "rawdata_dir": None, "dataset_index_path": None, "source": "planner_rule_based_policy", "diagnostics": {}},
         "goal": goal,
         "nodes": [{
             "id": "native_auto_acpc_align",
@@ -579,9 +587,8 @@ def _build_native_full_preprocessing_plan(
                 },
             }
         )
-    is_rule_based = provider == "rule_based"
     metadata: dict[str, Any] = {
-        "planner": "deterministic_stage_policy" if is_rule_based else "deterministic_keyword_mock",
+        "planner": "deterministic_stage_policy",
         "provider": provider,
         "capability_level": "computed",
         "external_api_used": False,
@@ -627,7 +634,7 @@ def _build_native_full_preprocessing_plan(
             "project_config_path": None,
             "rawdata_dir": None,
             "dataset_index_path": None,
-            "source": "planner_rule_based_policy" if is_rule_based else "planner_minimal_mock",
+            "source": "planner_rule_based_policy",
             "diagnostics": {},
         },
         "goal": goal,
@@ -703,22 +710,92 @@ def _build_native_reho_plan(
 
 def generate_plan_from_goal(
     goal: str,
-    provider: str = "mock",
+    provider: str = "rule_based",
     constraints: dict[str, Any] | None = None,
     project_config_path: str | None = None,
 ) -> PlannerResponse:
     """Generate a candidate pipeline plan from a natural-language goal.
 
-    Currently supports only 'mock' and 'rule_based' providers.
+    The caller explicitly selects either deterministic rules or the remote provider.
     """
     errors: list[str] = []
     warnings: list[str] = []
     messages: list[str] = []
+    invocation = PlannerInvocation(
+        invocation_id=f"planner_invocation_{uuid4().hex}",
+        provider_id=provider,
+        model_id=(
+            os.environ.get("MEDIMAGE_LLM_MODEL", "gpt-4.1-mini")
+            if provider == "openai_compatible"
+            else "deterministic-rules-v1"
+        ),
+        prompt_template_version=PLANNER_PROMPT_TEMPLATE_VERSION,
+        prompt_template_hash=stable_hash(
+            {
+                "version": PLANNER_PROMPT_TEMPLATE_VERSION,
+                "signature": PLANNER_PROMPT_TEMPLATE_SIGNATURE,
+            }
+        ),
+        input_schema_version=PLANNER_INPUT_SCHEMA_VERSION,
+        input_hash=stable_hash(
+            {
+                "goal": goal,
+                "provider": provider,
+                "constraints": constraints or {},
+                "project_config_path": project_config_path,
+            }
+        ),
+        started_at=datetime.now(UTC),
+        timeout_ms=60_000 if provider == "openai_compatible" else 1_000,
+    )
+
+    def response(**values: Any) -> PlannerResponse:
+        plan = values.get("plan")
+        if isinstance(plan, dict) and plan:
+            try:
+                plan = canonical_plan_payload(plan)
+                values["plan"] = plan
+            except Exception as exc:
+                values["ok"] = False
+                values["plan"] = {}
+                values["validation"] = {}
+                values["errors"] = [
+                    *list(values.get("errors") or []),
+                    f"PLANNER_OUTPUT_INVALID: {type(exc).__name__}",
+                ]
+                plan = {}
+        validation = values.get("validation") if isinstance(values.get("validation"), dict) else {}
+        validation_codes = tuple(
+            dict.fromkeys(
+                str(item.get("code"))
+                for bucket in (validation.get("errors", []), validation.get("warnings", []))
+                for item in bucket
+                if isinstance(item, dict) and item.get("code")
+            )
+        )
+        result_errors = [str(item) for item in values.get("errors", [])]
+        failure_code = result_errors[0].split(":", 1)[0] if result_errors else None
+        evidence = PlannerEvidence(
+            invocation_id=invocation.invocation_id,
+            output_hash=stable_hash(plan) if plan else None,
+            validation_codes=validation_codes,
+            failure_code=failure_code,
+            redacted_summary=(
+                f"Planner {provider} produced {len(plan.get('nodes', []))} typed nodes."
+                if plan
+                else f"Planner {provider} stopped without a plan."
+            ),
+        )
+        return PlannerResponse(
+            **values,
+            planner_invocation=invocation,
+            planner_evidence=evidence,
+        )
 
     # ── Provider check ──
-    supported = {"mock", "rule_based", "openai_compatible"}
+    supported = {"rule_based", "openai_compatible"}
     if provider not in supported:
-        return PlannerResponse(
+        return response(
             ok=False,
             provider=provider,
             goal=goal,
@@ -730,7 +807,7 @@ def generate_plan_from_goal(
     # ── Goal check ──
     stripped = goal.strip()
     if not stripped:
-        return PlannerResponse(
+        return response(
             ok=False,
             provider=provider,
             goal=goal,
@@ -748,7 +825,7 @@ def generate_plan_from_goal(
 
         pr = call_openai_compatible_provider(goal, constraints=constraints)
         if not pr.ok:
-            return PlannerResponse(
+            return response(
                 ok=False,
                 provider=provider,
                 goal=goal,
@@ -760,7 +837,7 @@ def generate_plan_from_goal(
         try:
             plan = parse_llm_plan_json(pr.content)
         except ValueError as exc:
-            return PlannerResponse(
+            return response(
                 ok=False,
                 provider=provider,
                 goal=goal,
@@ -773,7 +850,7 @@ def generate_plan_from_goal(
         goal_contract = build_goal_contract_semantics(plan, goal)
         missing_prerequisites = list(plan.get("missing_prerequisites") or [])
         risks = list(plan.get("risks") or [])
-        return PlannerResponse(
+        return response(
             ok=validation.ok and not missing_prerequisites,
             provider=provider,
             goal=goal,
@@ -793,14 +870,14 @@ def generate_plan_from_goal(
     if _matches_acpc_goal(goal_lower):
         plan, missing = _build_acpc_plan(goal=stripped, provider=provider, project_context=project_context)
         if missing:
-            return PlannerResponse(
+            return response(
                 ok=False, provider=provider, goal=goal, plan={}, validation={},
                 missing_prerequisites=missing, clarification_required=True,
                 errors=missing, warnings=["ACPC planning did not create an executable node without a selected registered T1w artifact."],
             )
         validation = validate_plan(plan)
         goal_contract = build_goal_contract_semantics(plan, goal)
-        return PlannerResponse(
+        return response(
             ok=validation.ok and goal_contract.ok, provider=provider, goal=goal, plan=plan,
             validation=validation.to_dict(), messages=["Prepared a reviewed ACPC alignment plan using a registered T1w artifact."],
             warnings=["AC/PC outputs are template-back-projected estimates and require independent manual-reference validation."],
@@ -811,7 +888,7 @@ def generate_plan_from_goal(
         plan = _build_plan_only_preprocessing_plan(goal=stripped, provider=provider)
         validation = validate_plan(plan)
         goal_contract = build_goal_contract_semantics(plan, goal)
-        return PlannerResponse(
+        return response(
             ok=validation.ok and goal_contract.ok,
             provider=provider,
             goal=goal,
@@ -836,7 +913,7 @@ def generate_plan_from_goal(
         )
         validation = validate_plan(plan)
         goal_contract = build_goal_contract_semantics(plan, goal)
-        return PlannerResponse(
+        return response(
             ok=validation.ok and goal_contract.ok,
             provider=provider,
             goal=goal,
@@ -883,7 +960,7 @@ def generate_plan_from_goal(
             for w in validation.warnings:
                 warnings.append(f"[{w.code}] {w.message}")
         goal_contract = build_goal_contract_semantics(plan, goal)
-        return PlannerResponse(
+        return response(
             ok=validation.ok,
             provider=provider,
             goal=goal,
@@ -907,7 +984,7 @@ def generate_plan_from_goal(
             best_match = (score, pipeline_id, node_ids)
 
     if best_match is None:
-        return PlannerResponse(
+        return response(
             ok=False,
             provider=provider,
             goal=goal,
@@ -933,7 +1010,7 @@ def generate_plan_from_goal(
             warnings.append(f"[{w.code}] {w.message}")
     goal_contract = build_goal_contract_semantics(plan, goal)
 
-    return PlannerResponse(
+    return response(
         ok=validation.ok and len(errors) == 0,
         provider=provider,
         goal=goal,

@@ -1,7 +1,7 @@
 .viewerCard {
   display: grid;
   grid-template-columns: 248px minmax(420px, 1fr) 286px;
-  min-height: 610px;
+  min-height: 400px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-panel);

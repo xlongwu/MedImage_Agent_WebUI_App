@@ -109,7 +109,12 @@ def _save_plan(client: TestClient, created: dict, plan: dict) -> dict:
     return response.json()["reviewed_plan"]
 
 
-def _execute_body(created: dict, plan: dict, reviewed_plan_id: str) -> dict:
+def _execute_body(
+    created: dict,
+    plan: dict,
+    reviewed_plan_id: str,
+    approval_summary_hash: str | None = None,
+) -> dict:
     return {
         "plan": plan,
         "approval": {
@@ -117,6 +122,11 @@ def _execute_body(created: dict, plan: dict, reviewed_plan_id: str) -> dict:
             "approved_by": "test-user",
             "approved_nodes": ["*"],
             "rejected_nodes": [],
+            **(
+                {"approval_summary_hash": approval_summary_hash}
+                if approval_summary_hash
+                else {}
+            ),
         },
         "project_id": created["project_id"],
         "reviewed_plan_id": reviewed_plan_id,
@@ -141,7 +151,12 @@ def _setup_executed(
     reviewed = _save_plan(client, created, plan)
     result = client.post(
         "/api/plans/execute-reviewed",
-        json=_execute_body(created, plan, reviewed["reviewed_plan_id"]),
+        json=_execute_body(
+            created,
+            plan,
+            reviewed["reviewed_plan_id"],
+            reviewed["payload"]["approval_envelope"]["summary_hash"],
+        ),
     ).json()
     return created, result
 

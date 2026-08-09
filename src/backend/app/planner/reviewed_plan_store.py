@@ -26,6 +26,7 @@ from src.backend.app.planner.project_context import (
 from src.backend.app.schemas.desktop import ReviewedPlanRecord, RunLinkRecord
 from src.backend.app.schemas.goal_contract import GoalContract, GoalContractCandidate
 from src.backend.app.schemas.memory import MemoryContext
+from src.backend.app.schemas.planner_provenance import PlannerEvidence, PlannerInvocation
 from src.backend.app.runtime.atomic_file import atomic_write_json
 from src.backend.app.services.mock_store import mock_store, utc_now_iso
 
@@ -46,6 +47,8 @@ def reviewed_plan_identity(
     plan: dict[str, Any],
     goal_contract_semantics: dict[str, Any] | None = None,
     memory_context: MemoryContext | dict[str, Any] | None = None,
+    planner_invocation: PlannerInvocation | None = None,
+    planner_evidence: PlannerEvidence | None = None,
 ) -> tuple[str, str]:
     normalized, _ = normalize_reviewed_plan(plan)
     identity_payload: dict[str, Any] = {"plan": normalized}
@@ -59,9 +62,25 @@ def reviewed_plan_identity(
             if isinstance(memory_context, MemoryContext)
             else dict(memory_context)
         )
+    if planner_invocation is not None and planner_evidence is not None:
+        identity_payload["planner_provenance"] = {
+            "provider_id": planner_invocation.provider_id,
+            "model_id": planner_invocation.model_id,
+            "prompt_template_version": planner_invocation.prompt_template_version,
+            "prompt_template_hash": planner_invocation.prompt_template_hash,
+            "input_schema_version": planner_invocation.input_schema_version,
+            "input_hash": planner_invocation.input_hash,
+            "output_hash": planner_evidence.output_hash,
+            "validation_codes": list(planner_evidence.validation_codes),
+            "fallback_used": planner_evidence.fallback_used,
+        }
     plan_hash = stable_hash(
         identity_payload
-        if goal_contract_semantics is not None or memory_context is not None
+        if (
+            goal_contract_semantics is not None
+            or memory_context is not None
+            or planner_invocation is not None
+        )
         else normalized
     )
     identity_hash = stable_hash({"project_id": project_id, "plan_hash": plan_hash})
@@ -120,6 +139,8 @@ def save_reviewed_plan(
     reviewed_actor: str | None = None,
     lineage: dict[str, Any] | None = None,
     memory_context: MemoryContext | dict[str, Any] | None = None,
+    planner_invocation: PlannerInvocation | dict[str, Any] | None = None,
+    planner_evidence: PlannerEvidence | dict[str, Any] | None = None,
     store=None,
 ) -> ReviewedPlanRecord:
     """Upsert a stable SQLite plan index and write its immutable snapshot."""
@@ -167,11 +188,33 @@ def save_reviewed_plan(
         "forbidden_limitation_flags": ["simplified", "preview_only", "partial"],
         "evaluation_policy_version": "goal-evaluator-v1",
     }
+    typed_invocation = (
+        planner_invocation
+        if isinstance(planner_invocation, PlannerInvocation)
+        else PlannerInvocation.model_validate(planner_invocation)
+        if planner_invocation is not None
+        else None
+    )
+    typed_evidence = (
+        planner_evidence
+        if isinstance(planner_evidence, PlannerEvidence)
+        else PlannerEvidence.model_validate(planner_evidence)
+        if planner_evidence is not None
+        else None
+    )
+    if (typed_invocation is None) != (typed_evidence is None) or (
+        typed_invocation is not None
+        and typed_evidence is not None
+        and typed_evidence.invocation_id != typed_invocation.invocation_id
+    ):
+        raise ReviewedPlanStoreError("PLANNER_PROVENANCE_BINDING_INVALID")
     reviewed_plan_id, plan_hash = reviewed_plan_identity(
         project_id,
         normalized_plan,
         identity_semantics,
         memory_context,
+        typed_invocation,
+        typed_evidence,
     )
     goal_contract: GoalContract | None = None
     goal_contract_issues: list[str] = []
@@ -227,6 +270,8 @@ def save_reviewed_plan(
             if isinstance(memory_context, MemoryContext)
             else str((memory_context or {}).get("retrieval_policy_version") or "") or None
         ),
+        planner_invocation=typed_invocation,
+        planner_evidence=typed_evidence,
         plan_path=str(plan_path),
         status=effective_status,
         created_at=now,
@@ -254,6 +299,12 @@ def save_reviewed_plan(
                 else goal_build.reason or "GOAL_CONTRACT_REVIEW_REQUIRED"
             ),
             "provider": provider,
+            "planner_invocation": (
+                typed_invocation.model_dump(mode="json") if typed_invocation else None
+            ),
+            "planner_evidence": (
+                typed_evidence.model_dump(mode="json") if typed_evidence else None
+            ),
             "lineage": dict(lineage or {}),
             "memory_context": (
                 memory_context.model_dump(mode="json")
@@ -262,6 +313,26 @@ def save_reviewed_plan(
             ),
         },
     )
+    if record.status == "REVIEWED":
+        from src.backend.app.services.approval_summary_service import (
+            ApprovalSummaryService,
+        )
+
+        project = project_store.get_project(project_id)
+        if project is None:
+            raise ReviewedPlanStoreError(f"PROJECT_NOT_FOUND: {project_id}")
+        summary = ApprovalSummaryService().build(
+            project=project,
+            reviewed_plan=record,
+        )
+        record = record.model_copy(
+            update={
+                "payload": {
+                    **record.payload,
+                    "approval_envelope": summary.model_dump(mode="json"),
+                }
+            }
+        )
     stored = project_store.add_reviewed_plan(record)
     try:
         write_reviewed_plan_snapshot(stored, project_dir)
@@ -314,11 +385,6 @@ def resolve_reviewed_plan_for_execution(
             raise ReviewedPlanStoreError(
                 "REVIEWED_PLAN_ID_REQUIRED: multiple reviewed Goal Contracts exist for this plan"
             )
-        else:
-            legacy_id, legacy_hash = reviewed_plan_identity(context.project_id, normalized_plan)
-            record = mock_store.get_reviewed_plan(legacy_id) or mock_store.find_reviewed_plan(
-                context.project_id, legacy_hash
-            )
     if record is None:
         raise ReviewedPlanStoreError(
             "REVIEWED_PLAN_NOT_FOUND: save this reviewed plan before execution"
@@ -328,14 +394,14 @@ def resolve_reviewed_plan_for_execution(
             "REVIEWED_PLAN_MISMATCH: persisted reviewed plan does not match execution"
         )
     stored_normalized_hash = record.payload.get("normalized_plan_hash")
-    if stored_normalized_hash and stored_normalized_hash != normalized_plan_hash:
+    if stored_normalized_hash != normalized_plan_hash:
         raise ReviewedPlanStoreError(
             "REVIEWED_PLAN_MISMATCH: normalized plan changed after review"
         )
     goal_contract_payload = record.payload.get("goal_contract")
     if record.payload.get("goal_contract_status") != "reviewed" or not isinstance(goal_contract_payload, dict):
         raise ReviewedPlanStoreError(
-            "REVIEWED_PLAN_NEEDS_GOAL_REVIEW: legacy plan has no reviewed Goal Contract"
+            "REVIEWED_PLAN_NEEDS_GOAL_REVIEW: plan has no reviewed Goal Contract"
         )
     try:
         goal_contract = GoalContract(**goal_contract_payload)
@@ -350,6 +416,9 @@ def resolve_reviewed_plan_for_execution(
         context.project_id,
         normalized_plan,
         semantics,
+        record.payload.get("memory_context") or None,
+        record.planner_invocation,
+        record.planner_evidence,
     )
     if record.reviewed_plan_id != expected_id or record.plan_hash != expected_plan_hash:
         raise ReviewedPlanStoreError("REVIEWED_PLAN_GOAL_BINDING_MISMATCH")

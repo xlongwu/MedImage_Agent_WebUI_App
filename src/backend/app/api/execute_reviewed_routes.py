@@ -47,10 +47,11 @@ from src.backend.app.planner.reviewed_plan_store import (
 )
 from src.backend.app.runtime.execution_gateway import (
     ExecutionGateway,
-    current_safe_allowlist_fingerprint,
+    current_allowlist_hash,
 )
 from src.backend.app.runtime.atomic_file import atomic_write_json
 from src.backend.app.schemas.desktop import ReviewedPlanRecord
+from src.backend.app.schemas.approval_summary import ApprovalSummary
 from src.backend.app.schemas.execution_consistency import (
     ExecutionConsistencyInput,
     verify_execution_consistency,
@@ -58,6 +59,7 @@ from src.backend.app.schemas.execution_consistency import (
 from src.backend.app.schemas.native_preproc_api import NativeFullPreprocRequest
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
+from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
 from src.backend.app.services.mock_store import mock_store
 from src.backend.app.services.native_preproc_full import run_native_full_dry_run
@@ -81,6 +83,7 @@ class ExecuteReviewedRequest(BaseModel):
     confirm_execution: bool = False
     actor: str | None = None
     lifecycle_id: str | None = None
+    command_id: str | None = None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -166,7 +169,6 @@ def _is_policy_blocked(policy: dict[str, list[str]]) -> bool:
     blocked = (
         policy.get("blocked_spm_nodes", [])
         + policy.get("blocked_dpabi_execution_nodes", [])
-        + policy.get("blocked_gui_nodes", [])
         + policy.get("blocked_manual_required_nodes", [])
         + policy.get("blocked_unknown_nodes", [])
         + policy.get("blocked_uncataloged_nodes", [])
@@ -218,7 +220,7 @@ def _check_safe_allowlist(policy: dict[str, list[str]]) -> str | None:
         "allowed_gpu_nuisance_regression_sandbox_nodes", []
     )
     native_preproc_nodes = policy.get("allowed_native_preproc_nodes", [])
-    unsafe = gpu_nodes  # contract_nodes are Python-only metadata, now allowed; gpu_synthetic_smoke sandbox-gated
+    unsafe = contract_nodes + gpu_nodes
     if unsafe:
         return "SAFE_EXECUTION_POLICY_BLOCKED"
 
@@ -778,7 +780,7 @@ def _run_consistency_preflight(
         project_config_path=request.project_config_path,
         project_context_path=request.project_config_path,
         node_ids=node_ids,
-        approval_context_id="preflight_approved",  # approval gate already passed
+        approval_summary_hash="preflight_approved",  # approval gate already passed
         audit_id=str(audit_info.get("audit_id") or "") or None,
     )
 
@@ -836,23 +838,26 @@ def _ticket_roots(
     return sorted(input_roots), sorted(output_roots)
 
 
-def _approval_context_id(
+def _approval_summary_hash(
     *,
     reviewed_plan: ReviewedPlanRecord,
     approval: dict[str, Any] | None,
-    gate: dict[str, Any],
 ) -> str:
-    return (
-        "approval_"
-        + stable_hash(
-            {
-                "reviewed_plan_id": reviewed_plan.reviewed_plan_id,
-                "plan_hash": reviewed_plan.plan_hash,
-                "approval": approval or {},
-                "gate": gate,
-            }
-        )[:24]
-    )
+    raw = reviewed_plan.payload.get("approval_envelope")
+    if not isinstance(raw, dict):
+        raise SafetyError("APPROVAL_SUMMARY_MISSING", code="APPROVAL_SUMMARY_MISSING")
+    summary = ApprovalSummary.model_validate(raw)
+    ApprovalSummaryService().verify(summary)
+    provided = str((approval or {}).get("approval_summary_hash") or "")
+    if (
+        not provided
+        or provided != summary.summary_hash
+        or summary.reviewed_plan_id != reviewed_plan.reviewed_plan_id
+        or summary.plan_hash != reviewed_plan.plan_hash
+        or summary.memory_context_hash != reviewed_plan.memory_context_hash
+    ):
+        raise SafetyError("APPROVAL_SUMMARY_STALE", code="APPROVAL_SUMMARY_STALE")
+    return summary.summary_hash
 
 
 # ── Main endpoint ────────────────────────────────────────────────────────────
@@ -1308,10 +1313,9 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
             assert context is not None
             assert settings is not None
             assert written_path is not None
-            approval_context_id = _approval_context_id(
+            approval_summary_hash = _approval_summary_hash(
                 reviewed_plan=reviewed_plan,
                 approval=request.approval,
-                gate=gate,
             )
             input_roots, output_roots = _ticket_roots(
                 context=context,
@@ -1337,7 +1341,8 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                 project_id=reviewed_plan.project_id,
                 reviewed_plan_id=reviewed_plan.reviewed_plan_id,
                 plan_hash=reviewed_plan.plan_hash,
-                approval_context_id=approval_context_id,
+                approval_summary_hash=approval_summary_hash,
+                memory_context_hash=reviewed_plan.memory_context_hash,
                 approved_actor=str(
                     (request.approval or {}).get("approved_by") or request.actor or "local-user"
                 ),
@@ -1350,7 +1355,7 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                 ),
                 project_config_path=str(request.project_config_path),
                 pipeline_path=str(written_path),
-                safe_allowlist_fingerprint=current_safe_allowlist_fingerprint(),
+                allowlist_hash=current_allowlist_hash(),
                 normalized_params_hash=validation_result.normalized_params_hash,
                 contract_versions=validation_result.contract_versions,
                 audit_id=str(audit_info.get("audit_id") or ""),
@@ -1420,21 +1425,60 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                     project_id=reviewed_plan.project_id,
                     reviewed_plan_id=reviewed_plan.reviewed_plan_id,
                     plan_hash=reviewed_plan.plan_hash,
-                    approval_context_id=approval_context_id,
+                    approval_summary_hash=approval_summary_hash,
+                    memory_context_hash=reviewed_plan.memory_context_hash,
+                    scope_hash=issued_ticket.scope_hash,
                     normalized_params_hash=validation_result.normalized_params_hash,
                     contract_versions=validation_result.contract_versions,
                     project_config_path=str(request.project_config_path),
                     pipeline_path=str(written_path),
+                    command_id=(
+                        request.command_id
+                        or f"execute:{issued_ticket.execution_ticket_id}"
+                    ),
+                    run_id=linked_run_id,
                     goal_contract_hash=goal_contract_hash,
                     evaluation_policy_version=evaluation_policy_version,
                 ),
             )
         except Exception as exc:
+            failure_code = (
+                str(exc.code)
+                if isinstance(exc, SafetyError) and exc.code
+                else "EXECUTION_FAILED"
+            )
+            recovery = {
+                "recoverable": failure_code
+                in {
+                    "EXECUTION_TICKET_EXPIRED",
+                    "GATEWAY_DISPATCH_OUTCOME_UNKNOWN",
+                    "EXECUTION_DISPATCH_FAILED",
+                },
+                "next_step": (
+                    "REVIEW_AND_APPROVE_NEW_PLAN"
+                    if failure_code == "EXECUTION_TICKET_EXPIRED"
+                    else "INSPECT_PERSISTED_DISPATCH"
+                    if failure_code == "GATEWAY_DISPATCH_OUTCOME_UNKNOWN"
+                    else "REVIEW_EXECUTION_FAILURE"
+                ),
+            }
             if run_link_id and reviewed_plan:
                 try:
+                    persisted_dispatch = (
+                        mock_store.get_gateway_dispatch_by_ticket(
+                            issued_ticket.execution_ticket_id
+                        )
+                        if "issued_ticket" in locals()
+                        else None
+                    )
                     mock_store.update_run_link(
                         run_link_id,
                         status="FAILED",
+                        dispatch_id=(
+                            persisted_dispatch.dispatch_id
+                            if persisted_dispatch is not None
+                            else None
+                        ),
                         payload={"audit": audit_info, "error": str(exc)},
                     )
                     mock_store.update_reviewed_plan(
@@ -1446,7 +1490,7 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                     pass
             result = {
                 "ok": False,
-                "status": "EXECUTION_FAILED",
+                "status": failure_code,
                 "dry_run": False,
                 "would_execute": False,
                 "execution_allowed": False,
@@ -1464,7 +1508,8 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                     lifecycle.model_dump(mode="json") if "lifecycle" in locals() else None
                 ),
                 "audit": audit_info,
-                "errors": [str(exc)],
+                "errors": [failure_code],
+                "recovery": recovery,
             }
             return _with_link_fields(
                 result,
@@ -1481,6 +1526,7 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
         summary_path = (
             executor_result.get("summary_path") if isinstance(executor_result, dict) else None
         )
+        dispatch_id = str(executor_result.get("dispatch_id") or "") or None
         response_warnings: list[str] = []
         if linked_run_id and executor_run_id and executor_run_id != linked_run_id:
             response_warnings.append(
@@ -1496,6 +1542,7 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                 mock_store.update_run_link(
                     run_link_id,
                     status=execution_status,
+                    dispatch_id=dispatch_id,
                     summary_path=str(summary_path) if summary_path else None,
                     payload={"audit": audit_info, "executor_result": executor_result},
                     warnings=response_warnings,

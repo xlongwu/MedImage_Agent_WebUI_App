@@ -224,6 +224,47 @@ describe("AgentWorkspace", () => {
     expect(alert).not.toHaveTextContent("Agent Task service is unavailable");
   });
 
+  it.each([
+    [
+      "AGENT_EXECUTION_BLOCKED: EXECUTION_TICKET_EXPIRED",
+      "Execution ticket expired",
+      "expired ticket cannot be reused",
+    ],
+    [
+      "AGENT_EXECUTION_BLOCKED: GATEWAY_DISPATCH_OUTCOME_UNKNOWN",
+      "Dispatch outcome needs inspection",
+      "executor will not be called again automatically",
+    ],
+    [
+      "AGENT_EXECUTION_BLOCKED: EXECUTION_DISPATCH_FAILED",
+      "Reviewed execution failed",
+      "persisted dispatch evidence",
+    ],
+    [
+      "MEMORY_STORE_UNHEALTHY",
+      "Project memory is unavailable",
+      "without substituting an empty memory context",
+    ],
+  ])("renders structured failure guidance for %s", (error, title, message) => {
+    render(
+      <I18nProvider locale="en">
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={{ ...controller(approvalTask()), error }}
+          dataStateLabel="Converted BIDS/NIfTI"
+          onOpenLegacyWorkspace={vi.fn()}
+          onOpenRuns={vi.fn()}
+          projectName="Demo Project"
+        />
+      </I18nProvider>,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(title);
+    expect(alert).toHaveTextContent(message);
+    expect(alert).not.toHaveTextContent(error);
+  });
+
   it("localizes stable approval counts in the Chinese workspace", () => {
     const task: AgentTaskResponse = {
       ...approvalTask(),

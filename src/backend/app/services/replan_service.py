@@ -58,8 +58,8 @@ class ReplanService:
                 change.output_roots,
                 change.readonly_roots,
                 change.goal_contract_hash,
-                change.approval_context_id,
-                change.safe_allowlist_fingerprint,
+                change.approval_summary_hash,
+                change.allowlist_hash,
             )
         ):
             raise SafetyError(

@@ -33,10 +33,10 @@ def _write_config(tmp_path: Path) -> str:
     config = {
         "project": {"name": "ci_smoke", "description": "CI smoke test", "root_dir": "."},
         "runtime": {
-            "work_dir": str(tmp_path / "work"),
-            "log_dir": str(tmp_path / "logs"),
-            "derivatives_dir": str(tmp_path / "derivatives"),
-            "report_dir": str(tmp_path / "reports"),
+            "work_dir": str(tmp_path / "project" / "work"),
+            "log_dir": str(tmp_path / "project" / "logs"),
+            "derivatives_dir": str(tmp_path / "project" / "derivatives"),
+            "report_dir": str(tmp_path / "project" / "reports"),
         },
         "third_party": {
             "spm_dir": str(tmp_path / "third_party" / "spm"),
@@ -180,7 +180,12 @@ def _persist_review_context(monkeypatch, tmp_path: Path, plan: dict, config_path
         goal_contract_candidate=candidate_semantics,
         reviewed_actor="test-reviewer",
     )
-    return plan, project_id, reviewed.reviewed_plan_id
+    return (
+        plan,
+        project_id,
+        reviewed.reviewed_plan_id,
+        reviewed.payload["approval_envelope"]["summary_hash"],
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -196,6 +201,7 @@ def test_safe_plan_execution_submitted(monkeypatch, tmp_path):
     executor_calls = []
 
     def _fake_run_pipeline(*, project_config_path, pipeline_path, execution_context):
+        pipeline = yaml.safe_load(Path(pipeline_path).read_text(encoding="utf-8"))
         executor_calls.append(
             {
                 "project_config_path": project_config_path,
@@ -203,7 +209,7 @@ def test_safe_plan_execution_submitted(monkeypatch, tmp_path):
                 "ticket_id": execution_context.ticket.execution_ticket_id,
             }
         )
-        return {"status": "SUCCESS", "run_id": "ci-mock-run-001"}
+        return {"status": "SUCCESS", "run_id": pipeline["execution"]["run_id"]}
 
     monkeypatch.setattr(
         "src.backend.app.runtime.execution_gateway.PIPELINE_EXECUTOR",
@@ -224,7 +230,7 @@ def test_safe_plan_execution_submitted(monkeypatch, tmp_path):
 
     # ── Create config ──
     config_path = _write_config(tmp_path)
-    plan, project_id, reviewed_plan_id = _persist_review_context(
+    plan, project_id, reviewed_plan_id, approval_summary_hash = _persist_review_context(
         monkeypatch, tmp_path, _safe_plan(), config_path
     )
 
@@ -236,6 +242,13 @@ def test_safe_plan_execution_submitted(monkeypatch, tmp_path):
             config_path,
             project_id=project_id,
             reviewed_plan_id=reviewed_plan_id,
+            approval={
+                "approved": True,
+                "approved_by": "ci-smoke",
+                "approved_nodes": ["*"],
+                "rejected_nodes": [],
+                "approval_summary_hash": approval_summary_hash,
+            },
         ),
     )
 
@@ -249,7 +262,7 @@ def test_safe_plan_execution_submitted(monkeypatch, tmp_path):
     assert data["execution"]["submitted"] is True  # 5
     assert data["execution"]["run_id"] is not None  # 6
     assert data["execution"]["run_id"].startswith("run_")  # 6b
-    assert data["executor_result"]["run_id"] == "ci-mock-run-001"
+    assert data["executor_result"]["run_id"] == data["run_id"]
 
     # ── Executor called once ──
     assert len(executor_calls) == 1  # 7
@@ -315,7 +328,7 @@ def test_unsafe_spm_plan_blocked(monkeypatch, tmp_path):
     )
 
     config_path = _write_config(tmp_path)
-    plan, project_id, reviewed_plan_id = _persist_review_context(
+    plan, project_id, reviewed_plan_id, approval_summary_hash = _persist_review_context(
         monkeypatch, tmp_path, _unsafe_plan(), config_path
     )
     resp = client.post(
@@ -325,6 +338,13 @@ def test_unsafe_spm_plan_blocked(monkeypatch, tmp_path):
             config_path,
             project_id=project_id,
             reviewed_plan_id=reviewed_plan_id,
+            approval={
+                "approved": True,
+                "approved_by": "ci-smoke",
+                "approved_nodes": ["*"],
+                "rejected_nodes": [],
+                "approval_summary_hash": approval_summary_hash,
+            },
         ),
     )
 

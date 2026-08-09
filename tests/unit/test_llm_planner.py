@@ -1,4 +1,4 @@
-"""Tests for LLM Planner — mock/rule-based plan generation."""
+"""Tests for typed rule-based and OpenAI-compatible plan generation."""
 
 from __future__ import annotations
 

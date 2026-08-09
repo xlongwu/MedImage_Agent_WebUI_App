@@ -29,6 +29,15 @@ def _attach_persisted_review_context(monkeypatch, tmp_path, body):
     dataset_index_path = project_dir / "dataset_index.json"
     rawdata_dir.mkdir(parents=True)
     dataset_index_path.write_text('{"subjects": []}', encoding="utf-8")
+    config_path = Path(body["project_config_path"])
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["runtime"] = {
+        "work_dir": str(project_dir / "work"),
+        "log_dir": str(project_dir / "logs"),
+        "derivatives_dir": str(project_dir / "derivatives"),
+        "report_dir": str(project_dir / "reports"),
+    }
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
     store = SQLiteDesktopStore(tmp_path / f"{project_id}.sqlite")
     store.add_project(
         ProjectDetail(
@@ -73,6 +82,9 @@ def _attach_persisted_review_context(monkeypatch, tmp_path, body):
     )
     body["project_id"] = project_id
     body["reviewed_plan_id"] = record.reviewed_plan_id
+    body["approval"]["approval_summary_hash"] = record.payload["approval_envelope"][
+        "summary_hash"
+    ]
     return body
 
 
@@ -345,7 +357,12 @@ def test_native_full_preprocessing_persisted_plan_dispatches_with_contract_ticke
     )
     monkeypatch.setattr(
         "src.backend.app.runtime.execution_gateway.PIPELINE_EXECUTOR",
-        lambda **kw: {"status": "SUCCESS", "run_id": "native-persisted-001"},
+        lambda **kw: {
+            "status": "SUCCESS",
+            "run_id": yaml.safe_load(
+                Path(kw["pipeline_path"]).read_text(encoding="utf-8")
+            )["execution"]["run_id"],
+        },
     )
     body = {
         "plan": _native_execute_plan(),

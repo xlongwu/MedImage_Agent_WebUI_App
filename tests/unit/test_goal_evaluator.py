@@ -154,6 +154,7 @@ def _observation(contract, *, include_fc=True, artifact_source_ok=True, subjects
             goal_contract_hash=contract.goal_contract_hash,
             run_id="run-1",
             execution_ticket_id="ticket-1",
+            dispatch_id="dispatch-1",
         ),
         collected_at=now,
         sources=tuple(sources),

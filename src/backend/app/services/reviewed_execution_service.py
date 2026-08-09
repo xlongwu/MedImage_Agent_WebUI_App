@@ -15,10 +15,9 @@ class ReviewedExecutionService:
     def execute(self, request: Any) -> dict[str, Any]:
         executor = self._executor
         if executor is None:
-            # Delayed import prevents a route/service import cycle while the
-            # legacy endpoint remains a compatibility adapter.
+            # Delayed import prevents a route/service import cycle while this
+            # service remains the single application entry point.
             from src.backend.app.api.execute_reviewed_routes import _execute_reviewed_application
 
             executor = _execute_reviewed_application
         return executor(request)
-

@@ -269,6 +269,9 @@ class ObservationCollector:
                     and artifact.reload_status == "passed"
                     and artifact.shape
                     and artifact.dtype
+                    and artifact.checksum_sha256
+                    and artifact.input_hashes
+                    and artifact.parameter_hash
                     and artifact.provenance_id
                 )
             ]
@@ -397,6 +400,12 @@ class ObservationCollector:
         if isinstance(goal_contract, dict):
             goal_contract_id = str(goal_contract.get("goal_contract_id") or "") or None
             goal_contract_hash = str(goal_contract.get("goal_contract_hash") or "") or None
+        dispatch = self.store.get_gateway_dispatch_by_ticket(ticket.execution_ticket_id)
+        if dispatch is None or dispatch.run_id != run_link.run_id:
+            raise SafetyError(
+                "OBSERVATION_DISPATCH_BINDING_MISSING",
+                code="OBSERVATION_DISPATCH_BINDING_MISSING",
+            )
         payload = {
             "observation_id": f"observation_{uuid4().hex}",
             "schema_version": 1,
@@ -410,6 +419,7 @@ class ObservationCollector:
                 goal_contract_hash=goal_contract_hash,
                 run_id=run_link.run_id,
                 execution_ticket_id=ticket.execution_ticket_id,
+                dispatch_id=dispatch.dispatch_id,
                 recovery_attempt_id=recovery_attempt_id,
             ),
             "collected_at": collected_at,

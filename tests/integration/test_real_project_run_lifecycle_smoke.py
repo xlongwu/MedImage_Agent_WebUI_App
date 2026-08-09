@@ -60,6 +60,9 @@ def test_full_run_lifecycle_smoke(real_project_smoke, monkeypatch, tmp_path):  #
             "approved_by": "lifecycle-smoke-test",
             "approved_nodes": ["*"],
             "rejected_nodes": [],
+            "approval_summary_hash": reviewed["payload"]["approval_envelope"][
+                "summary_hash"
+            ],
         },
         "project_id": project_id,
         "reviewed_plan_id": reviewed["reviewed_plan_id"],

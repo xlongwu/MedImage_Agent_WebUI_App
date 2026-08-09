@@ -620,6 +620,25 @@ class AgentTaskReadModel:
             memory_retrieval_policy_version=(
                 str(memory_context.get("retrieval_policy_version") or "") or None
             ),
+            memory_status=(
+                str(memory_context["status"])
+                if memory_context.get("status") in {"disabled", "enabled", "partial"}
+                else None
+            ),
+            memory_used_bytes=(
+                int(memory_context["used_bytes"])
+                if isinstance(memory_context.get("used_bytes"), int)
+                and not isinstance(memory_context.get("used_bytes"), bool)
+                and int(memory_context["used_bytes"]) >= 0
+                else None
+            ),
+            memory_omitted_count=(
+                int(memory_context["omitted_count"])
+                if isinstance(memory_context.get("omitted_count"), int)
+                and not isinstance(memory_context.get("omitted_count"), bool)
+                and int(memory_context["omitted_count"]) >= 0
+                else None
+            ),
             memory_warnings=tuple(
                 str(value)
                 for value in lifecycle.command_context.get("memory_warnings", [])

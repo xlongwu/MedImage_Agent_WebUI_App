@@ -21,7 +21,7 @@ class ToolExecutionContext:
     input_roots: tuple[Path, ...]
     output_roots: tuple[Path, ...]
     readonly_roots: tuple[Path, ...]
-    safe_allowlist_fingerprint: str
+    allowlist_hash: str
     normalized_params_hash: str
     contract_versions: dict[str, str]
     expires_at: datetime
@@ -44,7 +44,7 @@ class ToolExecutionContext:
             input_roots=tuple(Path(value).resolve() for value in ticket.input_roots),
             output_roots=tuple(Path(value).resolve() for value in ticket.output_roots),
             readonly_roots=tuple(Path(value).resolve() for value in ticket.readonly_roots),
-            safe_allowlist_fingerprint=ticket.safe_allowlist_fingerprint,
+            allowlist_hash=ticket.allowlist_hash,
             normalized_params_hash=ticket.normalized_params_hash,
             contract_versions=dict(ticket.contract_versions),
             expires_at=ticket.expires_at,

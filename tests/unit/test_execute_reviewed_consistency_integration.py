@@ -104,7 +104,7 @@ def _save_plan(client: TestClient, created: dict, plan: dict) -> str:
             "project_config_path": created["project_config_path"],
             "validation": {"ok": True},
             "goal": goal,
-            "provider": "mock",
+            "provider": "rule_based",
             "goal_contract_candidate": reviewed_goal_candidate(plan, goal),
             "reviewed_actor": "test-reviewer",
         },
@@ -116,6 +116,13 @@ def _save_plan(client: TestClient, created: dict, plan: dict) -> str:
 def _execute(
     client: TestClient, created: dict, plan: dict, reviewed_plan_id: str, **overrides
 ) -> dict:
+    reviewed = client.get(
+        f"/api/projects/{created['project_id']}/plans/{reviewed_plan_id}"
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    approval_summary_hash = reviewed.json()["reviewed_plan"]["payload"][
+        "approval_envelope"
+    ]["summary_hash"]
     body = {
         "plan": plan,
         "approval": {
@@ -123,6 +130,7 @@ def _execute(
             "approved_by": "test",
             "approved_nodes": ["*"],
             "rejected_nodes": [],
+            "approval_summary_hash": approval_summary_hash,
         },
         "project_id": created["project_id"],
         "reviewed_plan_id": reviewed_plan_id,

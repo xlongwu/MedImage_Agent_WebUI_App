@@ -24,7 +24,7 @@ def test_expired_lease_is_taken_over_once_and_step_is_idempotent(tmp_path) -> No
     adapter = FinishAdapter()
     now = datetime(2026, 1, 1, tzinfo=UTC)
     service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter, now=lambda: now)
-    attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="mock").model_copy(update={"status": "RUNNING", "lease_expires_at": now - timedelta(seconds=1)})
+    attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based").model_copy(update={"status": "RUNNING", "lease_expires_at": now - timedelta(seconds=1)})
     store.update_agent_harness_attempt(attempt, expected_status="READY")
 
     first = service.run_one(lifecycle=lifecycle, actor="user", lease_owner="restarted")

@@ -402,12 +402,15 @@ def test_memory_scientific_suggestion_requires_current_task_confirmation(
         "decision_suggestions": [suggestion.model_dump(mode="json")],
         "evidence_refs": [],
         "omitted_count": 0,
+        "used_bytes": 0,
+        "status": "enabled",
+        "warning_codes": [],
     }
     context = MemoryContext(**identity, context_hash=stable_hash(identity))
 
     class ContextService:
-        def build_context(self, **_kwargs):
-            return context
+        def build_context_with_warnings(self, **_kwargs):
+            return context, ()
 
     def planner(**_kwargs):
         return {

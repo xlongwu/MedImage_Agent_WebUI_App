@@ -172,6 +172,7 @@ function mockProjectRunDetails({
       project_id: "project-1",
       reviewed_plan_id: "plan-1",
       run_id: "task-1",
+      dispatch_id: "dispatch-1",
       task_id: null,
       pipeline_path: "work/pipeline.yaml",
       summary_path: artifactPath,
@@ -690,6 +691,7 @@ describe("RunsWorkspace", () => {
     await user.click(screen.getByRole("radio", { name: "Audit" }));
 
     expect(screen.getByLabelText("Run audit")).toHaveTextContent("audit-run-1");
+    expect(screen.getByLabelText("Run audit")).toHaveTextContent("dispatch-1");
     expect(screen.queryByRole("button", { name: "Request Audit Package" })).not.toBeInTheDocument();
   });
 

@@ -7,7 +7,6 @@ from typing import Any
 
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.runtime.node_registry import NODE_REGISTRY
-from src.backend.app.runtime.tool_catalog import TOOL_METADATA, build_tool_catalog
 from src.backend.app.schemas.node_contract import (
     ArtifactContract,
     ContractRetryPolicy,
@@ -129,6 +128,73 @@ _STRICT_PARAMETERS: dict[str, dict[str, ParameterContract]] = {
         "sidecar_json": _parameter("string", nullable=True, path_access="read"),
         "output_dir": _parameter("string", nullable=True, path_access="write"),
     },
+    "motion_qc_subject": {
+        **_COMMON_SUBJECT_PARAMETERS,
+        "fd_threshold": _parameter("number", default=0.5, minimum=0.0),
+        "head_radius_mm": _parameter("number", default=50.0, minimum=0.000001),
+    },
+    "subject_qc": {
+        **_COMMON_SUBJECT_PARAMETERS,
+        "qc_output_dir": _parameter("string", nullable=True, path_access="write"),
+    },
+    "rsfmri_report_exporter": {
+        "exports_dir": _parameter("string", default="./exports", path_access="write"),
+        "export_id": _parameter("string", nullable=True, path_access="non_path"),
+        "include_subject_qc": _parameter("boolean", default=True),
+        "include_metrics": _parameter("boolean", default=True),
+        "include_fc": _parameter("boolean", default=True),
+        "include_contracts": _parameter("boolean", default=True),
+        "include_pipeline_runs": _parameter("boolean", default=True),
+    },
+    "rsfmri_report_package_validator": {
+        "exports_dir": _parameter("string", default="./exports", path_access="read"),
+        "export_id": _parameter("string", nullable=True, path_access="non_path"),
+        "package_dir": _parameter("string", nullable=True, path_access="read"),
+        "zip_path": _parameter("string", nullable=True, path_access="read"),
+        "strict": _parameter("boolean", default=False),
+    },
+    "alff_falff_qc_dataset_report": {},
+    "docs_inventory": {},
+    "functional_connectivity_qc_dataset_report": {},
+    "group_dataset_summary": {},
+    "motion_qc_dataset_report": {},
+    "normalization_qc_dataset_report": {},
+    "nuisance_regression_qc_dataset_report": {},
+    "project_release_readiness": {},
+    "registration_qc_dataset_report": {},
+    "reho_qc_dataset_report": {},
+    "rsfmri_preprocessing_plan": {},
+    "slice_timing_qc_dataset_report": {},
+    "smoothing_qc_dataset_report": {},
+    "st_realign_motion_chain_report": {},
+    "temporal_filtering_qc_dataset_report": {},
+    "tissue_qc_dataset_report": {},
+    "data_readiness_check": {
+        "executable": _parameter("boolean", default=False, enum=(False,)),
+        "dry_run_only": _parameter("boolean", default=True, enum=(True,)),
+    },
+    "bids_validation_check": {
+        "executable": _parameter("boolean", default=False, enum=(False,)),
+        "dry_run_only": _parameter("boolean", default=True, enum=(True,)),
+    },
+    "rsfmri_bold_reference_check": {
+        "executable": _parameter("boolean", default=False, enum=(False,)),
+        "dry_run_only": _parameter("boolean", default=True, enum=(True,)),
+        "inspectable": _parameter("boolean", default=True, enum=(True,)),
+    },
+    "rsfmri_motion_qc_plan": {
+        "executable": _parameter("boolean", default=False, enum=(False,)),
+        "dry_run_only": _parameter("boolean", default=True, enum=(True,)),
+        "inspectable": _parameter("boolean", default=True, enum=(True,)),
+    },
+    "rsfmri_preprocessing_plan_stub": {
+        "executable": _parameter("boolean", default=False, enum=(False,)),
+        "dry_run_only": _parameter("boolean", default=True, enum=(True,)),
+    },
+    "rsfmri_report_plan_stub": {
+        "executable": _parameter("boolean", default=False, enum=(False,)),
+        "dry_run_only": _parameter("boolean", default=True, enum=(True,)),
+    },
 }
 
 
@@ -160,6 +226,72 @@ _STRICT_OUTPUT_ARTIFACT_TYPES: dict[str, tuple[str, ...]] = {
         "reho_map",
         "fc_matrix",
     ),
+    "native_preproc_full_dry_run": ("native_dry_run_plan",),
+    "contract_smoke": ("contract_smoke_report", "contract_smoke_log"),
+    "create_synthetic_bids": ("synthetic_bids_dataset",),
+    "data_inspection": ("dataset_index",),
+    "dataset_evaluation": ("dataset_evaluation_report",),
+    "environment_check": ("environment_check",),
+    "motion_qc_subject": ("motion_qc",),
+    "subject_qc": ("qc_metrics",),
+    "rsfmri_report_exporter": ("report_package", "checksum_manifest"),
+    "rsfmri_report_package_validator": ("report_package_validation",),
+    "alff_falff_qc_dataset_report": ("alff_falff_qc_report",),
+    "docs_inventory": ("docs_inventory",),
+    "functional_connectivity_qc_dataset_report": ("functional_connectivity_qc_report",),
+    "group_dataset_summary": ("group_summary", "dashboard_data"),
+    "motion_qc_dataset_report": ("motion_qc_dataset_report",),
+    "normalization_qc_dataset_report": ("normalization_qc_report",),
+    "nuisance_regression_qc_dataset_report": ("nuisance_regression_qc_report",),
+    "project_release_readiness": ("release_readiness_report",),
+    "registration_qc_dataset_report": ("registration_qc_report",),
+    "reho_qc_dataset_report": ("reho_qc_report",),
+    "rsfmri_preprocessing_plan": ("rsfmri_preprocessing_plan",),
+    "slice_timing_qc_dataset_report": ("slice_timing_qc_report",),
+    "smoothing_qc_dataset_report": ("smoothing_qc_report",),
+    "st_realign_motion_chain_report": ("st_realign_motion_chain_report",),
+    "temporal_filtering_qc_dataset_report": ("temporal_filtering_qc_report",),
+    "tissue_qc_dataset_report": ("tissue_qc_report",),
+    "data_readiness_check": ("readiness_summary",),
+    "bids_validation_check": ("bids_validation_summary",),
+    "rsfmri_bold_reference_check": ("bold_reference_readiness_report",),
+    "rsfmri_motion_qc_plan": ("motion_qc_readiness_report",),
+    "rsfmri_preprocessing_plan_stub": ("preprocessing_plan_stub",),
+    "rsfmri_report_plan_stub": ("report_plan_stub",),
+    "spm_realign_subject": (
+        "realigned BOLD",
+        "mean BOLD",
+        "motion parameters",
+        "execution logs",
+        "provenance",
+        "node state",
+    ),
+}
+
+
+_STRICT_INPUT_ARTIFACT_TYPES: dict[str, tuple[str, ...]] = {
+    "alff_falff_subject": ("filtered_bold",),
+    "data_inspection": ("rawdata",),
+    "dataset_evaluation": ("dataset_index",),
+    "functional_connectivity_subject": ("filtered_bold", "roi_atlas"),
+    "motion_qc_subject": ("motion_parameters",),
+    "native_auto_acpc_align": ("registered_t1w", "acpc_reference_template"),
+    "native_dicom_conversion_execute": ("approved_dicom_mapping", "rawdata_checksum_snapshot"),
+    "native_preproc_full_dry_run": ("registered_bold", "bids_sidecar"),
+    "native_preproc_full_execute": ("registered_bold", "bids_sidecar"),
+    "nuisance_regression_subject": ("registered_bold", "confound_matrix"),
+    "reho_subject": ("filtered_bold",),
+    "rsfmri_report_exporter": ("registered_report",),
+    "rsfmri_report_package_validator": ("report_package",),
+    "subject_qc": ("smoothed_bold",),
+    "temporal_filtering_subject": ("residual_bold",),
+    "data_readiness_check": ("project_configuration",),
+    "bids_validation_check": ("rawdata",),
+    "rsfmri_bold_reference_check": ("registered_bold", "bids_sidecar"),
+    "rsfmri_motion_qc_plan": ("bold_reference_readiness_report", "motion_parameters"),
+    "rsfmri_preprocessing_plan_stub": ("motion_qc_readiness_report",),
+    "rsfmri_report_plan_stub": ("preprocessing_plan_stub",),
+    "spm_realign_subject": ("BOLD NIfTI", "BOLD sidecar JSON"),
 }
 
 
@@ -248,82 +380,291 @@ def _idempotency_policy(node_id: str) -> IdempotencyPolicy:
     )
 
 
+_EXECUTABLE_PROJECT_LOW = frozenset(
+    {
+        "alff_falff_qc_dataset_report",
+        "contract_smoke",
+        "create_synthetic_bids",
+        "data_inspection",
+        "dataset_evaluation",
+        "docs_inventory",
+        "environment_check",
+        "functional_connectivity_qc_dataset_report",
+        "group_dataset_summary",
+        "motion_qc_dataset_report",
+        "normalization_qc_dataset_report",
+        "nuisance_regression_qc_dataset_report",
+        "project_release_readiness",
+        "registration_qc_dataset_report",
+        "reho_qc_dataset_report",
+        "rsfmri_preprocessing_plan",
+        "rsfmri_report_exporter",
+        "rsfmri_report_package_validator",
+        "slice_timing_qc_dataset_report",
+        "smoothing_qc_dataset_report",
+        "st_realign_motion_chain_report",
+        "temporal_filtering_qc_dataset_report",
+        "tissue_qc_dataset_report",
+    }
+)
+_EXECUTABLE_SUBJECT_LOW = frozenset({"motion_qc_subject", "subject_qc"})
+_EXECUTABLE_SUBJECT_MEDIUM = frozenset(
+    {
+        "alff_falff_subject",
+        "functional_connectivity_subject",
+        "nuisance_regression_subject",
+        "reho_subject",
+        "temporal_filtering_subject",
+    }
+)
+_EXECUTABLE_NATIVE = frozenset(
+    {
+        "native_auto_acpc_align",
+        "native_dicom_conversion_execute",
+        "native_preproc_full_dry_run",
+        "native_preproc_full_execute",
+    }
+)
+_EXECUTABLE_IDS = (
+    _EXECUTABLE_PROJECT_LOW
+    | _EXECUTABLE_SUBJECT_LOW
+    | _EXECUTABLE_SUBJECT_MEDIUM
+    | _EXECUTABLE_NATIVE
+)
+
+_NATIVE_STAGE_IDS = frozenset(
+    {
+        "native_preproc_alff", "native_preproc_atlas_resampling",
+        "native_preproc_bids_sidecar_validation", "native_preproc_coregistration",
+        "native_preproc_detrending", "native_preproc_dicom_to_nifti",
+        "native_preproc_dummy_scan_removal", "native_preproc_falff",
+        "native_preproc_final_report", "native_preproc_functional_connectivity",
+        "native_preproc_group_summary", "native_preproc_input_validation",
+        "native_preproc_motion_qc", "native_preproc_normalization",
+        "native_preproc_nuisance_regression", "native_preproc_realignment",
+        "native_preproc_reho", "native_preproc_roi_timeseries",
+        "native_preproc_segmentation", "native_preproc_slice_timing",
+        "native_preproc_smoothing", "native_preproc_subject_qc",
+        "native_preproc_temporal_filtering", "native_preproc_validation_report",
+    }
+)
+_SPM_BLOCKED_IDS = frozenset(
+    {
+        "spm_coregister_subject", "spm_normalize_subject", "spm_realign_subject",
+        "spm_segment_subject", "spm_slice_timing_subject", "spm_smoke_test",
+        "spm_smooth_subject",
+    }
+)
+_DPABI_BLOCKED_IDS = frozenset(
+    {
+        "dpabi_alff_falff_contract", "dpabi_capability_inspection",
+        "dpabi_functional_connectivity_contract", "dpabi_input_manifest",
+        "dpabi_nuisance_regression_contract", "dpabi_preflight", "dpabi_reho_contract",
+        "dpabi_run_plan", "dpabi_sandbox_smoke_run", "dpabi_signature_probe",
+        "dpabi_single_function_sandbox", "dpabi_subject_smooth",
+        "dpabi_subject_wrapper_report", "dpabi_template_execute",
+        "dpabi_template_instantiate", "dpabi_template_library",
+        "dpabi_temporal_filtering_contract", "dpabi_wrapper_contracts",
+        "dpabi_wrapper_scaffold", "dpabi_wrapper_validation_matrix",
+    }
+)
+_GPU_BLOCKED_IDS = frozenset(
+    {
+        "alff_falff_gpu_candidate_contract", "functional_connectivity_gpu_candidate_contract",
+        "gpu_alff_subject", "gpu_functional_connectivity_subject",
+        "gpu_nuisance_regression_subject", "gpu_reho_subject", "gpu_synthetic_smoke",
+        "gpu_temporal_filtering_subject", "reho_gpu_candidate_contract",
+    }
+)
+_GPU_CONTRACT_IDS = frozenset(
+    {
+        "alff_falff_gpu_candidate_contract",
+        "functional_connectivity_gpu_candidate_contract",
+        "reho_gpu_candidate_contract",
+    }
+)
+_PLAN_ONLY_IDS = frozenset(
+    {
+        "bids_validation_check", "data_readiness_check", "rsfmri_bold_reference_check",
+        "rsfmri_motion_qc_plan", "rsfmri_preprocessing_plan_stub",
+        "rsfmri_report_plan_stub",
+    }
+)
+
+_REPORT_IDS = frozenset(
+    node_id
+    for node_id in _EXECUTABLE_PROJECT_LOW
+    if node_id not in {"contract_smoke", "create_synthetic_bids", "data_inspection", "environment_check"}
+)
+
+
+def _write_roots(node_id: str) -> tuple[str, ...]:
+    if node_id in _EXECUTABLE_SUBJECT_LOW | _EXECUTABLE_SUBJECT_MEDIUM:
+        return ("derivatives",)
+    if node_id == "rsfmri_report_exporter":
+        return ("exports",)
+    if node_id in _REPORT_IDS:
+        return ("reports",)
+    if node_id == "native_dicom_conversion_execute":
+        return ("data", "work", "logs")
+    if node_id == "native_auto_acpc_align":
+        return ("derivatives", "work", "logs")
+    if node_id == "native_preproc_full_execute":
+        return ("derivatives", "reports", "work", "logs")
+    if node_id == "native_preproc_full_dry_run":
+        return ("work", "logs")
+    if node_id in _NATIVE_STAGE_IDS:
+        return ("derivatives", "reports")
+    if node_id in _SPM_BLOCKED_IDS | _DPABI_BLOCKED_IDS | _GPU_BLOCKED_IDS:
+        return ()
+    return ("work", "logs") if node_id in _EXECUTABLE_IDS else ()
+
+
+def _declared_contract_fields(node_id: str) -> dict[str, Any]:
+    if node_id in _EXECUTABLE_IDS:
+        backend = {
+            "native_auto_acpc_align": "native_python",
+            "native_dicom_conversion_execute": "medimage-native",
+            "native_preproc_full_dry_run": "native_python",
+            "native_preproc_full_execute": "native_python",
+        }.get(node_id, "python")
+        return {
+            "backend": backend,
+            "parallel_level": (
+                "subject"
+                if node_id in _EXECUTABLE_SUBJECT_LOW | _EXECUTABLE_SUBJECT_MEDIUM
+                else "project"
+            ),
+            "requires_approval": node_id in {
+                "native_auto_acpc_align", "native_dicom_conversion_execute",
+                "native_preproc_full_execute",
+            },
+            "manual_required": False,
+            "risk_level": (
+                "medium"
+                if node_id in _EXECUTABLE_SUBJECT_MEDIUM
+                or node_id in {
+                    "native_auto_acpc_align", "native_dicom_conversion_execute",
+                    "native_preproc_full_execute",
+                }
+                else "low"
+            ),
+            "capability_level": (
+                "metadata_only"
+                if node_id in {"contract_smoke", "rsfmri_preprocessing_plan"}
+                else "computed"
+            ),
+            "executable": True,
+        }
+    if node_id in _PLAN_ONLY_IDS:
+        return {
+            "backend": "contract", "parallel_level": "project",
+            "requires_approval": False, "manual_required": False,
+            "risk_level": "low", "capability_level": "metadata_only", "executable": False,
+        }
+    if node_id in _NATIVE_STAGE_IDS:
+        return {
+            "backend": "native_python", "parallel_level": "project",
+            "requires_approval": False, "manual_required": False,
+            "risk_level": "low", "capability_level": "computed", "executable": False,
+        }
+    if node_id in _SPM_BLOCKED_IDS:
+        return {
+            "backend": "matlab-spm", "parallel_level": "subject",
+            "requires_approval": True,
+            "manual_required": node_id == "spm_realign_subject",
+            "risk_level": "high", "capability_level": "scaffolded", "executable": False,
+        }
+    if node_id in _DPABI_BLOCKED_IDS:
+        return {
+            "backend": "dpabi", "parallel_level": "project",
+            "requires_approval": True, "manual_required": False,
+            "risk_level": "high", "capability_level": "unavailable", "executable": False,
+        }
+    if node_id in _GPU_BLOCKED_IDS:
+        if node_id in _GPU_CONTRACT_IDS:
+            return {
+                "backend": "contract", "parallel_level": "project",
+                "requires_approval": False, "manual_required": False,
+                "risk_level": "low", "capability_level": "unavailable",
+                "executable": False,
+            }
+        computed = node_id in {
+            "gpu_alff_subject", "gpu_functional_connectivity_subject",
+            "gpu_nuisance_regression_subject", "gpu_reho_subject",
+            "gpu_temporal_filtering_subject",
+        }
+        return {
+            "backend": "gpu", "parallel_level": "subject",
+            "requires_approval": True, "manual_required": False,
+            "risk_level": "medium",
+            "capability_level": "computed" if computed else "unavailable",
+            "executable": False,
+        }
+    raise ValueError(f"Node id has no explicit contract declaration: {node_id}")
+
+
 def _build_contracts() -> dict[str, NodeContract]:
-    catalog = {item.id: item for item in build_tool_catalog()}
+    declared_ids = (
+        _EXECUTABLE_IDS | _NATIVE_STAGE_IDS | _SPM_BLOCKED_IDS
+        | _DPABI_BLOCKED_IDS | _GPU_BLOCKED_IDS | _PLAN_ONLY_IDS
+    )
+    expected_ids = set(NODE_REGISTRY) | set(_PLAN_ONLY_IDS)
+    if declared_ids != expected_ids:
+        missing = sorted(expected_ids - declared_ids)
+        extra = sorted(declared_ids - expected_ids)
+        raise ValueError(f"Node contract declarations inconsistent: missing={missing}, extra={extra}")
+    if not _EXECUTABLE_IDS <= set(_STRICT_PARAMETERS):
+        raise ValueError(
+            "Executable nodes without explicit parameter schemas: "
+            f"{sorted(_EXECUTABLE_IDS - set(_STRICT_PARAMETERS))}"
+        )
     contracts: dict[str, NodeContract] = {}
-    for node_id in sorted(catalog):
+    for node_id in sorted(declared_ids):
         if node_id in contracts:
             raise ValueError(f"Duplicate node contract id: {node_id}")
-        item = catalog[node_id]
-        explicit_metadata = node_id in TOOL_METADATA
-        registered = node_id in NODE_REGISTRY
+        fields = _declared_contract_fields(node_id)
+        executable = bool(fields["executable"])
+        external = fields["backend"] in {"matlab-spm", "dpabi", "gpu"}
         strict = node_id in _STRICT_PARAMETERS
-        external = item.backend in {"matlab-spm", "dpabi", "gpu"}
-        metadata_contract = (
-            item.backend == "contract"
-            or bool(set(item.tags) & {"contract", "metadata", "plan", "preflight", "capability"})
-            or any(token in node_id for token in ("_plan", "_stub", "_metadata", "_manifest", "_signature", "_template"))
-        )
-        capability = (
-            "unavailable"
-            if not explicit_metadata
-            else "metadata_only"
-            if not registered
-            else "scaffolded"
-            if external and item.manual_required
-            else "metadata_only"
-            if metadata_contract
-            else "computed"
-        )
-        # External/manual contracts remain reviewable compatibility metadata,
-        # but they are not executable contracts until their runner-specific
-        # inputs, outputs, gates, and side effects are explicitly modelled.
-        coordinated_native_stage = (
-            node_id.startswith("native_preproc_")
-            and node_id not in {"native_preproc_full_execute", "native_preproc_full_dry_run"}
-        )
-        executable = (
-            registered
-            and explicit_metadata
-            and not (external or item.manual_required or coordinated_native_stage)
-        )
         contracts[node_id] = NodeContract(
             node_id=node_id,
             contract_version=(
                 "1.1.0"
                 if node_id in {"native_preproc_full_execute", "native_dicom_conversion_execute"}
                 else "1.0.0"
-                if strict
-                else "0.9.0-legacy"
             ),
-            backend=item.backend,
-            input_schema=_artifact_schema(item.inputs, output=False),
+            backend=fields["backend"],
+            parallel_level=fields["parallel_level"],
+            requires_approval=fields["requires_approval"],
+            manual_required=fields["manual_required"],
+            risk_level=fields["risk_level"],
+            write_roots=_write_roots(node_id),
+            input_schema=_artifact_schema(
+                list(_STRICT_INPUT_ARTIFACT_TYPES.get(node_id, ())), output=False
+            ),
             parameter_schema=deepcopy(_STRICT_PARAMETERS.get(node_id, {})),
             output_schema=_artifact_schema(
-                list(_STRICT_OUTPUT_ARTIFACT_TYPES.get(node_id, tuple(item.outputs))),
+                list(_STRICT_OUTPUT_ARTIFACT_TYPES.get(node_id, ())),
                 output=True,
             ),
             preconditions=("reviewed plan validation succeeded",),
             postconditions=("declared artifacts and node state agree",),
             side_effects=("writes only within ticket output roots",),
             resources=ResourceRequirements(
-                backend=item.backend,
-                gpu_required=item.backend == "gpu",
-                external_process=item.backend in {"matlab-spm", "dpabi"},
+                backend=fields["backend"],
+                gpu_required=fields["backend"] == "gpu",
+                external_process=fields["backend"] in {"matlab-spm", "dpabi"},
             ),
             retry_policy=_recovery_policy(node_id, external=external),
             idempotency=_idempotency_policy(node_id),
             validation_policy=ValidationPolicy(
-                allow_additional_parameters=not strict,
+                allow_additional_parameters=not strict and not executable,
                 enforce_backend=True,
-                compatibility_mode=None if strict else "legacy_v1",
-                deprecation=(
-                    None
-                    if strict
-                    else "Legacy permissive parameters will require an explicit schema in contract v1."
-                ),
+                compatibility_mode=None,
+                deprecation=None,
             ),
-            capability_level=capability,
+            capability_level=fields["capability_level"],
             executable=executable,
         )
     return contracts

@@ -92,7 +92,8 @@ def test_raw_dicom_and_bids_expected_wording_exists():
     assert "Converted subjects" in combined
     messages = _read_en_messages()
     assert 't("data.bids.rawExpectedDescription")' in bids
-    assert "NIfTI QC is not applicable until DICOM data is converted." in nifti
+    assert 't("technical.NiftiQcSnapshot.notApplicableDescription")' in nifti
+    assert "NIfTI QC is not applicable until DICOM data is converted." in messages
     assert (
         "BIDS validation is expected to be incomplete before DICOM-to-NIfTI conversion." in messages
     )

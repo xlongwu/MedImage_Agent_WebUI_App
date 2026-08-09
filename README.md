@@ -94,7 +94,8 @@ API Layer (FastAPI + Pydantic)
     -> Services and Schemas
 Agent Runtime (Plan-then-Execute + Approval Gate)
     -> Pipeline Runtime (DAG Executor + Scheduler)
-    -> Plugin Node Registry + Tool Catalog
+    -> Plugin Node Registry + canonical Node Contracts
+    -> Tool Catalog (read-only presentation projection)
 ```
 
 State is local and project-scoped: SQLite stores project metadata and JSON
@@ -106,7 +107,10 @@ and project consent gates are enabled, reviewed preferences and project
 experience are stored in a separate local SQLite authority and injected only
 as a bounded, typed context before planning. Scientific memory is never an
 execution constraint: it requires a new task-level confirmation and its exact
-snapshot is bound to the Reviewed Plan and Approval Summary. See the
+snapshot is bound to the Reviewed Plan and Approval Summary. Explicitly disabled
+memory produces a typed disabled context; enabled memory with a failed database
+or outbox preflight blocks planning with a structured error instead of silently
+continuing with an empty context. Operational lag is reported as partial. See the
 [Memory System Design](docs/架构与决策/记忆系统设计方案.md).
 
 See [Architecture](docs/架构与决策/系统架构.md) for current router, service, schema,
@@ -131,6 +135,10 @@ existing lifecycle, Reviewed Plan, Approval Gate, Execution Ticket, sole
 Execution Gateway, Pipeline Runtime, and artifact evidence. They do not create
 a second execution path. The source implementation is not yet a packaged or
 released `v0.7.0` claim; the published version surfaces remain `v0.6.0-rc1`.
+Each attempt persists an immutable dispatch and ordered gateway events. Replaying
+the same command returns the persisted result without running the executor again;
+an interrupted dispatch that had already started is reported as outcome-unknown
+and requires inspection rather than automatic re-execution.
 
 DICOM/FunRaw/T1Raw datasets support read-only detection and conversion dry-run
 preview. Native conversion can enter the reviewed gateway path only when its

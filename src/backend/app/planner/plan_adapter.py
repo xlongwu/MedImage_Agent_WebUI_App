@@ -711,7 +711,7 @@ def classify_plan_nodes(plan: dict[str, Any]) -> dict[str, list[str]]:
         # Allowed categories
         if cat.backend == "gpu":
             result["allowed_gpu_nodes"].append(nid)
-        elif "contract" in cat.tags or "capability" in nid or "preflight" in nid:
+        elif cat.backend == "contract":
             result["allowed_contract_nodes"].append(nid)
         else:
             result["allowed_python_nodes"].append(nid)

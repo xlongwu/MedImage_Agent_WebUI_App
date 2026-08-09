@@ -173,6 +173,23 @@ def test_fake_http_invalid_json_returns_error(monkeypatch):
     assert any("LLM_PLAN_JSON_PARSE_ERROR" in error for error in result.errors)
 
 
+def test_fake_http_invalid_json_gets_exactly_one_schema_repair(monkeypatch):
+    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+    calls = 0
+
+    def fake_post(url, headers, body, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return FakeResponse({"choices": [{"message": {"content": "not json"}}]})
+        return FakeResponse(_valid_plan_response())
+
+    result = call_openai_compatible_provider("motion", http_post=fake_post)
+
+    assert result.ok is True
+    assert calls == 2
+
+
 def test_fake_http_unknown_node_returns_error(monkeypatch):
     monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
 

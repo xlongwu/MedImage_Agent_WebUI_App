@@ -10,6 +10,7 @@ from src.backend.app.runtime.node_contract_registry import (
     validate_and_normalize_parameters,
 )
 from src.backend.app.runtime.node_registry import NODE_REGISTRY
+from src.backend.app.runtime.tool_catalog import build_tool_catalog
 
 
 def _plan(node_id: str, *, backend: str, params: dict | None = None, **node_fields):
@@ -45,6 +46,10 @@ def test_every_registered_node_has_a_serializable_versioned_contract():
         assert "retry_policy" in payload
         assert "idempotency" in payload
         assert "validation_policy" in payload
+        assert "requires_approval" in payload
+        assert "manual_required" in payload
+        assert "risk_level" in payload
+        assert "write_roots" in payload
 
 
 def test_strict_contract_rejects_type_range_unknown_fields_and_normalizes_defaults():
@@ -132,19 +137,37 @@ def test_native_execution_hash_binds_reviewed_subject_scope():
     assert sub_001.normalized_params_hash != sub_002.normalized_params_hash
 
 
-def test_fallback_contract_is_unavailable_while_legacy_compatibility_is_versioned():
-    fallback = get_node_contract("dpabi_alff_falff_contract")
-    assert fallback.capability_level == "unavailable"
-    assert fallback.executable is False
-    assert fallback.contract_version == "0.9.0-legacy"
-    assert fallback.validation_policy.compatibility_mode == "legacy_v1"
-    assert fallback.validation_policy.deprecation
+def test_contracts_are_authoritative_and_no_legacy_or_permissive_contract_remains():
+    contract = get_node_contract("dpabi_alff_falff_contract")
+    assert contract.capability_level in {"unavailable", "metadata_only"}
+    assert contract.executable is False
+
+    for item in NODE_CONTRACTS.values():
+        assert "legacy" not in item.contract_version
+        assert item.validation_policy.compatibility_mode is None
+        assert item.validation_policy.deprecation is None
+        if item.executable:
+            assert item.validation_policy.allow_additional_parameters is False
 
     result = validate_plan(
         _plan("dpabi_alff_falff_contract", backend="unknown", params={"legacy": 1})
     )
     assert result.ok is False
     assert any(error.code == "NODE_CONTRACT_NOT_EXECUTABLE" for error in result.errors)
+
+
+def test_tool_catalog_safe_fields_are_derived_from_node_contracts():
+    catalog = {item.id: item for item in build_tool_catalog()}
+    assert set(catalog) == set(NODE_CONTRACTS)
+    for node_id, contract in NODE_CONTRACTS.items():
+        item = catalog[node_id]
+        assert item.backend == contract.backend
+        assert item.parallel_level == contract.parallel_level
+        assert item.requires_approval == contract.requires_approval
+        assert item.manual_required == contract.manual_required
+        assert item.risk_level == contract.risk_level
+        assert item.inputs == [value.artifact_type for value in contract.input_schema]
+        assert item.outputs == [value.artifact_type for value in contract.output_schema]
 
 
 def test_missing_contract_fails_closed(monkeypatch):
@@ -155,14 +178,14 @@ def test_missing_contract_fails_closed(monkeypatch):
 
 
 def test_recovery_capabilities_default_false_and_first_batch_is_explicit():
-    legacy = get_node_contract("dpabi_alff_falff_contract")
-    assert legacy.retry_policy.retryable is False
-    assert legacy.retry_policy.supports_subject_subset is False
-    assert legacy.retry_policy.supports_resume is False
-    assert legacy.retry_policy.checkpoint_schema is None
-    assert legacy.retry_policy.mutable_parameters_for_recovery == ()
-    assert legacy.retry_policy.backend_switch_targets == ()
-    assert legacy.idempotency.attempt_output_strategy == "none"
+    blocked = get_node_contract("dpabi_alff_falff_contract")
+    assert blocked.retry_policy.retryable is False
+    assert blocked.retry_policy.supports_subject_subset is False
+    assert blocked.retry_policy.supports_resume is False
+    assert blocked.retry_policy.checkpoint_schema is None
+    assert blocked.retry_policy.mutable_parameters_for_recovery == ()
+    assert blocked.retry_policy.backend_switch_targets == ()
+    assert blocked.idempotency.attempt_output_strategy == "none"
 
     fc = get_node_contract("functional_connectivity_subject")
     assert fc.retry_policy.retryable is True

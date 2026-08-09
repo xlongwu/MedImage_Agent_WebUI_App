@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Badge, Button, Card, Table } from "../../components/ui";
 import { useI18n } from "../../i18n/useI18n";
+import { ApiError } from "../../lib/api/client";
 import {
   forgetMemoryItem,
   getMemoryConsent,
@@ -32,6 +33,17 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const errorMessage = useCallback(
+    (value: unknown, fallback = t("memory.failure")) => {
+      if (value instanceof ApiError) {
+        if (value.code === "MEMORY_STORE_UNHEALTHY") return t("memory.storeFailure");
+        if (value.code === "MEMORY_OUTBOX_PREFLIGHT_FAILED") return t("memory.outboxFailure");
+      }
+      return value instanceof Error ? value.message : fallback;
+    },
+    [t],
+  );
+
   const reload = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
@@ -49,11 +61,11 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
       setForgottenItems(nextForgottenItems.items);
       setCandidates(nextCandidates.items);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : t("memory.failure"));
+      setError(errorMessage(nextError));
     } finally {
       setLoading(false);
     }
-  }, [baseUrl, projectId, t]);
+  }, [baseUrl, errorMessage, projectId]);
 
   useEffect(() => {
     void reload();
@@ -76,7 +88,7 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
       );
       setConsent(next);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : t("memory.failure"));
+      setError(errorMessage(nextError));
     } finally {
       setSaving(false);
     }
@@ -96,7 +108,7 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
       );
       await reload();
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : t("memory.failure"));
+      setError(errorMessage(nextError));
     } finally {
       setSaving(false);
     }
@@ -110,7 +122,7 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
       await pinMemoryItem(projectId, item, !item.pinned, memoryCommandId("pin"), { baseUrl });
       await reload();
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : t("memory.failure"));
+      setError(errorMessage(nextError));
     } finally {
       setSaving(false);
     }
@@ -131,7 +143,7 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
       });
       await reload();
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : t("memory.invalidRestore"));
+      setError(errorMessage(nextError, t("memory.invalidRestore")));
     } finally {
       setSaving(false);
     }
@@ -144,7 +156,7 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
       await forgetMemoryItem(projectId, item, memoryCommandId("forget"), { baseUrl });
       await reload();
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : t("memory.failure"));
+      setError(errorMessage(nextError));
     } finally {
       setSaving(false);
     }
@@ -162,10 +174,27 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
       {consent ? (
         <div aria-label={t("memory.controls")}>
           <p>
-            <Badge tone={consent.available ? "success" : "warning"}>
-              {consent.available ? t("memory.available") : t("memory.disabled")}
+            <Badge tone={consent.status === "healthy" ? "success" : "warning"}>
+              {consent.status === "healthy"
+                ? t("memory.healthy")
+                : consent.status === "partial"
+                  ? t("memory.partial")
+                  : consent.status === "failure"
+                    ? t("memory.failed")
+                    : t("memory.disabled")}
             </Badge>
           </p>
+          {consent.status === "partial" ? (
+            <p role="status">
+              {t("memory.operationalSummary", {
+                lag: consent.outbox_lag,
+                retry: consent.retry_jobs,
+                dead: consent.dead_letter_jobs,
+                forget: consent.pending_forget_records,
+              })}
+            </p>
+          ) : null}
+          {consent.status === "failure" ? <p role="alert">{t("memory.healthFailure")}</p> : null}
           <Button
             disabled={saving || !consent.generation_available}
             onClick={() => void updateConsent("generate_enabled")}
@@ -202,7 +231,11 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
           <tbody>
             {candidates.map((candidate) => (
               <tr key={candidate.candidate_id}>
-                <td>{candidate.content_text}</td>
+                <td>
+                  {candidate.sensitivity === "restricted" || candidate.sensitivity === "rejected"
+                    ? t("memory.sensitiveHidden")
+                    : candidate.content_text}
+                </td>
                 <td>{candidate.impact_class}</td>
                 <td>
                   <Button disabled={saving} onClick={() => void review(candidate, true)}>
@@ -233,7 +266,12 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
           <tbody>
             {items.map((item) => (
               <tr key={item.memory_id}>
-                <td>{item.revision.content_text}</td>
+                <td>
+                  {item.revision.sensitivity === "restricted" ||
+                  item.revision.sensitivity === "rejected"
+                    ? t("memory.sensitiveHidden")
+                    : item.revision.content_text}
+                </td>
                 <td>{item.sources.map((source) => source.source_ref).join(", ")}</td>
                 <td>
                   <Button disabled={saving} onClick={() => void pin(item)} variant="secondary">

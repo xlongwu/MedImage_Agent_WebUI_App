@@ -190,6 +190,9 @@ export type AgentTaskTechnicalDetails = {
   memory_context_hash?: string | null;
   memory_refs?: Record<string, unknown>[];
   memory_retrieval_policy_version?: string | null;
+  memory_status?: "disabled" | "enabled" | "partial" | null;
+  memory_used_bytes?: number | null;
+  memory_omitted_count?: number | null;
   memory_warnings?: string[];
   memory_available?: boolean | null;
   memory_generate_enabled?: boolean | null;

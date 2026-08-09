@@ -188,6 +188,9 @@ def test_projection_exposes_frozen_memory_consent_and_provenance_without_mutatio
                     "context_hash": "memory-context-hash",
                     "retrieval_policy_version": "memory-retrieval-v1",
                     "evidence_refs": [{"memory_id": "memory-1"}],
+                    "status": "partial",
+                    "used_bytes": 512,
+                    "omitted_count": 2,
                 },
                 "memory_consent": {
                     "available": True,
@@ -206,6 +209,9 @@ def test_projection_exposes_frozen_memory_consent_and_provenance_without_mutatio
     )
 
     assert projected.technical_details.memory_context_hash == "memory-context-hash"
+    assert projected.technical_details.memory_status == "partial"
+    assert projected.technical_details.memory_used_bytes == 512
+    assert projected.technical_details.memory_omitted_count == 2
     assert projected.technical_details.memory_available is True
     assert projected.technical_details.memory_generate_enabled is False
     assert projected.technical_details.memory_use_enabled is True
@@ -249,6 +255,7 @@ def _terminal_evidence(*, reload_status: str = "passed", completeness: str = "co
             goal_contract_hash="goal-hash",
             run_id="run-1",
             execution_ticket_id="ticket-1",
+            dispatch_id="dispatch-1",
         ),
         collected_at=NOW,
         sources=(),

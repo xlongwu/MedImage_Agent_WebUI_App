@@ -153,11 +153,19 @@ class ExecutionProvenance(BaseModel):
 
     project_id: str
     reviewed_plan_id: str | None = None
+    execution_ticket_id: str | None = None
+    dispatch_id: str | None = None
+    approval_summary_hash: str | None = None
+    plan_hash: str | None = None
+    memory_context_hash: str | None = None
+    scope_hash: str | None = None
+    allowlist_hash: str | None = None
     run_id: str
     node_id: str
     backend: ExecutionBackend = "unknown"
     command_template_id: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
+    parameter_hash: str | None = None
     input_paths: list[str] = Field(default_factory=list)
     input_checksums: dict[str, str] = Field(default_factory=dict)
     output_paths: list[str] = Field(default_factory=list)

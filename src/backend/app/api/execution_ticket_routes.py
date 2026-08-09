@@ -34,8 +34,15 @@ def get_execution_ticket(
         raise NotFoundError(
             f"Execution ticket not found for project: {execution_ticket_id}"
         )
+    dispatch = store.get_gateway_dispatch_by_ticket(execution_ticket_id)
     return {
         "project_id": project_id,
         "execution_ticket": ticket,
         "events": store.list_execution_ticket_events(execution_ticket_id),
+        "dispatch": dispatch,
+        "dispatch_events": (
+            store.list_gateway_dispatch_events(dispatch.dispatch_id)
+            if dispatch is not None
+            else []
+        ),
     }

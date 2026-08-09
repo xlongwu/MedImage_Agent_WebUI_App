@@ -265,14 +265,10 @@ def test_backend_mismatch_is_rejected():
     assert any(error.code == "BACKEND_MISMATCH" for error in result.errors)
 
 
-# ── 16. uncataloged metadata → warning ──
+# ── 16. blocked contract → explicit error ──
 
 
-def test_uncataloged_warning():
-    """Fallback nodes (in NODE_REGISTRY but not in TOOL_METADATA)
-    should trigger UNCATALOGED_METADATA warning."""
-    # dpabi_alff_falff_contract is a real NODE_REGISTRY entry that
-    # gets fallback metadata (description starts with "No catalog metadata yet")
+def test_blocked_contract_has_explicit_contract_error_without_fallback_warning():
     result = validate_plan(
         {
             "pipeline_id": "p",
@@ -282,7 +278,7 @@ def test_uncataloged_warning():
         }
     )
     assert result.ok is False
-    assert any(w.code == "UNCATALOGED_METADATA" for w in result.warnings)
+    assert all(w.code != "UNCATALOGED_METADATA" for w in result.warnings)
     assert any(error.code == "NODE_CONTRACT_NOT_EXECUTABLE" for error in result.errors)
 
 

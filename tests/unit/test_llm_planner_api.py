@@ -194,10 +194,7 @@ def test_openai_compatible_no_api_key_leak(monkeypatch):
     assert "sk-secret-test-key" not in raw
 
 
-# ── 17. mock provider still works (regression) ──
-
-
-def test_mock_provider_regression():
+def test_removed_mock_provider_is_rejected_without_fallback():
     resp = _post_plan(
         {
             "goal": "motion correction",
@@ -206,34 +203,13 @@ def test_mock_provider_regression():
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["ok"] is True
+    assert data["ok"] is False
     assert data["provider"] == "mock"
-    assert data["plan"]["pipeline_id"] == "planned_motion_qc"
-    assert data["plan"]["goal"] == "motion correction"
-    assert isinstance(data["plan"].get("project_context"), dict)
-    assert isinstance(data["plan"].get("metadata"), dict)
-    assert data["plan"]["metadata"]["provider"] == "mock"
-    assert data["plan"]["metadata"]["external_api_used"] is False
-    assert data["plan"]["metadata"]["execution_enabled"] is False
-    assert data["plan"]["nodes"]
+    assert data["plan"] == {}
+    assert data["planner_evidence"]["failure_code"] == "UNSUPPORTED_PROVIDER"
 
 
-def test_mock_generator_returns_minimal_reviewed_plan_shape():
-    response = generate_plan_from_goal("motion correction", provider="mock")
-    data = response.to_dict()
-
-    assert data["ok"] is True
-    assert data["provider"] == "mock"
-    assert data["plan"]["pipeline_id"] == "planned_motion_qc"
-    assert isinstance(data["plan"].get("project_context"), dict)
-    assert data["plan"]["project_context"]["source"] == "planner_minimal_mock"
-    assert data["plan"]["goal"] == "motion correction"
-    assert data["plan"]["nodes"]
-    assert data["plan"]["metadata"]["external_api_used"] is False
-    assert data["plan"]["metadata"]["execution_enabled"] is False
-
-
-# ── 19. rule_based provider still works (regression) ──
+# ── rule_based provider remains the deterministic local provider ──
 
 
 def test_rule_based_provider_regression():

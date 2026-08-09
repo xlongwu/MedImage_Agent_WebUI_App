@@ -118,7 +118,7 @@ def _make_plan(created: dict, **extra_nodes) -> dict:
     }
 
 
-def _save_plan(client: TestClient, created: dict, plan: dict) -> str:
+def _save_plan(client: TestClient, created: dict, plan: dict) -> dict:
     """Save plan and return reviewed_plan_id."""
     goal = "MVP test plan"
     resp = client.post(
@@ -134,11 +134,11 @@ def _save_plan(client: TestClient, created: dict, plan: dict) -> str:
         },
     )
     assert resp.status_code == 200, resp.text
-    return resp.json()["reviewed_plan"]["reviewed_plan_id"]
+    return resp.json()["reviewed_plan"]
 
 
 def _execute(
-    client: TestClient, created: dict, plan: dict, reviewed_plan_id: str, **overrides
+    client: TestClient, created: dict, plan: dict, reviewed: dict, **overrides
 ) -> dict:
     """Execute a reviewed plan and return the response dict."""
     body = {
@@ -148,9 +148,12 @@ def _execute(
             "approved_by": "test-user",
             "approved_nodes": ["*"],
             "rejected_nodes": [],
+            "approval_summary_hash": reviewed["payload"]["approval_envelope"][
+                "summary_hash"
+            ],
         },
         "project_id": created["project_id"],
-        "reviewed_plan_id": reviewed_plan_id,
+        "reviewed_plan_id": reviewed["reviewed_plan_id"],
         "project_config_path": created["project_config_path"],
         "dry_run": False,
         "persist_audit": True,

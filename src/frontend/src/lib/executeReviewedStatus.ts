@@ -135,7 +135,7 @@ const STATUS_MAP: Record<string, StatusEntry> = {
     nextAction:
       "Review the adapter policy details. Remove blocked node types (SPM/DPABI/GUI/manual/unknown) or switch to a pipeline that uses only safe allowlisted nodes.",
     safetyNote:
-      "SPM, DPABI, and GUI nodes are intentionally blocked in the current safe-execution path to prevent unverified external tool invocation.",
+      "SPM, DPABI, and manual-required nodes are intentionally blocked in the current safe-execution path to prevent unverified external tool invocation.",
     canRetryDryRun: true,
     canAttemptExecute: false,
   },

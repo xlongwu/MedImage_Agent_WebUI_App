@@ -1,9 +1,17 @@
 # 计划 02：受控单 Agent Harness
 
-> 状态：Proposed。任务模式：Feature Bundle + Architecture / Refactor。  
-> 目标：在不放宽审批和执行边界的前提下，把现有一次性规划流程升级为可观察、可恢复、有上限的单 Agent 工作循环。
+> 状态：**工程实现与当前规则验收已完成。**任务模式：Feature Bundle + Architecture / Refactor。
+> 更新日期：2026-08-09。本文保留原始设计合同作为审计依据；下方实施清单不是从零开始的开发指令。
 
-## 一页决策
+## 当前实施记录与验收边界
+
+静态源码审查确认，Harness 的主要实现已存在：`AgentHarnessAttempt`、`AgentHarnessStep`、`AgentHarnessContext` 与 `ActionEnvelope` schema；项目绑定的 SQLite 存储和租约；单步 `AgentHarnessService`；启动恢复 scheduler；固定 capability catalog 与 provider adapter；默认关闭的配置；Agent Task read projection 和 Agent Workspace 状态卡；以及单元、回放、租约、执行边界和生命周期测试。
+
+Harness 仍只能包裹规划/解释层，不能获得 Approval、Execution Ticket、Execution Gateway、runner、shell、文件写入或任意 MCP 权限。其开关关闭时不创建 Harness attempt；开关开启但 provider、schema、预算或 lease 出错时必须记录结构化停止原因，且不得创建 plan、ticket 或执行副作用。
+
+原文中的“回退到当前路径”“保留兼容入口”和“旧数据库安全迁移”不再适用于当前仓库规则。重新验收或后续改动必须采用单一权威路径和单一持久格式：同步更新所有当前消费者并删除被替换实现，不新增 fallback、shim 或旧格式读取。
+
+## 原始方案（仅作审计上下文）
 
 Harness 是一个确定性的控制层，不是“让模型自由反复调用工具”。模型只能返回下一步的结构化建议；控制层负责读取上下文、检查预算、持久化每一步、请求用户决定、调用既有规划服务，并在审批后才允许现有执行链继续。
 
@@ -22,10 +30,10 @@ Harness 是一个确定性的控制层，不是“让模型自由反复调用工
 
 完成条件：
 
-- [ ] 每个启用的 Agent Task 只有一个可恢复的 Harness attempt，所有 model step、工具提议、校验和状态迁移均可按序读取。
-- [ ] 超预算、重复 step、进程重启、模型错误、非法工具请求和 stale lease 都安全停止，不产生 Ticket 或执行副作用。
-- [ ] 用户能在现有 Agent Workspace 看到下一步、停止原因和脱敏 trace 摘要；GET 不触发新的模型调用或协调。
-- [ ] 关闭 flag、未配置 provider 或 Harness 失败时，回退到当前确定性 Agent Task 路径。
+- [x] 每个启用的 Agent Task 只有一个可恢复的 Harness attempt，所有 model step、工具提议、校验和状态迁移均可按序读取。
+- [x] 超预算、重复 step、进程重启、模型错误、非法工具请求和 stale lease 都安全停止，不产生 Ticket 或执行副作用。
+- [x] 用户能在现有 Agent Workspace 看到下一步、停止原因和脱敏 trace 摘要；GET 不触发新的模型调用或协调。
+- [x] 关闭 flag 时显式选择当前确定性 Agent Task 路径；Harness 已启用但 provider 未配置或运行失败时保存结构化停止原因，不切换 planner。
 
 ## 当前依据
 
@@ -105,7 +113,7 @@ provider 接口只接收 `ActionEnvelope` JSON Schema 和上述 typed snapshot�
 | 步骤 | 文件 | 明确交付 |
 |---|---|---|
 | A1 | 修改 `schemas/agent_lifecycle.py`、新建 `schemas/agent_harness.py` | attempt、step、context、ActionEnvelope 和 public summary schema。 |
-| A2 | 修改 `services/mock_store.py`、ProjectStore Protocol 与迁移测试 | 三张表、外键、project binding、命令幂等、lease claim/release/expiry；旧数据库安全迁移。 |
+| A2 | 修改 `services/mock_store.py`、ProjectStore Protocol 与 schema 测试 | 三张表、外键、project binding、命令幂等、lease claim/release/expiry；只接受当前持久格式。 |
 | A3 | 新建 `services/agent_harness_context_service.py` | 唯一 context builder、字段 allowlist、32 KiB 截断、hash 和 redaction。 |
 | A4 | 新建 `services/agent_harness_service.py` | claim 一步、调用 adapter、验证 envelope、保存 step、决定下一 lifecycle command；无后台无限 while loop。 |
 | A5 | 新建 `runtime/agent_harness_scheduler.py` | lifespan-owned 有界调度；一次只 claim 一个过期/待运行 step；按 lease 退出。 |
@@ -116,7 +124,7 @@ provider 接口只接收 `ActionEnvelope` JSON Schema 和上述 typed snapshot�
 | 步骤 | 文件 | 明确交付 |
 |---|---|---|
 | B1 | 新建 `runtime/agent_capability_catalog.py` | 固定六种 kind、允许 lifecycle state、输入 schema、是否只读；默认拒绝。 |
-| B2 | 新建 `planner/agent_model_adapter.py`，修改 `planner/llm_provider.py` | provider 无关的 `propose_action(snapshot) -> ActionEnvelope`；保留当前 planner 兼容入口。 |
+| B2 | 新建 `planner/agent_model_adapter.py`，修改 `planner/llm_provider.py` | provider 无关的 `propose_action(snapshot) -> ActionEnvelope`；统一到当前 planner/provider contract，不保留被替换入口。 |
 | B3 | 修改 `planner/llm_planner.py`、`services/goal_planning_service.py` | `draft_plan` 只走现有 validator/Goal Contract；Harness 不复制规则或计划构造。 |
 | B4 | 修改 `runtime/execution_gateway.py`、`services/approval_summary_service.py` | 添加阻断测试，证明 Harness 永不传入 approval/ticket/dispatch 参数。生产逻辑除必要断言外不改写 gateway。 |
 
