@@ -26,9 +26,19 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
 - 唯一模型协议是 schema version 1 的 `ActionEnvelope`。允许 kind 仅为
   `read_evidence`、`request_decision`、`draft_plan`、`explain_result`、
   `propose_recovery`、`finish`；所有其他 kind 默认拒绝。
-- context 由唯一 builder 产生，最大 32 KiB；只允许目标、生命周期状态、已确认
-  答案、项目证据摘要、reviewed-plan/ticket 摘要和许可的 MemoryContext 字段。
-  超限时先移除旧 trace，再移除可重新读取的项目详情和非必要解释。
+- Context v2 由唯一 builder 从显式 `HarnessContextSources` 产生，最大 32 KiB；
+  builder 不读取 store 或文件。它以固定顺序保存 `goal`、`policy`、
+  `project_evidence`、`decision_state`、`plan_state`、`execution_state`、
+  `latest_observation`、`last_action_result`、`memory_context` 和 `budget` 十个
+  typed sections。每个 section 都带 schema version、稳定 source refs/source hash，
+  总 context 绑定 section hashes、prompt/skill、policy 和 redaction version。
+- Context row 仅在重建后的完整 context hash 相同才可复用；attempt 中的旧 hash
+  不能跳过当前动态来源的重建。Observation、计划、答案、上一步结果、预算或策略变化
+  都会使缓存失效。provider cache miss 不影响确定性行为。
+- 裁剪只会整项移除非必要 section 数据，绝不截断 ID 或 hash。先裁剪 Memory 和
+  可重新读取的 evidence，再裁剪高优先级状态；仍超限时仅保留 goal、policy、
+  decision state、last action result 和 budget。它们仍无法装入时在模型调用前以
+  `AGENT_CONTEXT_LIMIT_EXCEEDED` 安全停止。
 
 ## 安全和恢复
 

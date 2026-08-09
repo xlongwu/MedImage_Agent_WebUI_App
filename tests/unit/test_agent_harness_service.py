@@ -8,6 +8,7 @@ from src.backend.app.schemas.agent_harness import ActionEnvelope
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_harness_service import AgentHarnessService
+from src.backend.app.services.agent_harness_context_service import HarnessContextBuilder
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 from tests.unit.test_agent_task_read_model import _terminal_evidence
@@ -122,6 +123,43 @@ def test_run_one_leaves_a_follow_up_action_for_a_later_wakeup(tmp_path) -> None:
     assert result.attempt.next_step_no == 2
     assert adapter.calls == 1
     assert len(store.list_agent_harness_steps(attempt.attempt_id)) == 1
+
+
+def test_dynamic_last_action_and_budget_rebuild_context_instead_of_reusing_attempt_hash(tmp_path) -> None:
+    store = _store(tmp_path)
+    lifecycle = _created(store)
+    adapter = Adapter(
+        ActionEnvelope(kind="read_evidence", reason="Read current evidence", expected_state="CREATED"),
+        ActionEnvelope(kind="finish", reason="Done", expected_state="CREATED"),
+    )
+    service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter)
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
+
+    first = service.run_one(lifecycle=lifecycle, actor="user")
+    second = service.run_one(
+        lifecycle=store.get_agent_lifecycle(lifecycle.lifecycle_id), actor="user"
+    )
+
+    assert first.attempt.context_hash != second.attempt.context_hash
+    assert store.get_agent_harness_context(first.attempt.context_hash).schema_version == 2
+    assert store.get_agent_harness_context(second.attempt.context_hash).schema_version == 2
+
+
+def test_context_limit_stops_before_provider_call(tmp_path) -> None:
+    store = _store(tmp_path)
+    lifecycle = _created(store)
+    adapter = Adapter(ActionEnvelope(kind="finish", reason="must not run", expected_state="CREATED"))
+    builder = HarnessContextBuilder()
+    builder.MAX_BYTES = 32
+    service = AgentHarnessService(
+        store, config=AgentHarnessConfig(enabled=True), adapter=adapter, context_builder=builder,
+    )
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
+
+    result = service.run_one(lifecycle=lifecycle, actor="user")
+
+    assert result.attempt.terminal_reason == "AGENT_CONTEXT_LIMIT_EXCEEDED"
+    assert adapter.calls == 0
 
 
 def test_run_until_blocked_completes_three_safe_actions_in_one_wakeup(tmp_path) -> None:

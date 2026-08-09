@@ -27,6 +27,18 @@ AgentHarnessActionKind = Literal[
     "propose_recovery",
     "finish",
 ]
+AgentHarnessContextSectionName = Literal[
+    "goal",
+    "policy",
+    "project_evidence",
+    "decision_state",
+    "plan_state",
+    "execution_state",
+    "latest_observation",
+    "last_action_result",
+    "memory_context",
+    "budget",
+]
 
 
 class ActionEnvelope(BaseModel):
@@ -114,21 +126,65 @@ class AgentHarnessStep(BaseModel):
     error_code: str | None = None
 
 
-class AgentHarnessContext(BaseModel):
-    """Immutable, redacted context snapshot used to call the model."""
+class AgentHarnessContextSection(BaseModel):
+    """One immutable, provenance-bound, redacted Context v2 partition."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal[1] = 1
+    source_refs: tuple[str, ...] = ()
+    source_hash: str
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentHarnessContextSections(BaseModel):
+    """Fixed-order typed section container for the model-facing context."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    goal: AgentHarnessContextSection
+    policy: AgentHarnessContextSection
+    project_evidence: AgentHarnessContextSection
+    decision_state: AgentHarnessContextSection
+    plan_state: AgentHarnessContextSection
+    execution_state: AgentHarnessContextSection
+    latest_observation: AgentHarnessContextSection
+    last_action_result: AgentHarnessContextSection
+    memory_context: AgentHarnessContextSection
+    budget: AgentHarnessContextSection
+
+
+class AgentHarnessContext(BaseModel):
+    """Immutable, redacted, fixed-section Context v2 snapshot."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[2] = 2
     context_hash: str
     lifecycle_id: str
     project_id: str
-    allowed_fields_json: dict[str, Any]
+    sections: AgentHarnessContextSections
+    section_hashes: dict[AgentHarnessContextSectionName, str]
     memory_context_hash: str | None = None
     project_snapshot_hash: str
-    prompt_template_version: Literal[1] = 1
+    policy_version: str = "agent-harness-policy-v2"
+    redaction_policy_version: str = "agent-harness-redaction-v2"
+    prompt_template_version: str = "agent-harness-prompt-v2"
+    skill_refs: tuple[str, ...] = ()
     omitted_fields: tuple[str, ...] = ()
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def prompt_payload(self) -> dict[str, Any]:
+        """Return the only fixed-order payload supplied to an action provider."""
+        return {
+            "schema_version": self.schema_version,
+            "policy_version": self.policy_version,
+            "redaction_policy_version": self.redaction_policy_version,
+            "prompt_template_version": self.prompt_template_version,
+            "skill_refs": list(self.skill_refs),
+            "sections": self.sections.model_dump(mode="json"),
+            "omitted_fields": list(self.omitted_fields),
+        }
 
 
 class AgentHarnessSummary(BaseModel):

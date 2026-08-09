@@ -23,6 +23,12 @@ class AgentEvidenceService:
     DEFAULT_TYPES: tuple[EvidenceType, ...] = (
         "project", "dataset", "artifacts", "plans", "runs", "observations", "memory", "capabilities"
     )
+    _CONTEXT_TYPES_BY_STATE: dict[str, tuple[EvidenceType, ...]] = {
+        "SUCCEEDED": ("plans", "runs", "observations"),
+        "GOAL_SATISFIED": ("plans", "runs", "observations"),
+        "HUMAN_HANDOFF": ("plans", "runs", "observations"),
+        "WAITING_FOR_APPROVAL": ("project", "dataset", "artifacts", "plans", "runs", "capabilities", "memory"),
+    }
 
     def __init__(self, store) -> None:
         self.store = store
@@ -48,7 +54,10 @@ class AgentEvidenceService:
         warnings: list[EvidenceWarning] = []
         refs: list[EvidenceSourceRef] = []
         metadata = project.metadata if isinstance(project.metadata, dict) else {}
-        project_ref = EvidenceSourceRef(source_type="project", source_id=project_id)
+        project_ref = EvidenceSourceRef(
+            source_type="project", source_id=project_id,
+            source_hash=stable_hash({"project_id": project_id, "modality": project.modality, "subjects": project.subjects_count}),
+        )
 
         if "project" in requested:
             facts.extend((
@@ -69,7 +78,10 @@ class AgentEvidenceService:
             if dataset is None:
                 missing.append("dataset_summary")
             else:
-                dataset_ref = EvidenceSourceRef(source_type="dataset_summary", source_id=project_id)
+                dataset_ref = EvidenceSourceRef(
+                    source_type="dataset_summary", source_id=project_id,
+                    source_hash=stable_hash({"health_status": dataset.health_status, "subjects": dataset.subjects}),
+                )
                 facts.extend((
                     EvidenceFact(key="dataset_health", value=str(dataset.health_status), source_refs=(dataset_ref,)),
                     EvidenceFact(key="dataset_subject_count", value=dataset.subjects, source_refs=(dataset_ref,)),
@@ -80,7 +92,10 @@ class AgentEvidenceService:
             imports = self.store.list_import_records(project_id) if hasattr(self.store, "list_import_records") else []
             facts.append(EvidenceFact(
                 key="registered_input_count", value=len(imports),
-                source_refs=tuple(EvidenceSourceRef(source_type="dataset_import", source_id=str(item.get("dataset_id") or "unknown")) for item in imports[:64]),
+                source_refs=tuple(EvidenceSourceRef(
+                    source_type="dataset_import", source_id=str(item.get("dataset_id") or "unknown"),
+                    source_hash=stable_hash({"dataset_id": item.get("dataset_id"), "status": item.get("status")}),
+                ) for item in imports[:64]),
             ))
             if not imports:
                 missing.append("registered_input")
@@ -93,7 +108,10 @@ class AgentEvidenceService:
 
         if "runs" in requested:
             runs = self.store.list_run_links(project_id) if hasattr(self.store, "list_run_links") else []
-            run_refs = tuple(EvidenceSourceRef(source_type="run", source_id=run.run_id) for run in runs[:32])
+            run_refs = tuple(EvidenceSourceRef(
+                source_type="run", source_id=run.run_id,
+                source_hash=stable_hash({"run_id": run.run_id, "status": run.status, "updated_at": run.updated_at}),
+            ) for run in runs[:32])
             facts.append(EvidenceFact(key="run_count", value=len(runs), source_refs=run_refs))
             refs.extend(run_refs)
 
@@ -119,7 +137,13 @@ class AgentEvidenceService:
         if "capabilities" in requested:
             provider = metadata.get("agent_planner_provider")
             if isinstance(provider, str) and provider:
-                facts.append(EvidenceFact(key="planner_provider", value=provider, source_refs=(project_ref,)))
+                facts.append(EvidenceFact(
+                    key="planner_provider", value=provider,
+                    source_refs=(EvidenceSourceRef(
+                        source_type="planner_provider", source_id=provider,
+                        source_hash=stable_hash({"provider": provider}),
+                    ),),
+                ))
             else:
                 missing.append("planner_provider")
 
@@ -139,6 +163,59 @@ class AgentEvidenceService:
         if hasattr(self.store, "add_agent_evidence_snapshot"):
             self.store.add_agent_evidence_snapshot(snapshot)
         return snapshot
+
+    @classmethod
+    def select_for_context(cls, snapshot: EvidenceSnapshot, *, lifecycle_state: str) -> EvidenceSnapshot:
+        """Return a directional, immutable evidence view for the current action.
+
+        The source snapshot remains the audit record.  Context needs only the
+        types relevant to the current lifecycle state, so unrelated evidence
+        changes do not defeat a valid provider-prefix cache hit.
+        """
+        wanted = cls._CONTEXT_TYPES_BY_STATE.get(lifecycle_state, cls.DEFAULT_TYPES)
+        requested = tuple(item for item in snapshot.requested_types if item in wanted)
+        if not requested:
+            requested = tuple(item for item in snapshot.requested_types if item in cls.DEFAULT_TYPES)
+        key_prefixes = {
+            "project": {"dataset_type", "subject_count"},
+            "dataset": {"dataset_health", "dataset_subject_count"},
+            "artifacts": {"registered_input_count"},
+            "plans": {"reviewed_plan_count"},
+            "runs": {"run_count"},
+            "observations": {"observation_count", "goal_evaluation_count"},
+            "memory": {"memory_suggestion_count"},
+            "capabilities": {"planner_provider"},
+        }
+        fact_keys = set().union(*(key_prefixes[item] for item in requested))
+        facts = tuple(item for item in snapshot.facts if item.key in fact_keys)
+        refs = tuple(
+            ref for ref in snapshot.source_refs
+            if any(ref.source_type.startswith(prefix) for prefix in (
+                "project" if "project" in requested else "",
+                "dataset" if {"dataset", "artifacts"} & set(requested) else "",
+                "reviewed_plan" if "plans" in requested else "",
+                "run" if "runs" in requested else "",
+                "observation" if "observations" in requested else "",
+                "goal_evaluation" if "observations" in requested else "",
+                "memory" if "memory" in requested else "",
+                "planner_provider" if "capabilities" in requested else "",
+            ) if prefix)
+        )
+        identity = {
+            "schema_version": 1,
+            "parent_snapshot_hash": snapshot.snapshot_hash,
+            "requested_types": requested,
+            "facts": [item.model_dump(mode="json") for item in facts],
+            "missing": list(snapshot.missing),
+            "warnings": [item.model_dump(mode="json") for item in snapshot.warnings],
+            "source_refs": [item.model_dump(mode="json") for item in refs],
+        }
+        return snapshot.model_copy(update={
+            "snapshot_hash": stable_hash(identity),
+            "requested_types": requested,
+            "facts": facts,
+            "source_refs": refs,
+        })
 
     @staticmethod
     def project_relative_ref(project_dir: str | None, value: str) -> str:

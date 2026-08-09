@@ -1,6 +1,6 @@
 # 07：Agent 上下文分层与缓存优化方案
 
-> 状态：Draft，待人工 Review。
+> 状态：Implemented，已完成代码与回归验证；仍按项目流程接受人工 Review。
 > 依赖：04 EvidenceSnapshot、05 计划版本、06 Observation/Recovery 引用。
 
 ## 1. 目标

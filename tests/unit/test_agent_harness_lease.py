@@ -9,6 +9,7 @@ from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_harness import ActionEnvelope, AgentHarnessStep
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_harness_service import AgentHarnessService
+from src.backend.app.services.agent_harness_context_service import HarnessContextSources
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 
@@ -82,7 +83,9 @@ def test_expired_claim_recovers_completed_step_without_another_model_call(tmp_pa
     now = datetime(2026, 1, 1, tzinfo=UTC)
     service = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=adapter, now=lambda: now)
     attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
-    context = service.context_builder.build(lifecycle=lifecycle, project=store.get_project("project-1"))
+    context = service.context_builder.build(sources=HarnessContextSources(
+        lifecycle=lifecycle, project=store.get_project("project-1"), attempt=attempt,
+    ))
     store.add_agent_harness_context(context)
     claimed = attempt.model_copy(update={
         "status": "RUNNING",

@@ -18,7 +18,12 @@ from src.backend.app.schemas.agent_harness import (
     AgentHarnessStep,
 )
 from src.backend.app.schemas.agent_lifecycle import DecisionItem, PendingDecisionBatch, PendingDecisionOption
-from src.backend.app.services.agent_harness_context_service import HarnessContextBuilder
+from src.backend.app.services.agent_evidence_service import AgentEvidenceService
+from src.backend.app.services.agent_harness_context_service import (
+    AgentContextLimitExceededError,
+    HarnessContextBuilder,
+    HarnessContextSources,
+)
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 
 
@@ -145,24 +150,34 @@ class AgentHarnessService:
         project = self.store.get_project(lifecycle.project_id)
         evidence_hash = str((lifecycle.command_context or {}).get("evidence_snapshot_hash") or "")
         evidence = self.store.get_agent_evidence_snapshot(evidence_hash) if evidence_hash and hasattr(self.store, "get_agent_evidence_snapshot") else None
+        if evidence is not None:
+            evidence = AgentEvidenceService.select_for_context(evidence, lifecycle_state=lifecycle.state)
         observation = self._record("get_observation", lifecycle.observation_id)
         evaluation = self._record("get_goal_evaluation", lifecycle.goal_evaluation_id)
         proposal = self._record("get_recovery_proposal", lifecycle.recovery_proposal_id)
         result_summary = self._result_summary(lifecycle, observation, evaluation)
+        reviewed_plan = self._record("get_reviewed_plan", lifecycle.reviewed_plan_id)
+        run_link = self._run_link(lifecycle)
+        last_step = self._last_step(claimed)
+        try:
+            built_context = self.context_builder.build(sources=HarnessContextSources(
+                lifecycle=lifecycle, project=project, evidence_snapshot=evidence,
+                reviewed_plan=reviewed_plan, run_link=run_link, observation=observation,
+                evaluation=evaluation, recovery_proposal=proposal, result_summary=result_summary,
+                last_step=last_step, attempt=claimed,
+            ))
+        except AgentContextLimitExceededError:
+            return HarnessRunResult(
+                lifecycle=lifecycle,
+                attempt=self._stop_claimed(claimed, "AGENT_CONTEXT_LIMIT_EXCEEDED"),
+            )
+        # Always rebuild from explicit current sources.  A previously stored
+        # attempt hash must not hide a changed dynamic section.
         persisted_context = None
         get_context = getattr(self.store, "get_agent_harness_context", None)
-        if claimed.context_hash and callable(get_context):
-            persisted_context = get_context(claimed.context_hash)
-        context = persisted_context or self.context_builder.build(
-            lifecycle=lifecycle,
-            project=project,
-            evidence_snapshot=evidence,
-            observation=observation,
-            evaluation=evaluation,
-            recovery_proposal=proposal,
-            result_summary=result_summary,
-            attempt=claimed,
-        )
+        if callable(get_context):
+            persisted_context = get_context(built_context.context_hash)
+        context = persisted_context or built_context
         self.store.add_agent_harness_context(context)
         claimed = self._with_attempt(claimed, context_hash=context.context_hash)
         claimed = self.store.update_agent_harness_attempt(
@@ -337,7 +352,7 @@ class AgentHarnessService:
         try:
             return (
                 self.adapter.propose_action(
-                    snapshot=context.allowed_fields_json, provider_ref=attempt.provider_ref, repair=False
+                    snapshot=context.prompt_payload(), provider_ref=attempt.provider_ref, repair=False
                 ),
                 1,
             )
@@ -347,7 +362,7 @@ class AgentHarnessService:
             try:
                 return (
                     self.adapter.propose_action(
-                        snapshot=context.allowed_fields_json, provider_ref=attempt.provider_ref, repair=True
+                        snapshot=context.prompt_payload(), provider_ref=attempt.provider_ref, repair=True
                     ),
                     2,
                 )
@@ -358,7 +373,7 @@ class AgentHarnessService:
         if envelope.expected_state != lifecycle.state:
             raise ValueError("AGENT_HARNESS_STALE_ACTION")
         assert_capability_allowed(envelope.kind, lifecycle.state)
-        roots = set(context.allowed_fields_json)
+        roots = set(type(context.sections).model_fields)
         if any(ref.split(".", 1)[0] not in roots for ref in envelope.input_refs):
             raise ValueError("AGENT_HARNESS_REFERENCE_DENIED")
         if envelope.kind == "request_decision":
@@ -626,6 +641,22 @@ class AgentHarnessService:
     def _record(self, name: str, record_id: str | None):
         getter = getattr(self.store, name, None)
         return getter(record_id) if callable(getter) and record_id else None
+
+    def _run_link(self, lifecycle):
+        if not lifecycle.run_id:
+            return None
+        getter = getattr(self.store, "get_run_link_by_run_id", None)
+        return getter(lifecycle.project_id, lifecycle.run_id) if callable(getter) else None
+
+    def _last_step(self, attempt: AgentHarnessAttempt):
+        getter = getattr(self.store, "list_agent_harness_steps", None)
+        if not callable(getter):
+            return None
+        # A completed row for the in-flight step is an idempotency recovery
+        # record, not a prior action result.  Including it would change the
+        # reconstructed input hash and prevent recovery after a lost claim.
+        steps = [step for step in getter(attempt.attempt_id) if step.step_no < attempt.next_step_no]
+        return steps[-1] if steps else None
 
     def _record_result_explanation_event(self, *, lifecycle, step: AgentHarnessStep, explanation) -> None:
         self.orchestrator.record_event(
