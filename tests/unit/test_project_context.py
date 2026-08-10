@@ -318,6 +318,7 @@ def test_explicit_example_project_config_remains_available():
     payload = response.json()
     assert payload["ok"] is True
     assert payload["project_context"]["source"] == "example"
+    assert payload["project_context"]["project_id"] is None
 
 
 def test_execute_reviewed_accepts_consistent_created_project_context(created_project):

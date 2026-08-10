@@ -7,8 +7,8 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from src.backend.app.planner.llm_planner import generate_plan_from_goal
 from src.backend.app.planner.audit_record import stable_hash
+from src.backend.app.planner.llm_planner import generate_plan_from_goal
 from src.backend.app.schemas.planning import PlanningRequest
 from src.backend.app.services.goal_planning_service import GoalPlanningService
 
@@ -42,16 +42,21 @@ def api_plan_from_goal(request: PlanFromGoalRequest) -> dict[str, Any]:
     unsupported goal, unsupported provider) are returned as HTTP 200
     with ok=false.  Only malformed request bodies trigger HTTP 422.
     """
-    if not request.project_id or not request.project_config_path:
+    if not request.project_id and not request.project_config_path:
         return _context_error_response(
             request,
             "PROJECT_CONTEXT_REQUIRED: select a project and provide its project_config_path",
         )
     planning_request = PlanningRequest(
-        project_id=request.project_id,
+        # This advisory endpoint also supports an explicit, read-only example
+        # configuration before a desktop project exists.  Keep that state
+        # unbound (rather than inventing a project ID); reviewed-plan storage
+        # continues to require a real project ID before anything is persisted
+        # or executed.
+        project_id=request.project_id or "",
         lifecycle_id="advisory-plan-from-goal",
         goal=request.goal,
-        project_config_path=request.project_config_path,
+        project_config_path=request.project_config_path or "",
         evidence_snapshot_hash=stable_hash(
             {"project_id": request.project_id, "goal": request.goal, "constraints": request.constraints}
         ),
