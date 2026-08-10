@@ -9,6 +9,10 @@
 > 方案日期：2026-07-22
 >
 > 输入材料：用户提供的《Claude Code 源码：Multi-Agent 机制》PDF、当前仓库源码与测试、Anthropic 官方资料
+>
+> 离线 Gate 证据（2026-08-10）：`multi-agent-eval-v1` 的 30 个 synthetic/redacted
+> fixture 在人工确认的 Gate 下通过；这只允许本设计进入独立 capability review，**不**
+> 授权 durable Team PoC、公开 API、feature flag、scheduler 或生产执行能力。
 
 ## 0. 执行结论
 
@@ -23,6 +27,26 @@
 7. 当前 `v0.6.0-rc2` 收敛窗口冻结 public API、依赖和能力扩展（`PROJECT_STATE.md:114-117`）。因此本方案可作为下一阶段实施基线，但不能直接并入当前 release 收敛线，除非先重新打开 capability review。
 
 推荐的首个生产用途是“复杂目标的并行只读分析 + 独立安全/科学审查”，而不是并行修改代码或并行运行科学 pipeline。这样能获得上下文隔离、并行探索和交叉审查的收益，同时保持项目现有审批、执行和科学真实性边界。
+
+### 0.1 已完成的离线评估 Gate
+
+`tests/fixtures/agent_eval/multi_agent/manifest.json` 冻结了 10 个 eligible、10 个
+ineligible 与 10 个 adversarial synthetic/redacted case。固定三个只读角色由
+`MultiAgentEvaluationService` 的 deterministic coordinator 汇总；该服务无
+ProjectStore、provider、planner、Approval、Gateway、runner、runtime 或 scheduler
+依赖，不能创建生产状态或副作用。
+
+人工确认的初值在 manifest 中版本化：复杂 case 的 blocking-finding recall 相对
+single baseline 至少提高 10 个百分点，平均 input token 不超过 3 倍，p95 latency
+不超过 2.5 倍，且安全、项目隔离、审批和 scientific truthfulness 零退化。运行
+`python scripts/run_multi_agent_evaluation.py --summary` 得到 manifest hash
+`5e67e188fd0842a7b701b1f6dc2ab475c846cd18dc84c38da7ad890cd135138e`：recall 从
+0.3889 提升到 0.6667，false blocker rate 从 0.1429 降至 0，input token 为 1.425 倍，
+p95 latency 为 1.3 倍，Gate 通过。safety reviewer failure 会 truthful fallback，
+contradiction 或无效 evidence ref 会 handoff；该评测没有宣布任何科学或执行结果。
+
+这项证据不改变本文的 `Proposed` 状态，也不解除 RC2 capability-review、审批或唯一
+Execution Gateway 的约束。
 
 ---
 
@@ -122,14 +146,14 @@ Prompt cache 依赖稳定前缀，顺序为 `tools -> system -> messages`；工�
 | 唯一 Execution Gateway | `src/backend/app/runtime/execution_gateway.py:55-59` | 保持完全隔离；Worker 无引用、无 capability |
 | SQLite lifecycle/event 存储 | `src/backend/app/services/mock_store.py:177-198` | 同一 desktop state DB 增加 Team 表和事务性 claim |
 | ProjectStore Protocol | `src/backend/app/api/dependencies.py:88-98` | 扩展 typed Team repository 方法，Service 不依赖 concrete store |
-| OpenAI-compatible planner provider | `src/backend/app/planner/llm_provider.py:46-48`、`:236` | 提取通用 structured model adapter；保留旧 planner 兼容入口 |
+| OpenAI-compatible planner provider | `src/backend/app/planner/llm_provider.py:46-48`、`:236` | 提取通用 structured model adapter；同步当前调用方并删除被替换入口 |
 | Agent Workspace 与 3 秒有界状态轮询 | `useAgentTaskController.ts:39`、`:208-212` | 同一 controller 展示 Team Summary，不建立第二套长期轮询 |
 
 ### 3.2 不能直接复用的现有模块
 
 | 模块 | 原因 | 决策 |
 |---|---|---|
-| `runtime/agent_plan.py` | 旧 plan 运行时，直接写 `work/agent_runs/.../plan.json`，不符合当前 lifecycle 和 managed state 约束 | 不作为新 runtime 基础；保留兼容，另行废弃评审 |
+| `runtime/agent_plan.py` | 旧 plan 运行时，直接写 `work/agent_runs/.../plan.json`，不符合当前 lifecycle 和 managed state 约束 | 不作为新 runtime 基础；按独立废弃评审处理，不接入或保留双合同 |
 | `runtime/background_task_manager.py` | 模块级 `ThreadPoolExecutor(max_workers=2)`、进程内任务表、无 durable lease/cancel/restart owner | 不扩建；新建 lifespan-owned Team Scheduler |
 | `services/task_manager.py` | 面向旧 pipeline task/mock store，不是 Agent Task lifecycle | 不复用为 Team 状态机 |
 | `runtime/tool_catalog.py` | 是 pipeline node 描述目录，不是 Agent capability broker；没有完整 read/write/destructive 语义 | 只作为只读 planning evidence；新建 Agent Capability Catalog |
@@ -471,7 +495,7 @@ Team 在顶层 lifecycle 的映射：
    - `event_id`、team/project/lifecycle、event type、actor kind/id、payload、occurred_at；
    - command/idempotency key 唯一约束。
 
-所有 JSON payload 带 `_schema_version` 或明确 `schema_version`；SQLite migration 必须增量、可重复运行、保留旧数据库读取。
+所有 JSON payload 带 `_schema_version` 或明确 `schema_version`；SQLite 的结构升级必须增量、可重复运行，并原子升级到唯一当前持久格式，不保留旧数据库读取路径或迁移兼容层。
 
 ### 9.3 Durable lease 与 fencing
 
@@ -522,7 +546,7 @@ class StructuredAgentModelProvider(Protocol):
 - `RuleBasedAgentProvider`：测试、离线和 deterministic fallback；
 - `FakeAgentProvider`：单元测试用脚本化响应，禁止真实网络。
 
-Provider 不得直接读取环境变量；由 `ConfigService` 注入 versioned settings。现有 planner accessor 在迁移期间保持兼容。
+Provider 不得直接读取环境变量；由 `ConfigService` 注入 versioned settings。planner accessor 改动必须同步全部调用方并删除被替换入口。
 
 ### 10.2 输出 schema
 
@@ -654,7 +678,7 @@ AgentTaskTeamSummary v1
   started_at, updated_at, sealed_at
 ```
 
-只有当顶层字段语义、已有 state/outcome 含义或必填项变化时，才把外层 schema 升为 v2，并同时支持旧 client 的迁移窗口。
+只有当顶层字段语义、已有 state/outcome 含义或必填项变化时，才把外层 schema 升为 v2；发布时同步更新全部 client 和测试，仅保留唯一当前合同。
 
 ### 12.2 路由
 
@@ -743,14 +767,14 @@ MEDIMAGE_MULTI_AGENT_STORE_RAW_TRANSCRIPTS=0
 
 | 操作 | 文件 | 修改内容与约束 |
 |---|---|---|
-| MODIFY | `src/backend/app/schemas/agent_task.py` | create request 增加 optional team mode/consent/budget，response 增加 optional Team Summary；保持旧字段语义 |
-| MODIFY | `src/backend/app/schemas/agent_lifecycle.py` | 可选 team binding/epoch；如持久格式变化则升级 schema 并提供 migration/reload test |
+| MODIFY | `src/backend/app/schemas/agent_task.py` | create request 使用显式 team mode/consent/budget，response 使用同一 Team Summary 合同；同步全部消费者并删除被替换字段，不保留双格式解析 |
+| MODIFY | `src/backend/app/schemas/agent_lifecycle.py` | 新增 team binding/epoch 时采用单一持久格式、升级 schema 并验证重启 reload；同步消费者，不保留 legacy 读取或 migration fallback |
 | MODIFY | `src/backend/app/services/agent_task_command_service.py` | 拆出 planning start/finalize；create/answer/cancel 接入 Team；审批、plan-only 和 recovery 顺序不变 |
 | MODIFY | `src/backend/app/services/agent_task_read_model.py` | 嵌套 Team Summary 和 warning；保持 GET 无副作用、result truthfulness |
 | MODIFY | `src/backend/app/services/agent_orchestrator.py` | 只增加合法 team binding helper/事件，不扩张执行迁移，不形成第二状态机 |
 | MODIFY | `src/backend/app/api/dependencies.py` | 扩展 `ProjectStore` Team CRUD/claim/event protocol；不让 Service 依赖 concrete store |
 | MODIFY | `src/backend/app/services/mock_store.py` | SQLite migration、事务性 Team store、claim/fencing、project delete cascade、reload |
-| MODIFY | `src/backend/app/planner/llm_provider.py` | 提取共享 transport/config adapter；保留现有 planner API 和 mock 行为兼容 |
+| MODIFY | `src/backend/app/planner/llm_provider.py` | 提取共享 transport/config adapter；同步当前消费者并删除被替换的 provider/mock 路径 |
 | MODIFY | `src/backend/app/core/config.py`、`core/config_schema.py`、`config/settings.py` | typed multi-agent settings、验证和 readiness |
 | MODIFY | `src/backend/app/main.py` | 注册 Team router；lifespan start/stop scheduler；有界 startup Team reconcile |
 | MODIFY | `.env.example` | 增加默认关闭的配置和隐私说明，不包含凭据 |
@@ -825,14 +849,14 @@ MEDIMAGE_MULTI_AGENT_STORE_RAW_TRANSCRIPTS=0
 
 ### Phase 1：Schema、配置与 SQLite 持久化
 
-目标：feature flag 关闭时零行为变化，先建立可迁移的数据底座。
+目标：feature flag 关闭时零行为变化，先建立可验证、单一格式的数据底座。
 
 任务：
 
 - 添加 Team schemas、role registry 和 typed config；
-- 添加 SQLite tables/migrations/ProjectStore Protocol；
+- 添加 SQLite tables、原子结构升级和 ProjectStore Protocol；
 - 实现 team/work item/finding/message/event CRUD、claim/fencing；
-- 实现 reload、project isolation、delete cascade 和 schema migration tests；
+- 实现 reload、project isolation、delete cascade 和当前格式 reload/升级测试；
 - 不调用真实模型、不接 Agent Task create。
 
 退出 Gate：
@@ -961,16 +985,17 @@ MEDIMAGE_MULTI_AGENT_STORE_RAW_TRANSCRIPTS=0
 
 ---
 
-## 16. 迁移、兼容与记忆系统协同
+## 16. 格式切换与记忆系统协同
 
-### 16.1 API 与状态兼容
+### 16.1 API 与状态格式
 
-- `team_mode` 默认 `single`，旧 client 请求完全保持现有路径；
-- optional `team` 字段不改变现有 state/outcome/next_action；
-- 旧 SQLite 无 Team 表时增量创建；feature flag 关闭时无 Team row；
-- lifecycle schema 若仅把 binding 放入已有 `command_context` 可不升版本；若新增持久字段，必须升级并提供 v3 -> v4 reload migration；
-- Reviewed Plan identity 是否加入 Team hashes必须在 Phase 0 ADR 决定。推荐加入，因为这些 findings 实际影响规划；仅塞 payload 而不参与 plan hash 会破坏审批稳定性；
-- 旧 Reviewed Plan 没有 Team binding 时按 single-agent legacy 读取，不回填伪造 team。
+- `team_mode` 默认 `single`，但正式引入 Team 后必须同步更新所有当前 client、schema、
+  read model 和测试消费者；不保留旧请求/响应的 fallback 或双格式解析；
+- feature flag 关闭时不创建 Team row、不启动 Worker、不新增网络调用；
+- lifecycle 或 Team 持久格式变化时采用单一带 `_schema_version` 的格式，原子写入并验证
+  重启 reload；不得保留 legacy reload、迁移兼容层或伪造 Team binding；
+- Team finding/context hash 必须进入有序 `planning_inputs`、Reviewed Plan 与 Approval
+  Summary identity；没有该 binding 的计划不能被冒充为 Team 计划。
 
 ### 16.2 与记忆系统的顺序
 
@@ -1135,7 +1160,7 @@ npm --prefix desktop/electron run check
 | A-02 | 现有 SQLite 足以承载单机 sidecar 的 Team 状态 | 当前 lifecycle/event 已在 SQLite | 若需多进程/分布式，再评审队列，不在 MVP 引入 Redis/Celery |
 | A-03 | 最大 3 Worker、2 round 可覆盖首期目标 | 角色边界和成本控制 | 用评估数据调整 hard ceiling，不让模型动态无限扩展 |
 | A-04 | OpenAI-compatible provider 能返回可校验 JSON | 当前 planner 已采用 JSON contract | 使用 schema repair/fake/rule-based fallback；provider-specific adapter |
-| A-05 | Team 详情可以作为 optional additive contract | 当前 response 有可扩展 projection | 若客户端需要严格 schema v2，则提供迁移窗口 |
+| A-05 | Team 详情使用一个明确的当前合同 | 当前 read model 可扩展 | 同步所有消费者并删除被替换合同，不保留迁移窗口 |
 | A-06 | 记忆系统尚未成为生产 planner 依赖 | 当前代码和设计文档状态 | 若先落地，改用 hash-bound MemoryContext ref |
 
 ### 20.2 Phase 0 必须拍板

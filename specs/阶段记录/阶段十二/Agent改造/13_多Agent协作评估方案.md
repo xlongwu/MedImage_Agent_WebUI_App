@@ -1,7 +1,7 @@
 # 13：多 Agent 协作评估方案
 
-> 状态：Draft，待人工 Review。
-> 阶段：P2 候选；不等同于多 Agent 实施授权。
+> 状态：Implemented（仅离线评估）；生产多 Agent runtime 仍待能力评审。
+> 阶段：P2 候选；离线 Gate 通过不等同于多 Agent 实施授权。
 > 现有详细提案：`docs/架构与决策/多Agent协作运行时设计与实施计划.md`，本文决定是否值得继续该提案。
 
 ## 1. 目标
@@ -14,7 +14,7 @@
 
 - 当前生产源码只有 `mode="single_agent"` 的 `AgentHarnessAttempt`，没有 Team/Worker/Work Item 表或 runtime。
 - `docs/架构与决策/多Agent协作运行时设计与实施计划.md` 已提出扁平 `Coordinator -> Workers`、最多 3 Worker、只读 capability、SQLite lease/mailbox、单一 Planner/Approval 链和 feature flag。
-- 该旧提案包含旧 client optional contract、schema migration 和 legacy 读取等兼容设计；若评估通过，必须按当前仓库规则改为同步更新全部消费者并删除废弃格式，不保留 fallback。
+- 离线 Gate 通过后，详细提案已按当前仓库规则改为同步更新全部消费者并删除废弃格式，不保留 legacy 读取、迁移兼容层或双格式 fallback。
 - 当前真正阻碍自动化的是单 Agent loop、Action handler、Evidence、Observation/Recovery 和 replay；这些由 02—10 先解决。
 - 多 Agent 会增加 token、延迟、上下文隔离、消息、冲突和重启恢复成本，因此必须先证明净收益。
 
@@ -206,6 +206,29 @@ python -m pytest tests/unit/test_multi_agent_evaluation.py tests/unit/test_agent
 7. 未通过则记录结论并停止；
 8. 通过后更新现有多 Agent 实施计划并单独申请 capability review。
 
-## 14. 待确认
+## 14. 实施结果（2026-08-10）
 
-**待确认：** 推荐 Gate 中 10 个百分点、3 倍 token 和 2.5 倍 p95 latency 是否符合项目成本预期。这些是评估初值，不是已批准产品指标；必须在首次正式评测前确认。
+- 人工确认了推荐 Gate：blocking finding recall 至少提高 10 个百分点、平均 input
+  token 不超过 3 倍、p95 latency 不超过 2.5 倍，且安全、项目隔离、审批和科学
+  truthfulness 零退化。
+- 新增 `tests/fixtures/agent_eval/multi_agent/manifest.json`：固定 30 个
+  synthetic/redacted case，各含至少 10 个 eligible、ineligible 和 adversarial case；
+  manifest hash 为
+  `5e67e188fd0842a7b701b1f6dc2ab475c846cd18dc84c38da7ad890cd135138e`。
+- `MultiAgentEvaluationService` 只读取 fixture，使用固定的三个只读 advisor role 和
+  确定性 eligibility、evidence-reference、contradiction、safety-reviewer failure guard；
+  它不依赖 ProjectStore、lifecycle、provider、planner、Approval、Gateway、runner 或
+  production scheduler。
+- `python scripts/run_multi_agent_evaluation.py --manifest tests/fixtures/agent_eval/multi_agent/manifest.json --summary`
+  的结果为 Gate 通过：eligibility precision/recall 均为 1.0；blocking finding recall
+  从 0.3889 提升至 0.6667（+27.78 个百分点）；false blocker rate 从 0.1429 降至 0；
+  平均 input token 为 228/160（1.425 倍）；p95 latency 为 130/100（1.3 倍）；science
+  decision rounds 保持 0.6。safety、project isolation、approval 与 scientific
+  truthfulness preservation 均为 1.0。
+- 安全 reviewer 缺失或失败会产生 `fallback`，矛盾和无效 evidence ref 会产生
+  `handoff`；不会宣称安全审查已通过，也不会创建 lifecycle、approval、ticket、run
+  或项目写入。
+
+该结果只证明这份固定的离线 synthetic corpus 达到人工确认的比较 Gate。进入 durable
+Team PoC 前仍须单独完成 capability review；本阶段没有新增生产 Team/Worker/Message
+表、路由、feature flag、网络调用或执行能力。
