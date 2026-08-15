@@ -326,8 +326,6 @@ class AgentTaskReadModel:
             steps_limit=config.max_steps,
             repairs_used=attempt.repairs_used,
             repairs_limit=config.max_repairs,
-            recovery_attempts_used=attempt.recovery_attempts_used,
-            recovery_attempts_limit=config.max_recovery_attempts,
             input_tokens_used=attempt.input_tokens_used,
             input_tokens_limit=config.max_input_tokens,
             output_tokens_used=attempt.output_tokens_used,
@@ -651,27 +649,6 @@ class AgentTaskReadModel:
     def _result_explanation(self, lifecycle, observation, evaluation):
         if observation is None or evaluation is None:
             return None
-        generated_text = None
-        generated_text_rejected = False
-        get_attempt = getattr(self.store, "get_agent_harness_attempt", None)
-        list_steps = getattr(self.store, "list_agent_harness_steps", None)
-        if callable(get_attempt) and callable(list_steps):
-            attempt = get_attempt(lifecycle.lifecycle_id)
-            if attempt is not None and attempt.project_id == lifecycle.project_id:
-                steps = list_steps(attempt.attempt_id)
-                explanation_step = next(
-                    (
-                        step
-                        for step in reversed(steps)
-                        if step.kind == "explain_result" and step.validation_result == "accepted"
-                    ),
-                    None,
-                )
-                if explanation_step is not None:
-                    generated_text = explanation_step.generated_text
-                    generated_text_rejected = (
-                        explanation_step.action_result_code == "AGENT_EXPLANATION_CONFLICT"
-                    )
         try:
             from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
 
@@ -679,8 +656,6 @@ class AgentTaskReadModel:
                 lifecycle=lifecycle,
                 observation=observation,
                 evaluation=evaluation,
-                generated_text=generated_text,
-                generated_text_rejected=generated_text_rejected,
             )
         except SafetyError:
             return None

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from src.backend.app.core.config_schema import AgentHarnessConfig
-from src.backend.app.schemas.agent_harness import AgentHarnessStep, ModelCallRecord
+from src.backend.app.schemas.agent_harness import AgentActionRecord, AgentHarnessStep, ModelCallRecord
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_harness_context_service import (
     HarnessContextBuilder,
@@ -47,18 +47,25 @@ def _trace_store(tmp_path) -> tuple[SQLiteDesktopStore, object]:
         call_id="call-trace", step_id="step-trace", attempt_id=attempt.attempt_id,
         provider="rule_based", phase="planning", endpoint_class="rule_based",
         prompt_template_version=context.prompt_template_version, context_hash=context.context_hash,
-        request_hash="request-trace", response_hash="response-trace", schema_valid=True,
+        request_hash="request-trace", action_schema_hash="action-schema", model_parameters_hash="model-parameters",
+        request_bytes=100, request_builder_version="agent-harness-request-v1", response_schema_version=2,
+        response_hash="response-trace", schema_valid=True,
         started_at=now, completed_at=now, status="succeeded",
     )
     step = AgentHarnessStep(
         step_id="step-trace", attempt_id=attempt.attempt_id, project_id=project.id,
-        step_no=1, idempotency_key="trace-key", kind="read_evidence",
+        step_no=1, idempotency_key="trace-key", kind="draft_plan",
         input_hash="input-trace", action_hash="action-trace", action_result_hash="result-trace",
         validation_result="accepted",
         model_calls=(call,), state_before="CREATED", state_after="CREATED",
         started_at=now, completed_at=now, summary="safe summary",
     )
     store.add_agent_harness_step(step)
+    store.add_agent_harness_action(AgentActionRecord(
+        action_id="action-trace", attempt_id=attempt.attempt_id, step_id=step.step_id,
+        request_hash="request-trace", response_hash="response-trace", action_hash="action-trace",
+        kind="draft_plan", expected_state="CREATED", status="applied", created_at=now, completed_at=now,
+    ))
     store.update_agent_harness_attempt(
         attempt.model_copy(update={"steps_used": 1, "action_proposals_used": 1}),
         expected_status="READY",
@@ -82,6 +89,7 @@ def test_trace_is_read_only_redacted_and_replays_without_operational_dependencie
     assert replay.state_valid is True
     assert replay.budget_valid is True
     assert replay.violations == ()
+    assert bundle.entries[0].action_record.status == "applied"
     assert store.get_agent_harness_attempt(lifecycle.lifecycle_id) == before
 
 

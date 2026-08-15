@@ -34,9 +34,7 @@ def test_builtin_manifests_are_static_allowlisted_and_hash_valid() -> None:
     registry = AgentSkillRegistry()
 
     assert registry.validate_all() == ()
-    assert set(BUILTIN_SKILL_IDS) == {
-        "planning_evidence_review.v1", "result_explanation.v1", "recovery_review.v1"
-    }
+    assert set(BUILTIN_SKILL_IDS) == {"planning_evidence_review.v1"}
     for skill_id in BUILTIN_SKILL_IDS:
         skill = registry.load(skill_id)
         assert skill.reference.skill_id == skill_id

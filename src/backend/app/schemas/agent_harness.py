@@ -6,13 +6,13 @@ They carry no execution ticket, approval, runner, filesystem, or shell fields.
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 from src.backend.app.agent_skills.schemas import SkillContextRef
+from src.backend.app.schemas.agent_lifecycle import DecisionItem
 
 AgentHarnessStatus = Literal[
     "READY",
@@ -22,14 +22,7 @@ AgentHarnessStatus = Literal[
     "STOPPED",
     "FAILED",
 ]
-AgentHarnessActionKind = Literal[
-    "read_evidence",
-    "request_decision",
-    "draft_plan",
-    "explain_result",
-    "propose_recovery",
-    "finish",
-]
+AgentHarnessActionKind = Literal["request_decision", "draft_plan"]
 AgentHarnessContextSectionName = Literal[
     "goal",
     "policy",
@@ -44,55 +37,75 @@ AgentHarnessContextSectionName = Literal[
 ]
 
 ModelCallStatus = Literal["started", "succeeded", "failed", "invalid_output", "unknown"]
-
-_ACTION_PAYLOAD_FORBIDDEN_KEY = re.compile(
-    r"(?:command|shell|exec(?:ute)?|script|path|dir(?:ectory)?|root|url|uri|"
-    r"ticket|approval|credential|token|secret|password|header)",
-    re.IGNORECASE,
-)
-_ACTION_PAYLOAD_PATH_OR_URL = re.compile(
-    r"(?:^[A-Za-z]:[\\/]|^\\\\|^/|://|(?:^|\s)(?:curl|powershell|cmd(?:\.exe)?|bash|python(?:\.exe)?)(?:\s|$))",
-    re.IGNORECASE,
-)
-_ACTION_PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
-    "read_evidence": frozenset(),
-    "request_decision": frozenset({"kind", "question", "impact", "options", "recommended_option"}),
-    "draft_plan": frozenset(),
-    "explain_result": frozenset({"generated_text"}),
-    "propose_recovery": frozenset(),
-    "finish": frozenset(),
-}
+AgentActionStatus = Literal["accepted", "applied", "rejected"]
 
 
-def assert_action_payload_safe(kind: str, payload: object) -> None:
-    """Reject model payloads that could smuggle capability or path authority."""
-    if kind not in _ACTION_PAYLOAD_FIELDS or not isinstance(payload, dict):
-        raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
-    if set(payload) - _ACTION_PAYLOAD_FIELDS[kind]:
-        raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
-    if kind == "request_decision" and not {"kind", "question", "impact"} <= set(payload):
-        raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
-    if kind == "explain_result":
-        text = payload.get("generated_text")
-        if not isinstance(text, str) or len(text) > 2048:
-            raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
+class _BasePlanningAction(BaseModel):
+    """Fields shared by the two advice-only model actions."""
 
-    def visit(value: object) -> None:
-        if isinstance(value, dict):
-            for key, child in value.items():
-                if not isinstance(key, str) or _ACTION_PAYLOAD_FORBIDDEN_KEY.search(key):
-                    raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_FORBIDDEN")
-                visit(child)
-        elif isinstance(value, list | tuple):
-            for child in value:
-                visit(child)
-        elif isinstance(value, str):
-            if "\x00" in value or _ACTION_PAYLOAD_PATH_OR_URL.search(value):
-                raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_FORBIDDEN")
-        elif not isinstance(value, int | float | bool) and value is not None:
-            raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    visit(payload)
+    schema_version: Literal[2] = 2
+    reason: str = Field(min_length=1, max_length=512)
+    expected_state: str = Field(min_length=1, max_length=64)
+    input_refs: tuple[str, ...] = Field(default_factory=tuple, max_length=16)
+
+    @field_validator("input_refs")
+    @classmethod
+    def only_typed_references(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        for value in values:
+            if not value or len(value) > 256 or "://" in value or ".." in value:
+                raise ValueError("HARNESS_REFERENCE_INVALID")
+        return values
+
+
+class RequestDecisionAction(_BasePlanningAction):
+    kind: Literal["request_decision"]
+    decision: DecisionItem
+
+
+class DraftPlanAction(_BasePlanningAction):
+    kind: Literal["draft_plan"]
+
+
+ActionEnvelope: TypeAlias = Annotated[
+    RequestDecisionAction | DraftPlanAction,
+    Field(discriminator="kind"),
+]
+ACTION_ENVELOPE_ADAPTER = TypeAdapter(ActionEnvelope)
+
+
+def parse_action_envelope(value: object) -> ActionEnvelope:
+    return ACTION_ENVELOPE_ADAPTER.validate_python(value)
+
+
+def parse_action_envelope_json(value: str | bytes | bytearray) -> ActionEnvelope:
+    return ACTION_ENVELOPE_ADAPTER.validate_json(value)
+
+
+def action_envelope_json_schema() -> dict[str, object]:
+    return ACTION_ENVELOPE_ADAPTER.json_schema()
+
+
+class CanonicalModelRequest(BaseModel):
+    """The complete, canonical input for one model-provider request.
+
+    This object is hashed but never persisted.  It intentionally excludes
+    credentials, local paths, timestamps, and random identifiers.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    provider: str = Field(min_length=1, max_length=64)
+    model: str | None = Field(default=None, max_length=128)
+    endpoint_class: str = Field(min_length=1, max_length=64)
+    prompt_template_version: str = Field(min_length=1, max_length=128)
+    system_prompt: str = Field(min_length=1, max_length=4096)
+    context_payload: dict[str, object]
+    action_schema: dict[str, object]
+    model_parameters: dict[str, object]
+    repair: bool = False
 
 
 class ModelCallRecord(BaseModel):
@@ -104,7 +117,7 @@ class ModelCallRecord(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     call_id: str = Field(min_length=1, max_length=128)
     step_id: str = Field(min_length=1, max_length=128)
     attempt_id: str = Field(min_length=1, max_length=128)
@@ -117,6 +130,11 @@ class ModelCallRecord(BaseModel):
     skill_hashes: tuple[str, ...] = Field(default_factory=tuple, max_length=3)
     skill_error_codes: tuple[str, ...] = Field(default_factory=tuple, max_length=3)
     request_hash: str = Field(min_length=1, max_length=128)
+    action_schema_hash: str = Field(min_length=1, max_length=128)
+    model_parameters_hash: str = Field(min_length=1, max_length=128)
+    request_bytes: int = Field(ge=1)
+    request_builder_version: str = Field(min_length=1, max_length=128)
+    response_schema_version: int = Field(ge=1, le=32)
     response_hash: str | None = Field(default=None, max_length=128)
     schema_valid: bool | None = None
     repair: bool = False
@@ -133,40 +151,30 @@ class ModelCallRecord(BaseModel):
     fallback_to: str | None = Field(default=None, max_length=128)
 
 
-class ActionEnvelope(BaseModel):
-    """The only model-to-Harness protocol.
-
-    The strict schema is a safety boundary: a model can suggest one of six
-    bounded planning actions, never a command or an execution capability.
-    """
+class AgentActionRecord(BaseModel):
+    """Durable, redacted state of applying a validated Harness action."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal[1] = 1
+    action_id: str = Field(min_length=1, max_length=128)
+    attempt_id: str = Field(min_length=1, max_length=128)
+    step_id: str = Field(min_length=1, max_length=128)
+    request_hash: str = Field(min_length=1, max_length=128)
+    response_hash: str | None = Field(default=None, max_length=128)
+    action_hash: str = Field(min_length=1, max_length=128)
     kind: AgentHarnessActionKind
-    reason: str = Field(min_length=1, max_length=512)
-    input_refs: tuple[str, ...] = Field(default_factory=tuple, max_length=16)
-    payload: dict[str, Any] = Field(default_factory=dict, max_length=32)
     expected_state: str = Field(min_length=1, max_length=64)
-
-    @field_validator("input_refs")
-    @classmethod
-    def only_typed_references(cls, values: tuple[str, ...]) -> tuple[str, ...]:
-        for value in values:
-            if not value or len(value) > 256 or "://" in value or ".." in value:
-                raise ValueError("HARNESS_REFERENCE_INVALID")
-        return values
-
-    @model_validator(mode="after")
-    def safe_payload(self) -> ActionEnvelope:
-        assert_action_payload_safe(self.kind, self.payload)
-        return self
+    status: AgentActionStatus
+    error_code: str | None = Field(default=None, max_length=128)
+    created_at: datetime
+    completed_at: datetime | None = None
 
 
 class AgentHarnessAttempt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[3] = 3
+    schema_version: Literal[4] = 4
     attempt_id: str
     lifecycle_id: str
     project_id: str
@@ -179,7 +187,6 @@ class AgentHarnessAttempt(BaseModel):
     action_proposals_used: int = Field(default=0, ge=0)
     steps_used: int = Field(default=0, ge=0)
     repairs_used: int = Field(default=0, ge=0)
-    recovery_attempts_used: int = Field(default=0, ge=0)
     input_tokens_used: int | None = Field(default=None, ge=0)
     output_tokens_used: int | None = Field(default=None, ge=0)
     cached_input_tokens_used: int | None = Field(default=None, ge=0)
@@ -204,7 +211,7 @@ class AgentHarnessAttempt(BaseModel):
 class AgentHarnessStep(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[4] = 4
+    schema_version: Literal[5] = 5
     step_id: str
     attempt_id: str
     project_id: str
@@ -217,11 +224,8 @@ class AgentHarnessStep(BaseModel):
     action_result_hash: str | None = Field(default=None, max_length=128)
     observation_ref: str | None = Field(default=None, max_length=256)
     evaluation_ref: str | None = Field(default=None, max_length=256)
-    recovery_proposal_ref: str | None = Field(default=None, max_length=256)
-    result_explanation_hash: str | None = Field(default=None, max_length=128)
-    generated_text: str | None = Field(default=None, max_length=2048)
+    action_id: str | None = Field(default=None, max_length=128)
     action_result_code: str | None = Field(default=None, max_length=128)
-    requested_capability: str | None = None
     validation_result: Literal["accepted", "rejected", "error"]
     model_calls: tuple[ModelCallRecord, ...] = Field(default_factory=tuple, max_length=2)
     state_before: str
@@ -309,8 +313,6 @@ class AgentHarnessSummary(BaseModel):
     steps_limit: int = Field(ge=1)
     repairs_used: int = Field(ge=0)
     repairs_limit: int = Field(ge=0)
-    recovery_attempts_used: int = Field(ge=0)
-    recovery_attempts_limit: int = Field(ge=1)
     input_tokens_used: int | None = Field(default=None, ge=0)
     input_tokens_limit: int | None = Field(default=None, ge=1)
     output_tokens_used: int | None = Field(default=None, ge=0)

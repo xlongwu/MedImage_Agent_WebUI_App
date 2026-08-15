@@ -31,9 +31,9 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   的 wake 请求。它在应用 lifespan 内保持单一后台 owner；`GET`/list/read projection
   不会登记 wake、claim lease 或调用模型。startup 只恢复 `READY` 或 lease 已过期的
   `RUNNING` attempt；shutdown 拒绝新 claim，并只等待 scheduler 自己当前的有限 step。
-- 唯一模型协议是 schema version 1 的 `ActionEnvelope`。允许 kind 仅为
-  `read_evidence`、`request_decision`、`draft_plan`、`explain_result`、
-  `propose_recovery`、`finish`；所有其他 kind 默认拒绝。
+- 唯一模型协议是 schema version 2 的判别联合 `ActionEnvelope`。允许 kind 仅为
+  `request_decision` 和 `draft_plan`；两者使用固定不可变字段，前者直接嵌入正式
+  `DecisionItem`，不存在通用 `payload`。所有其他 kind 及额外字段默认拒绝。
 - Context v2 由唯一 builder 从显式 `HarnessContextSources` 产生，最大 32 KiB；
   builder 不读取 store 或文件。它以固定顺序保存 `goal`、`policy`、
   `project_evidence`、`decision_state`、`plan_state`、`execution_state`、
@@ -50,11 +50,15 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
 
 ## 模型调用账本
 
-- 每个 `AgentHarnessStep` 嵌套 0–2 个 immutable `ModelCallRecord`。一条记录只保存
-  call/step/attempt ID、provider/model/endpoint class、phase、template/context/request/
-  response hash、schema/repair 状态、时间/延迟、可用 token usage、脱敏 request ID、
-  error code、network 标识和 fallback 目标；不保存 prompt、完整 response、header、
-  API key、影像或任意原始 provider 错误。
+- 每次调用先构造唯一的 `CanonicalModelRequest`，其中包含 provider/model/endpoint、
+  system prompt、已脱敏 context、实际 action JSON Schema、模型参数和 repair 标识。
+  规范序列化后的字节数及哈希先落入 `ModelCallRecord(started)`，写入失败绝不调用模型。
+  调用记录还保存 action-schema/model-parameter hash、request builder/response schema
+  version、状态、时间、token、脱敏 provider request ID 和错误码；不保存 prompt、context
+  正文、完整 response、header、API key、影像或原始 provider 错误。
+- 结构与引用校验通过后先写入 `AgentActionRecord(accepted)`；
+  `AgentPlanningActionService` 成功完成既有决定或确定性规划后才更新为 `applied`，失败则
+  写为 `rejected`。Trace 与 Replay 显示这两个独立账本状态而不重放网络或业务调用。
 - OpenAI-compatible response 的 model、usage、cache usage 和 request ID 在可用时才
   写入；rule-based 路径显式记录为 `provider=rule_based`、`network_called=false`，其
   token 字段为 `null`。模型调用计数只统计真实 provider 请求，repair 也受同一总调用
@@ -84,16 +88,10 @@ recovery/token 预算、状态、下一步、让出次数、actual fallback 路�
 - terminal run 先由确定性 Reconciler 依次持久化 Observation、Goal Evaluation，必要时
   生成 Recovery Proposal；之后才发送 `run_reconciled` wake。wake 以 lifecycle、run、
   observation、evaluation 和 recovery proposal 的 hash 组成指纹，同一指纹只处理一次。
-- Reflector 只能读取这些结构化记录并选择解释、补读允许证据、请求既有 recovery service
-  或转人工；不能改写 evaluation、outcome、capability、artifact 或审批范围。
-- `explain_result` 重新从绑定的 Observation 和 Goal Evaluation 计算 outcome、受试者计数、
-  artifact/reload 状态、criterion 和限制。模型生成文本与这些字段分离；冲突文本以
-  `AGENT_EXPLANATION_CONFLICT` 丢弃，确定性摘要仍可读取。
-- 每个 Harness step 使用 schema v4，分别保存 canonical `action_hash`、
-  `action_result_hash` 以及 Observation、Evaluation、Recovery Proposal 和 explanation 的
-  引用/hash，不复制其正文；旧 `output_hash` 字段不再读取。wake 和 explanation 都写入
-  lifecycle 审计事件。Recovery 仍只
-  是 proposal，所有 retry、重规划或 scope 变化仍要经过新的显式审批。
+- 结果解释、观察、恢复和受控循环结束均由既有确定性生命周期投影处理，不再是模型动作。
+  每个 Harness step 使用 schema v5，并以 `action_id` 关联其独立的安全动作记录；不复制
+  提示词、模型原文或研究数据。Recovery 仍是既有确定性流程，所有 retry、重规划或 scope
+  变化仍要经过新的显式审批。
 
 ## Trace、Replay 与离线评测
 

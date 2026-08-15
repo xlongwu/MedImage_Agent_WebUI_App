@@ -6,9 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-AgentSkillActionKind = Literal[
-    "read_evidence", "request_decision", "draft_plan", "explain_result", "propose_recovery", "finish"
-]
+AgentSkillActionKind = Literal["request_decision", "draft_plan"]
 AgentSkillContextSectionName = Literal[
     "goal", "policy", "project_evidence", "decision_state", "plan_state", "execution_state",
     "latest_observation", "last_action_result", "memory_context", "budget",

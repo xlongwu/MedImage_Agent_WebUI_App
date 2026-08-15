@@ -3,7 +3,7 @@ from __future__ import annotations
 from src.backend.app.core.config_schema import AgentHarnessConfig
 from src.backend.app.planner.agent_model_adapter import ActionCallMetadata, ActionProposal, AgentModelProviderError
 from src.backend.app.runtime.agent_harness_scheduler import AgentHarnessScheduler
-from src.backend.app.schemas.agent_harness import ActionEnvelope
+from src.backend.app.schemas.agent_harness import DraftPlanAction
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
@@ -17,7 +17,7 @@ class DraftAdapter:
     def propose_action(self, **_kwargs):
         self.calls += 1
         return ActionProposal.rule_based(
-            ActionEnvelope(kind="draft_plan", reason="Build the reviewed plan", expected_state="CREATED")
+            DraftPlanAction(kind="draft_plan", reason="Build the reviewed plan", expected_state="CREATED")
         )
 
 

@@ -309,7 +309,6 @@ def test_completed_requires_satisfied_evaluation_and_reloadable_registered_artif
     observation, evaluation = _terminal_evidence()
     store.get_observation = lambda observation_id: observation
     store.get_goal_evaluation = lambda evaluation_id: evaluation
-
     projected = AgentTaskReadModel(store).get(project_id="project-1", task_id="task-1")
 
     assert projected.state == "completed"
@@ -321,7 +320,7 @@ def test_completed_requires_satisfied_evaluation_and_reloadable_registered_artif
     assert projected.result_explanation.artifact_refs[0].artifact_id == "artifact-1"
 
 
-def test_projection_surfaces_only_persisted_guarded_reflector_text() -> None:
+def test_projection_uses_deterministic_result_explanation_without_harness_text() -> None:
     lifecycle = _lifecycle("GOAL_SATISFIED").model_copy(
         update={"observation_id": "observation-1", "goal_evaluation_id": "evaluation-1"}
     )
@@ -333,21 +332,13 @@ def test_projection_surfaces_only_persisted_guarded_reflector_text() -> None:
         attempt_id="harness-1", lifecycle_id=lifecycle_id, project_id="project-1",
         provider_ref="rule_based", status="FINISHED", deadline_at=NOW,
     )
-    store.list_agent_harness_steps = lambda attempt_id: [
-        AgentHarnessStep(
-            step_id="step-1", attempt_id=attempt_id, project_id="project-1", step_no=1,
-            idempotency_key="key", kind="explain_result", input_hash="input",
-            validation_result="accepted", state_before="GOAL_SATISFIED",
-            state_after="GOAL_SATISFIED", summary="Result explained.", started_at=NOW,
-            completed_at=NOW, generated_text="The registered result is available.",
-        )
-    ]
+    store.list_agent_harness_steps = lambda attempt_id: []
 
     projected = AgentTaskReadModel(store).get(project_id="project-1", task_id="task-1")
 
     assert projected.result_explanation is not None
-    assert projected.result_explanation.generated_text == "The registered result is available."
-    assert projected.result_explanation.generated_text_status == "accepted"
+    assert projected.result_explanation.generated_text is None
+    assert projected.result_explanation.generated_text_status == "not_requested"
     assert projected.harness_summary is not None
     assert projected.harness_summary.actual_provider == "rule_based"
     assert projected.harness_summary.steps_limit == 8

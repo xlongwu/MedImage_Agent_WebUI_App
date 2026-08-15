@@ -338,8 +338,13 @@ def call_openai_compatible_provider(
     )
 
 
+def get_openai_compatible_action_request_config() -> LLMProviderConfig:
+    """Return the non-secret provider settings used by canonical requests."""
+    return _get_config()
+
+
 def call_openai_compatible_action_provider(
-    *, snapshot: dict[str, Any], repair: bool = False, http_post: Callable[..., Any] | None = None
+    *, request, http_post: Callable[..., Any] | None = None
 ) -> LLMProviderResult:
     """Request one strict Harness ActionEnvelope from the configured provider.
 
@@ -350,17 +355,17 @@ def call_openai_compatible_action_provider(
     if not config.api_key_set:
         return LLMProviderResult(ok=False, content="", errors=["AGENT_HARNESS_PROVIDER_UNAVAILABLE"])
     from src.backend.app.planner.agent_model_adapter import build_action_prompt
-    from src.backend.app.schemas.agent_harness import ActionEnvelope
+    from src.backend.app.schemas.agent_harness import parse_action_envelope_json
 
     body = {
-        "model": config.model,
+        "model": request.model,
         "messages": [
-            {"role": "system", "content": "Return strictly valid JSON. Never execute or approve anything."},
-            {"role": "user", "content": build_action_prompt(snapshot, repair=repair)},
+            {"role": "system", "content": request.system_prompt},
+            {"role": "user", "content": build_action_prompt(request)},
         ],
-        "temperature": 0,
-        "max_tokens": 1024,
-        "response_format": {"type": "json_object"},
+        "temperature": request.model_parameters["temperature"],
+        "max_tokens": request.model_parameters["max_output_tokens"],
+        "response_format": request.model_parameters["response_format"],
     }
     started_at = time.perf_counter()
     try:
@@ -370,19 +375,20 @@ def call_openai_compatible_action_provider(
                 f"{config.base_url.rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {os.environ['MEDIMAGE_LLM_API_KEY']}", "Content-Type": "application/json"},
                 json=body,
-                timeout=60.0,
+                timeout=float(request.model_parameters["timeout_seconds"]),
             )
             response.raise_for_status()
             raw = response.json()
         else:
             response = http_post(
-                f"{config.base_url.rstrip('/')}/chat/completions", {}, body, 60.0
+                f"{config.base_url.rstrip('/')}/chat/completions", {}, body,
+                float(request.model_parameters["timeout_seconds"]),
             )
             if hasattr(response, "raise_for_status"):
                 response.raise_for_status()
             raw = response.json() if hasattr(response, "json") else response
         content = ((raw.get("choices") or [{}])[0].get("message") or {}).get("content", "")
-        envelope = ActionEnvelope.model_validate_json(content)
+        envelope = parse_action_envelope_json(content)
         return LLMProviderResult(
             ok=True,
             content=envelope.model_dump_json(),

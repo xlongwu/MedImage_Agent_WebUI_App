@@ -80,7 +80,7 @@ class HarnessContextBuilder:
                 "revision": self._safe_scalar(command_context.get("goal_revision")),
             }, (f"lifecycle:{lifecycle.lifecycle_id}",)),
             "policy": ({
-                "action_allowlist": ["read_evidence", "request_decision", "draft_plan", "explain_result", "propose_recovery", "finish"],
+                "action_allowlist": ["request_decision", "draft_plan"],
                 "read_only_boundary": True,
                 "approval_or_execution_actions": False,
             }, ("policy:agent-harness-v2",)),
@@ -324,7 +324,6 @@ class HarnessContextBuilder:
             "model_calls_used": attempt.model_calls_used,
             "action_proposals_used": attempt.action_proposals_used,
             "repairs_used": attempt.repairs_used,
-            "recovery_attempts_used": attempt.recovery_attempts_used,
             "input_tokens_used": attempt.input_tokens_used,
             "output_tokens_used": attempt.output_tokens_used,
             "model_call_phase_allocations": attempt.model_call_phase_allocations,

@@ -157,22 +157,9 @@ class AgentHarnessScheduler:
             self.store,
             config=self.config,
             draft_plan=lambda **kwargs: command_service._plan(**kwargs),
-            recovery_proposer=lambda *, lifecycle, actor: AgentTaskReconciler(self.store).orchestrator.propose_recovery(
-                project_id=lifecycle.project_id,
-                lifecycle_id=lifecycle.lifecycle_id,
-                command_id=f"harness:{lifecycle.lifecycle_id}:recovery",
-                actor=actor,
-            ),
         )
         if harness.draft_plan is None:
             harness.draft_plan = lambda **kwargs: command_service._plan(**kwargs)
-        if harness.recovery_proposer is None:
-            harness.recovery_proposer = lambda *, lifecycle, actor: AgentTaskReconciler(self.store).orchestrator.propose_recovery(
-                project_id=lifecycle.project_id,
-                lifecycle_id=lifecycle.lifecycle_id,
-                command_id=f"harness:{lifecycle.lifecycle_id}:recovery",
-                actor=actor,
-            )
         return harness
 
     def _start_worker(self) -> None:

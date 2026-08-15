@@ -16,8 +16,6 @@ from src.backend.app.runtime.agent_capability_catalog import AGENT_CAPABILITY_CA
 
 BUILTIN_SKILL_IDS: tuple[str, ...] = (
     "planning_evidence_review.v1",
-    "result_explanation.v1",
-    "recovery_review.v1",
 )
 _OUTPUT_SCHEMAS = frozenset({"ActionEnvelope"})
 _SECTION_NAMES = frozenset(AgentSkillContextSectionName.__args__)

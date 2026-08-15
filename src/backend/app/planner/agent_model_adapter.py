@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from src.backend.app.agent_skills.schemas import SkillContextRef
-from src.backend.app.schemas.agent_harness import ActionEnvelope
+from src.backend.app.schemas.agent_harness import (
+    ActionEnvelope,
+    CanonicalModelRequest,
+    DraftPlanAction,
+    action_envelope_json_schema,
+    parse_action_envelope_json,
+)
 
 CONTEXT_V2_SECTION_ORDER = (
     "goal", "policy", "project_evidence", "decision_state", "plan_state",
@@ -113,7 +119,77 @@ class AgentModelInvalidOutputError(AgentModelProviderError):
 
 
 class AgentModelAdapter(Protocol):
-    def propose_action(self, *, snapshot: dict, provider_ref: str, repair: bool = False) -> ActionProposal: ...
+    def propose_action(self, *, request: CanonicalModelRequest) -> ActionProposal: ...
+
+
+REQUEST_BUILDER_VERSION = "agent-harness-request-v1"
+_SYSTEM_PROMPT = (
+    "You are an advice-only research planning assistant. You may not approve, execute, "
+    "write files, invoke tools, or issue commands. Return strictly valid JSON."
+)
+
+
+def canonical_request_bytes(request: CanonicalModelRequest) -> bytes:
+    """Stable serialization used for the request hash and byte count."""
+    return json.dumps(
+        _canonical_value(request.model_dump(mode="json")),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def build_canonical_model_request(
+    *, snapshot: dict, provider_ref: str, repair: bool,
+) -> CanonicalModelRequest:
+    """Build the sole object from which a provider request may be sent."""
+    serialized = serialize_context_v2(snapshot)
+    refs = tuple(SkillContextRef.model_validate(item) for item in serialized["skill_refs"])
+    from src.backend.app.agent_skills.loader import AgentSkillLoader
+
+    skill_result = AgentSkillLoader().render(refs)
+    provider = provider_ref.strip().casefold()
+    if provider == "rule_based":
+        model = None
+        endpoint_class = "rule_based"
+        parameters: dict[str, object] = {
+            "temperature": 0,
+            "max_output_tokens": 0,
+            "timeout_seconds": 0,
+            "response_format": "typed_local",
+        }
+    else:
+        from src.backend.app.planner.llm_provider import get_openai_compatible_action_request_config
+
+        config = get_openai_compatible_action_request_config()
+        model = config.model
+        endpoint_class = "chat_completions"
+        parameters = {
+            "temperature": 0,
+            "max_output_tokens": 1024,
+            "timeout_seconds": 60,
+            "response_format": {"type": "json_object"},
+        }
+    return CanonicalModelRequest(
+        provider=provider or "unknown",
+        model=model,
+        endpoint_class=endpoint_class,
+        prompt_template_version=str(serialized["prompt_template_version"]),
+        system_prompt=_SYSTEM_PROMPT,
+        context_payload={
+            "repair_instruction": (
+                "Your previous reply was invalid. Return one corrected JSON object."
+                if repair else "Return one JSON object."
+            ),
+            "skill_working_procedures": skill_result.markdown or (
+                "No packaged procedure is available; follow the base safety policy only."
+            ),
+            "safe_context": serialized,
+        },
+        action_schema=action_envelope_json_schema(),
+        model_parameters=parameters,
+        repair=repair,
+    )
 
 
 class DefaultAgentModelAdapter:
@@ -124,16 +200,26 @@ class DefaultAgentModelAdapter:
     configured; provider failure stops the enabled Harness.
     """
 
-    def propose_action(self, *, snapshot: dict, provider_ref: str, repair: bool = False) -> ActionProposal:
-        raw_sections = snapshot.get("sections") if isinstance(snapshot, dict) else None
+    def propose_action(self, *, request: CanonicalModelRequest) -> ActionProposal:
+        raw_context = request.context_payload.get("safe_context")
+        raw_sections = raw_context.get("sections") if isinstance(raw_context, dict) else None
         raw_goal = raw_sections.get("goal") if isinstance(raw_sections, dict) else None
         raw_goal_data = raw_goal.get("data") if isinstance(raw_goal, dict) else None
         state = str(raw_goal_data.get("lifecycle_state") or "") if isinstance(raw_goal_data, dict) else ""
-        snapshot = serialize_context_v2(snapshot)
-        provider = provider_ref.strip().casefold()
+        provider = request.provider
         if provider == "rule_based":
-            return ActionProposal.rule_based(ActionEnvelope(
-                kind="draft_plan" if state in {"CREATED", "CONTEXT_READY", "PLAN_DRAFTED"} else "finish",
+            if state not in {"CREATED", "CONTEXT_READY", "PLAN_DRAFTED"}:
+                raise AgentModelProviderError(
+                    "AGENT_HARNESS_ACTION_UNAVAILABLE",
+                    ActionCallMetadata(
+                        provider="rule_based", model=None, endpoint_class="rule_based",
+                        response_hash=None, input_tokens=None, output_tokens=None,
+                        cached_input_tokens=None, latency_ms=None, provider_request_id=None,
+                        network_called=False,
+                    ),
+                )
+            return ActionProposal.rule_based(DraftPlanAction(
+                kind="draft_plan",
                 reason="Use the existing deterministic reviewed-planning service.",
                 expected_state=state,
             ))
@@ -150,7 +236,7 @@ class DefaultAgentModelAdapter:
         from src.backend.app.planner.audit_record import stable_hash
         from src.backend.app.planner.llm_provider import call_openai_compatible_action_provider
 
-        result = call_openai_compatible_action_provider(snapshot=snapshot, repair=repair)
+        result = call_openai_compatible_action_provider(request=request)
         metadata = ActionCallMetadata(
             provider="openai_compatible", model=result.model,
             endpoint_class=result.endpoint_class, response_hash=(stable_hash(result.content) if result.content else None),
@@ -163,35 +249,23 @@ class DefaultAgentModelAdapter:
             error_type = AgentModelInvalidOutputError if code == "AGENT_HARNESS_MODEL_OUTPUT_INVALID" else AgentModelProviderError
             raise error_type(code, metadata)
         try:
-            return ActionProposal(envelope=ActionEnvelope.model_validate_json(result.content), metadata=metadata)
+            return ActionProposal(envelope=parse_action_envelope_json(result.content), metadata=metadata)
         except (ValueError, TypeError) as exc:
             raise AgentModelInvalidOutputError("AGENT_HARNESS_MODEL_OUTPUT_INVALID", metadata) from exc
 
 
 def action_schema() -> dict[str, object]:
     """Expose the exact JSON Schema without passing executable tool metadata."""
-    return ActionEnvelope.model_json_schema()
+    return action_envelope_json_schema()
 
 
-def build_action_prompt(snapshot: dict, *, repair: bool) -> str:
-    serialized = serialize_context_v2(snapshot)
-    from src.backend.app.agent_skills.loader import AgentSkillLoader
-
-    refs = tuple(SkillContextRef.model_validate(item) for item in serialized["skill_refs"])
-    skill_result = AgentSkillLoader().render(refs)
-    repair_instruction = (
-        "Your previous reply was invalid. Return only one corrected JSON object matching the schema."
-        if repair
-        else "Return only one JSON object matching the schema."
-    )
+def build_action_prompt(request: CanonicalModelRequest) -> str:
+    """Serialize only fields already present in the canonical request."""
     return (
-        "You are an advice-only research planning assistant. You may not approve, execute, "
-        "write files, invoke tools, or issue commands. "
-        + repair_instruction
-        + "\nSKILL_WORKING_PROCEDURES:\n"
-        + (skill_result.markdown or "No packaged procedure is available; follow the base safety policy only.")
-        + "\nACTION_ENVELOPE_SCHEMA:\n"
-        + json.dumps(action_schema(), ensure_ascii=False, separators=(",", ":"))
-        + "\nSAFE_CONTEXT:\n"
-        + json.dumps(serialized, ensure_ascii=False, separators=(",", ":"))
+        json.dumps(
+            {"context_payload": request.context_payload, "action_schema": request.action_schema},
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
     )

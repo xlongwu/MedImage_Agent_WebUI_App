@@ -126,7 +126,6 @@ class AgentHarnessConfig(BaseModel):
     max_model_calls: int = Field(default=6, ge=1, le=6)
     max_action_proposals: int = Field(default=8, ge=1, le=8)
     max_repairs: int = Field(default=1, ge=0, le=1)
-    max_recovery_attempts: int = Field(default=2, ge=0, le=3)
     max_wall_seconds: int = Field(default=300, ge=1, le=300)
     max_input_tokens: int | None = Field(default=None, ge=1, le=1_000_000)
     max_output_tokens: int | None = Field(default=None, ge=1, le=1_000_000)
@@ -158,9 +157,6 @@ class AgentHarnessConfig(BaseModel):
             max_model_calls=bounded("MEDIMAGE_AGENT_HARNESS_MAX_MODEL_CALLS", 6, 1, 6),
             max_action_proposals=bounded("MEDIMAGE_AGENT_HARNESS_MAX_ACTION_PROPOSALS", 8, 1, 8),
             max_repairs=bounded("MEDIMAGE_AGENT_HARNESS_MAX_REPAIRS", 1, 0, 1),
-            max_recovery_attempts=bounded(
-                "MEDIMAGE_AGENT_HARNESS_MAX_RECOVERY_ATTEMPTS", 2, 0, 3
-            ),
             max_wall_seconds=bounded("MEDIMAGE_AGENT_HARNESS_MAX_WALL_SECONDS", 300, 1, 300),
             max_input_tokens=optional_bounded("MEDIMAGE_AGENT_HARNESS_MAX_INPUT_TOKENS", 1_000_000),
             max_output_tokens=optional_bounded("MEDIMAGE_AGENT_HARNESS_MAX_OUTPUT_TOKENS", 1_000_000),

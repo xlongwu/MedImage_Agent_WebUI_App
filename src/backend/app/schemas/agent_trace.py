@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.backend.app.schemas.agent_harness import ModelCallRecord
+from src.backend.app.schemas.agent_harness import AgentActionRecord, ModelCallRecord
 
 TraceIntegrityStatus = Literal["complete", "incomplete", "conflict"]
 TraceReferenceStatus = Literal["present", "missing", "conflict"]
@@ -64,6 +64,7 @@ class AgentTraceEntry(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=512)
     context_refs: tuple[AgentTraceReference, ...] = ()
     model_calls: tuple[ModelCallRecord, ...] = ()
+    action_record: AgentActionRecord | None = None
     action_kind: str | None = Field(default=None, max_length=64)
     action_hash: str | None = Field(default=None, max_length=128)
     action_result_hash: str | None = Field(default=None, max_length=128)
@@ -85,7 +86,6 @@ class AgentTraceBudget(BaseModel):
     model_calls_used: int = Field(ge=0)
     action_proposals_used: int = Field(ge=0)
     repairs_used: int = Field(ge=0)
-    recovery_attempts_used: int = Field(ge=0)
     input_tokens_used: int | None = Field(default=None, ge=0)
     output_tokens_used: int | None = Field(default=None, ge=0)
 

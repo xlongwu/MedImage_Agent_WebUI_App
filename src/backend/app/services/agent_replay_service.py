@@ -82,7 +82,6 @@ class AgentReplayService:
             "model_calls_used": sum(call.network_called for call in calls),
             "action_proposals_used": sum(entry.action_kind is not None for entry in completed),
             "repairs_used": sum(call.repair for call in calls),
-            "recovery_attempts_used": sum(entry.action_kind == "propose_recovery" for entry in completed),
         }
         for field, value in actual.items():
             if getattr(expected, field) != value:

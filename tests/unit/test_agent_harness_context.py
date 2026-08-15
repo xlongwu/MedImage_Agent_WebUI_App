@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.backend.app.agent_skills.schemas import SkillContextRef
 from src.backend.app.planner.agent_model_adapter import (
     DefaultAgentModelAdapter,
+    build_canonical_model_request,
     build_action_prompt,
     serialize_context_v2,
 )
@@ -135,11 +136,12 @@ def test_adapter_serializes_context_v2_in_fixed_order_and_rejects_flat_v1() -> N
     payload["sections"] = dict(reversed(list(payload["sections"].items())))
 
     serialized = serialize_context_v2(payload)
-    prompt = build_action_prompt(payload, repair=False)
-    action = DefaultAgentModelAdapter().propose_action(snapshot=payload, provider_ref="rule_based")
+    request = build_canonical_model_request(snapshot=payload, provider_ref="rule_based", repair=False)
+    prompt = build_action_prompt(request)
+    action = DefaultAgentModelAdapter().propose_action(request=request)
 
     assert tuple(serialized["sections"]) == HarnessContextBuilder.SECTION_ORDER
-    assert '"sections":{"goal"' in prompt
+    assert '"safe_context"' in prompt
     assert action.envelope.expected_state == "CREATED"
     try:
         serialize_context_v2({"schema_version": 1, "lifecycle_state": "CREATED"})

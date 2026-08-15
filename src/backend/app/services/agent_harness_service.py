@@ -17,6 +17,9 @@ from src.backend.app.planner.agent_model_adapter import (
     AgentModelInvalidOutputError,
     AgentModelProviderError,
     DefaultAgentModelAdapter,
+    REQUEST_BUILDER_VERSION,
+    build_canonical_model_request,
+    canonical_request_bytes,
 )
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.runtime.agent_capability_catalog import (
@@ -25,16 +28,11 @@ from src.backend.app.runtime.agent_capability_catalog import (
 )
 from src.backend.app.schemas.agent_harness import (
     ActionEnvelope,
+    AgentActionRecord,
     AgentHarnessAttempt,
     AgentHarnessContext,
     AgentHarnessStep,
     ModelCallRecord,
-    assert_action_payload_safe,
-)
-from src.backend.app.schemas.agent_lifecycle import (
-    DecisionItem,
-    PendingDecisionBatch,
-    PendingDecisionOption,
 )
 from src.backend.app.services.agent_evidence_service import AgentEvidenceService
 from src.backend.app.services.agent_harness_context_service import (
@@ -43,6 +41,10 @@ from src.backend.app.services.agent_harness_context_service import (
     HarnessContextSources,
 )
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
+from src.backend.app.services.agent_planning_action_service import (
+    AgentPlanningActionService,
+    HarnessActionResult,
+)
 
 
 @dataclass(frozen=True)
@@ -64,15 +66,6 @@ class HarnessLoopResult:
     lifecycle: object
     attempt: AgentHarnessAttempt | None
     reason: str | None = None
-
-
-@dataclass(frozen=True)
-class HarnessActionResult:
-    lifecycle: object
-    attempt_status: str
-    terminal_reason: str | None
-    result_explanation: object | None = None
-    action_result_code: str | None = None
 
 
 class _ModelCallFailure(RuntimeError):
@@ -99,7 +92,7 @@ class AgentHarnessService:
         context_builder: HarnessContextBuilder | None = None,
         skill_loader: AgentSkillLoader | None = None,
         draft_plan: Callable[..., object] | None = None,
-        recovery_proposer: Callable[..., object] | None = None,
+        planning_action_service: AgentPlanningActionService | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self.store = store
@@ -108,9 +101,18 @@ class AgentHarnessService:
         self.context_builder = context_builder or HarnessContextBuilder()
         self.skill_loader = skill_loader or AgentSkillLoader()
         self.draft_plan = draft_plan
-        self.recovery_proposer = recovery_proposer
         self.now = now or (lambda: datetime.now(UTC))
         self.orchestrator = AgentOrchestrator(store)
+        self.planning_action_service = planning_action_service or AgentPlanningActionService(
+            store,
+            draft_plan=lambda **kwargs: self._draft_plan(**kwargs),
+            now=self.now,
+        )
+
+    def _draft_plan(self, **kwargs):
+        if self.draft_plan is None:
+            raise RuntimeError("AGENT_HARNESS_DRAFT_PLAN_UNAVAILABLE")
+        return self.draft_plan(**kwargs)
 
     def active(self, *, provider_ref: str) -> bool:
         return self.config.enabled and bool(provider_ref.strip())
@@ -266,11 +268,6 @@ class AgentHarnessService:
 
         try:
             self._validate_envelope(envelope, lifecycle, context)
-            if (
-                envelope.kind == "propose_recovery"
-                and claimed.recovery_attempts_used >= self.config.max_recovery_attempts
-            ):
-                raise RuntimeError("AGENT_HARNESS_RECOVERY_BUDGET_EXHAUSTED")
         except Exception as exc:
             code = str(exc).split(":", 1)[0] or "AGENT_MODEL_OUTPUT_INVALID"
             completed = step.model_copy(update={
@@ -289,46 +286,108 @@ class AgentHarnessService:
                 ),
             )
 
+        accepted_action = AgentActionRecord(
+            action_id=f"harness_action_{uuid4().hex}",
+            attempt_id=claimed.attempt_id,
+            step_id=step.step_id,
+            request_hash=step.model_calls[-1].request_hash,
+            response_hash=step.model_calls[-1].response_hash,
+            action_hash=stable_hash(envelope.model_dump(mode="json")),
+            kind=envelope.kind,
+            expected_state=envelope.expected_state,
+            status="accepted",
+            created_at=self.now(),
+        )
         try:
-            applied = self._apply(envelope, lifecycle, actor)
-            explanation = applied.result_explanation
+            self.store.add_agent_harness_action(accepted_action)
+        except Exception:
             completed = step.model_copy(update={
                 "kind": envelope.kind,
-                "action_hash": stable_hash(envelope.model_dump(mode="json")),
-                "requested_capability": envelope.kind, "validation_result": "accepted",
+                "completed_at": self.now(),
+                "error_code": "AGENT_HARNESS_ACTION_RECORD_FAILED",
+                "summary": "Harness action was not applied because its accepted record was not durable.",
+            })
+            self.store.update_agent_harness_step(completed)
+            return HarnessRunResult(
+                lifecycle=lifecycle,
+                attempt=self._stop_claimed(
+                    claimed, "AGENT_HARNESS_ACTION_RECORD_FAILED", model_calls=completed.model_calls,
+                    proposal_increment=1, consume_step=True,
+                ),
+            )
+        try:
+            applied = self._apply(envelope, lifecycle, actor)
+        except Exception as exc:
+            error_code = str(exc).split(":", 1)[0] or "AGENT_HARNESS_STEP_FAILED"
+            rejected_action = accepted_action.model_copy(update={
+                "status": "rejected", "error_code": error_code[:128], "completed_at": self.now(),
+            })
+            self.store.update_agent_harness_action(rejected_action, expected_status="accepted")
+            completed = step.model_copy(update={
+                "kind": envelope.kind,
+                "action_id": accepted_action.action_id,
+                "action_hash": accepted_action.action_hash,
+                "completed_at": self.now(),
+                "error_code": error_code,
+                "action_result_code": error_code,
+                "validation_result": "accepted",
+                "summary": "Harness action application was rejected safely.",
+            })
+            self.store.update_agent_harness_step(completed)
+            return HarnessRunResult(
+                lifecycle=lifecycle,
+                attempt=self._stop_claimed(
+                    claimed, error_code, model_calls=completed.model_calls,
+                    proposal_increment=1, consume_step=True,
+                ),
+            )
+        try:
+            self.store.update_agent_harness_action(
+                accepted_action.model_copy(update={"status": "applied", "completed_at": self.now()}),
+                expected_status="accepted",
+            )
+        except Exception:
+            completed = step.model_copy(update={
+                "kind": envelope.kind,
+                "action_id": accepted_action.action_id,
+                "action_hash": accepted_action.action_hash,
+                "completed_at": self.now(),
+                "error_code": "AGENT_HARNESS_ACTION_RECORD_APPLY_FAILED",
+                "validation_result": "accepted",
+                "summary": "Action side effect completed but its terminal audit update requires reconciliation.",
+            })
+            self.store.update_agent_harness_step(completed)
+            return HarnessRunResult(
+                lifecycle=applied.lifecycle,
+                attempt=self._stop_claimed(
+                    claimed, "AGENT_HARNESS_ACTION_RECORD_APPLY_FAILED", model_calls=completed.model_calls,
+                    proposal_increment=1, consume_step=True,
+                ),
+            )
+        try:
+            completed = step.model_copy(update={
+                "kind": envelope.kind,
+                "action_id": accepted_action.action_id,
+                "action_hash": accepted_action.action_hash,
+                "validation_result": "accepted",
                 "state_after": applied.lifecycle.state, "summary": self._summary(envelope.reason),
                 "observation_ref": lifecycle.observation_id,
                 "evaluation_ref": lifecycle.goal_evaluation_id,
-                "recovery_proposal_ref": lifecycle.recovery_proposal_id,
-                "result_explanation_hash": (
-                    stable_hash(explanation.model_dump(mode="json")) if explanation is not None else None
-                ),
-                "generated_text": explanation.generated_text if explanation is not None else None,
                 "action_result_code": applied.action_result_code,
                 "action_result_hash": stable_hash({
                     "lifecycle_id": applied.lifecycle.lifecycle_id,
                     "state_after": applied.lifecycle.state,
                     "attempt_status": applied.attempt_status,
                     "terminal_reason": applied.terminal_reason,
-                    "result_explanation_hash": (
-                        stable_hash(explanation.model_dump(mode="json")) if explanation is not None else None
-                    ),
                     "action_result_code": applied.action_result_code,
                 }),
                 "completed_at": self.now(),
             })
             self.store.update_agent_harness_step(completed)
-            if explanation is not None:
-                self._record_result_explanation_event(
-                    lifecycle=applied.lifecycle,
-                    step=completed,
-                    explanation=explanation,
-                )
             stop_reason = self._post_completion_budget_reason(
                 claimed,
                 model_calls=completed.model_calls,
                 proposal_increment=1,
-                recovery_attempt_increment=1 if envelope.kind == "propose_recovery" else 0,
             )
             finished = self._complete_claim(
                 claimed,
@@ -336,14 +395,13 @@ class AgentHarnessService:
                 terminal_reason=stop_reason or applied.terminal_reason,
                 model_calls=completed.model_calls,
                 proposal_increment=1,
-                recovery_attempt_increment=1 if envelope.kind == "propose_recovery" else 0,
             )
             return HarnessRunResult(lifecycle=applied.lifecycle, attempt=finished)
         except Exception:
             completed = step.model_copy(update={"completed_at": self.now(), "error_code": "AGENT_HARNESS_STEP_FAILED", "summary": "Harness step stopped safely."})
             self.store.update_agent_harness_step(completed)
             return HarnessRunResult(
-                lifecycle=lifecycle,
+                lifecycle=applied.lifecycle,
                 attempt=self._stop_claimed(
                     claimed, "AGENT_HARNESS_STEP_FAILED", model_calls=completed.model_calls,
                     proposal_increment=1, consume_step=True,
@@ -469,27 +527,29 @@ class AgentHarnessService:
         """Persist a call-start row before invoking an untrusted provider."""
         started = self.now()
         phase = self._phase_for(lifecycle_state=step.state_before)
-        rendered_skills = self.skill_loader.render(context.skill_refs)
+        request = build_canonical_model_request(
+            snapshot=context.prompt_payload(), provider_ref=attempt.provider_ref, repair=repair,
+        )
+        serialized_request = canonical_request_bytes(request)
         pending_call = ModelCallRecord(
             call_id=f"harness_call_{uuid4().hex}", step_id=step.step_id,
-            attempt_id=attempt.attempt_id, provider=attempt.provider_ref.strip().casefold()[:64] or "unknown",
-            phase=phase, endpoint_class="rule_based" if attempt.provider_ref == "rule_based" else "chat_completions",
-            prompt_template_version=context.prompt_template_version, context_hash=context.context_hash,
+            attempt_id=attempt.attempt_id, provider=request.provider,
+            phase=phase, model=request.model, endpoint_class=request.endpoint_class,
+            prompt_template_version=request.prompt_template_version, context_hash=context.context_hash,
             skill_hashes=tuple(reference.content_hash for reference in context.skill_refs),
-            skill_error_codes=tuple(sorted(set(context.skill_error_codes + rendered_skills.error_codes))),
-            request_hash=stable_hash({
-                "attempt_id": attempt.attempt_id, "step_id": step.step_id,
-                "context_hash": context.context_hash, "provider": attempt.provider_ref,
-                "repair": repair,
-            }),
+            skill_error_codes=tuple(sorted(set(context.skill_error_codes))),
+            request_hash=stable_hash(serialized_request),
+            action_schema_hash=stable_hash(request.action_schema),
+            model_parameters_hash=stable_hash(request.model_parameters),
+            request_bytes=len(serialized_request),
+            request_builder_version=REQUEST_BUILDER_VERSION,
+            response_schema_version=2,
             repair=repair, started_at=started,
         )
         started_step = step.model_copy(update={"model_calls": (*step.model_calls, pending_call)})
         self.store.update_agent_harness_step(started_step)
         try:
-            proposal = self.adapter.propose_action(
-                snapshot=context.prompt_payload(), provider_ref=attempt.provider_ref, repair=repair,
-            )
+            proposal = self.adapter.propose_action(request=request)
             if not isinstance(proposal, ActionProposal):
                 raise TypeError("AGENT_HARNESS_ADAPTER_CONTRACT_INVALID")
         except AgentModelProviderError as exc:
@@ -536,9 +596,6 @@ class AgentHarnessService:
         error_code: str | None = None,
     ) -> ModelCallRecord:
         return pending.model_copy(update={
-            "provider": self._safe_ledger_text(metadata.provider, limit=64) or pending.provider,
-            "model": self._safe_ledger_text(metadata.model, limit=128),
-            "endpoint_class": self._safe_ledger_text(metadata.endpoint_class, limit=64) or pending.endpoint_class,
             "response_hash": self._safe_ledger_text(metadata.response_hash, limit=128),
             "schema_valid": schema_valid,
             "completed_at": self.now(),
@@ -570,12 +627,8 @@ class AgentHarnessService:
         if not requested_sections.issubset(roots):
             raise ValueError("AGENT_HARNESS_REFERENCE_DENIED")
         output_type = {
-            "read_evidence": "evidence_reference",
             "request_decision": "decision_request",
             "draft_plan": "reviewed_plan_request",
-            "explain_result": "result_explanation",
-            "propose_recovery": "recovery_proposal",
-            "finish": "attempt_finished",
         }.get(envelope.kind)
         if output_type is None:
             raise ValueError("AGENT_HARNESS_CAPABILITY_DENIED")
@@ -584,75 +637,17 @@ class AgentHarnessService:
             context_sections=requested_sections,
             output_type=output_type,
         )
-        # ``model_construct`` can bypass Pydantic, so repeat the schema
-        # boundary validation immediately before any managed-state mutation.
-        assert_action_payload_safe(envelope.kind, envelope.payload)
-        if envelope.kind == "request_decision":
-            self._validate_decision_payload(envelope.payload)
-        if envelope.kind == "explain_result" and set(envelope.payload) - {"generated_text"}:
-            raise ValueError("AGENT_HARNESS_EXPLANATION_PAYLOAD_INVALID")
+        # ``model_construct`` can bypass Pydantic, so re-validate the typed
+        # union immediately before any managed-state mutation.
+        from src.backend.app.schemas.agent_harness import parse_action_envelope
+
+        parse_action_envelope(envelope)
 
     def _apply(self, envelope: ActionEnvelope, lifecycle, actor: str) -> HarnessActionResult:
-        if envelope.kind == "draft_plan":
-            if self.draft_plan is None:
-                raise RuntimeError("AGENT_HARNESS_DRAFT_PLAN_UNAVAILABLE")
-            result = self.draft_plan(lifecycle=lifecycle, command_id=f"harness:{lifecycle.lifecycle_id}", actor=actor)
-            status = "WAITING_FOR_USER" if result.state in {"WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"} else "READY"
-            if result.state in {"GOAL_SATISFIED", "SUCCEEDED", "HUMAN_HANDOFF", "CANCELED"}:
-                status = "FINISHED"
-            return HarnessActionResult(result, status, None)
-        if envelope.kind == "request_decision":
-            decision = self._decision_from_payload(envelope.payload, lifecycle)
-            state = "WAITING_FOR_SCIENCE_DECISION" if decision.items[0].kind not in {"missing_input", "goal_revision"} else "WAITING_FOR_INPUT"
-            if lifecycle.state == "CREATED" and state == "WAITING_FOR_SCIENCE_DECISION":
-                lifecycle = self.orchestrator.transition(
-                    project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id,
-                    to_state="CONTEXT_READY", command_id=f"harness:{lifecycle.lifecycle_id}:context",
-                    actor=actor, source_command="harness_context_ready",
-                )
-            result = self.orchestrator.transition(
-                project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id, to_state=state,
-                command_id=f"harness:{lifecycle.lifecycle_id}:decision:{decision.batch_id}", actor=actor,
-                source_command="harness_decision_required", updates={"pending_decision_batch": decision}, reason=decision.items[0].impact,
-            )
-            return HarnessActionResult(result, "WAITING_FOR_USER", None)
-        if envelope.kind == "propose_recovery":
-            if self.recovery_proposer is None:
-                raise RuntimeError("AGENT_HARNESS_RECOVERY_UNAVAILABLE")
-            result = self.recovery_proposer(lifecycle=lifecycle, actor=actor)
-            lifecycle_result = result[0] if isinstance(result, tuple) else result
-            return HarnessActionResult(lifecycle_result, "READY", None)
-        if envelope.kind == "explain_result":
-            observation = self._record("get_observation", lifecycle.observation_id)
-            evaluation = self._record("get_goal_evaluation", lifecycle.goal_evaluation_id)
-            if observation is None or evaluation is None:
-                raise RuntimeError("AGENT_EXPLANATION_EVIDENCE_REQUIRED")
-            from src.backend.app.services.agent_task_result_summary import (
-                AgentTaskResultSummaryService,
-            )
-
-            explanation = AgentTaskResultSummaryService().build_explanation(
-                lifecycle=lifecycle,
-                observation=observation,
-                evaluation=evaluation,
-                generated_text=envelope.payload.get("generated_text"),
-            )
-            return HarnessActionResult(
-                lifecycle,
-                "FINISHED",
-                None,
-                result_explanation=explanation,
-                action_result_code=(
-                    "AGENT_EXPLANATION_CONFLICT"
-                    if explanation.generated_text_status == "conflict_rejected"
-                    else None
-                ),
-            )
-        # Evidence is non-mutating, and finish only terminates the attempt.
-        return HarnessActionResult(
-            lifecycle,
-            "FINISHED" if envelope.kind == "finish" else "READY",
-            "MODEL_FINISHED" if envelope.kind == "finish" else None,
+        return self.planning_action_service.apply(
+            lifecycle_id=lifecycle.lifecycle_id,
+            action=envelope,
+            actor=actor,
         )
 
     def _claim(self, attempt: AgentHarnessAttempt, owner: str) -> AgentHarnessAttempt | None:
@@ -699,12 +694,10 @@ class AgentHarnessService:
         *,
         model_calls: tuple[ModelCallRecord, ...],
         proposal_increment: int,
-        recovery_attempt_increment: int,
     ) -> str | None:
         next_steps = attempt.steps_used + 1
         next_calls = attempt.model_calls_used + self._network_call_count(model_calls)
         next_actions = attempt.action_proposals_used + proposal_increment
-        next_recoveries = attempt.recovery_attempts_used + recovery_attempt_increment
         input_tokens = self._accumulate_optional(attempt.input_tokens_used, model_calls, "input_tokens")
         output_tokens = self._accumulate_optional(attempt.output_tokens_used, model_calls, "output_tokens")
         if next_steps >= self.config.max_steps:
@@ -713,8 +706,6 @@ class AgentHarnessService:
             return "AGENT_HARNESS_MODEL_CALL_BUDGET_EXHAUSTED"
         if next_actions >= self.config.max_action_proposals:
             return "AGENT_HARNESS_ACTION_PROPOSAL_BUDGET_EXHAUSTED"
-        if next_recoveries >= self.config.max_recovery_attempts and recovery_attempt_increment:
-            return "AGENT_HARNESS_RECOVERY_BUDGET_EXHAUSTED"
         if self.config.max_input_tokens is not None and input_tokens is not None and input_tokens >= self.config.max_input_tokens:
             return "AGENT_HARNESS_INPUT_TOKEN_BUDGET_EXHAUSTED"
         if self.config.max_output_tokens is not None and output_tokens is not None and output_tokens >= self.config.max_output_tokens:
@@ -731,7 +722,6 @@ class AgentHarnessService:
         terminal_reason: str | None,
         model_calls: tuple[ModelCallRecord, ...] = (),
         proposal_increment: int = 0,
-        recovery_attempt_increment: int = 0,
     ) -> AgentHarnessAttempt:
         phase_usage = dict(attempt.model_call_phase_usage)
         for call in model_calls:
@@ -744,7 +734,6 @@ class AgentHarnessService:
             action_proposals_used=attempt.action_proposals_used + proposal_increment,
             steps_used=attempt.steps_used + 1,
             repairs_used=attempt.repairs_used + sum(call.repair for call in model_calls),
-            recovery_attempts_used=attempt.recovery_attempts_used + recovery_attempt_increment,
             input_tokens_used=self._accumulate_optional(attempt.input_tokens_used, model_calls, "input_tokens"),
             output_tokens_used=self._accumulate_optional(attempt.output_tokens_used, model_calls, "output_tokens"),
             cached_input_tokens_used=self._accumulate_optional(attempt.cached_input_tokens_used, model_calls, "cached_input_tokens"),
@@ -893,9 +882,6 @@ class AgentHarnessService:
             )
         status = "WAITING_FOR_USER" if lifecycle.state in {"WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"} else "READY"
         terminal_reason = None
-        if step.kind == "finish":
-            status = "FINISHED"
-            terminal_reason = "MODEL_FINISHED"
         recovered = self._complete_claim(
             claimed,
             status=status,
@@ -960,21 +946,6 @@ class AgentHarnessService:
         steps = [step for step in getter(attempt.attempt_id) if step.step_no < attempt.next_step_no]
         return steps[-1] if steps else None
 
-    def _record_result_explanation_event(self, *, lifecycle, step: AgentHarnessStep, explanation) -> None:
-        self.orchestrator.record_event(
-            project_id=lifecycle.project_id,
-            lifecycle_id=lifecycle.lifecycle_id,
-            command_id=f"harness:{step.step_id}:result-explanation",
-            actor="system-harness",
-            source_command="harness_result_explained",
-            details={
-                "result_explanation_hash": step.result_explanation_hash,
-                "observation_ref": step.observation_ref,
-                "evaluation_ref": step.evaluation_ref,
-                "generated_text_status": explanation.generated_text_status,
-            },
-        )
-
     @staticmethod
     def _result_summary(lifecycle, observation, evaluation):
         if observation is None or evaluation is None:
@@ -995,37 +966,3 @@ class AgentHarnessService:
     @staticmethod
     def _summary(reason: str) -> str:
         return str(reason).replace("\n", " ")[:512]
-
-    @staticmethod
-    def _validate_decision_payload(payload: dict) -> None:
-        required = {"kind", "question", "impact"}
-        if set(payload) - {"kind", "question", "impact", "options", "recommended_option"} or not required <= set(payload):
-            raise ValueError("AGENT_HARNESS_DECISION_PAYLOAD_INVALID")
-        if str(payload["kind"]) not in {
-            "missing_input", "goal_revision", "subject_id", "atlas", "global_signal_regression",
-            "repetition_time", "template", "overwrite", "experimental_backend", "other",
-        }:
-            raise ValueError("AGENT_HARNESS_DECISION_PAYLOAD_INVALID")
-        if len(str(payload["question"])) > 512 or len(str(payload["impact"])) > 512:
-            raise ValueError("AGENT_HARNESS_DECISION_PAYLOAD_INVALID")
-
-    def _decision_from_payload(self, payload: dict, lifecycle) -> PendingDecisionBatch:
-        options = tuple(
-            PendingDecisionOption(
-                id=str(item["id"])[:128], label=str(item["label"])[:256],
-                description=str(item.get("description") or "")[:512], recommended=bool(item.get("recommended")),
-            )
-            for item in payload.get("options", [])[:8]
-            if isinstance(item, dict) and {"id", "label"} <= set(item)
-        )
-        item = DecisionItem(
-            item_id=f"harness_{payload['kind']}", kind=str(payload["kind"]),
-            question=str(payload["question"]), impact=str(payload["impact"]), options=options,
-            recommended_option=(str(payload["recommended_option"]) if payload.get("recommended_option") else None),
-        )
-        evidence_hash = str((lifecycle.command_context or {}).get("evidence_snapshot_hash") or "harness-evidence-unavailable")
-        return PendingDecisionBatch(
-            batch_id=f"harness_decision_batch_{uuid4().hex}", lifecycle_id=lifecycle.lifecycle_id,
-            project_id=lifecycle.project_id, evidence_snapshot_hash=evidence_hash, items=(item,),
-            expires_at=self.now() + timedelta(hours=24), source="harness",
-        )

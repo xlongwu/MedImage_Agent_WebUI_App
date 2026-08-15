@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
-from src.backend.app.schemas.agent_harness import AgentHarnessAttempt, AgentHarnessContext, AgentHarnessStep
+from src.backend.app.schemas.agent_harness import AgentActionRecord, AgentHarnessAttempt, AgentHarnessContext, AgentHarnessStep
 from src.backend.app.schemas.agent_evidence import EvidenceSnapshot
 from src.backend.app.schemas.desktop import (
     DatasetSummary,
@@ -140,6 +140,12 @@ class ProjectStore(Protocol):
     def get_agent_harness_step_by_idempotency(self, idempotency_key: str) -> AgentHarnessStep | None: ...
 
     def list_agent_harness_steps(self, attempt_id: str) -> list[AgentHarnessStep]: ...
+
+    def add_agent_harness_action(self, record: AgentActionRecord) -> AgentActionRecord: ...
+
+    def update_agent_harness_action(self, record: AgentActionRecord, *, expected_status: str) -> AgentActionRecord: ...
+
+    def list_agent_harness_actions(self, attempt_id: str) -> list[AgentActionRecord]: ...
 
     def add_observation(self, record: ObservationRecord) -> ObservationRecord: ...
 

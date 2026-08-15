@@ -101,6 +101,10 @@ class AgentTraceService:
         if attempt is None:
             return []
         steps = list(self.store.list_agent_harness_steps(attempt.attempt_id))
+        actions = {
+            action.step_id: action
+            for action in self.store.list_agent_harness_actions(attempt.attempt_id)
+        }
         steps.sort(key=lambda step: (step.step_no, step.step_id))
         entries: list[AgentTraceEntry] = []
         expected_step_no = 1
@@ -121,6 +125,7 @@ class AgentTraceService:
                 idempotency_key=step.idempotency_key,
                 context_refs=tuple(context_refs),
                 model_calls=step.model_calls,
+                action_record=actions.get(step.step_id),
                 action_kind=step.kind,
                 action_hash=step.action_hash,
                 action_result_hash=step.action_result_hash,
@@ -160,7 +165,6 @@ class AgentTraceService:
         for ref_type, record_id, getter_name, hash_name in (
             ("observation", step.observation_ref, "get_observation", "observation_hash"),
             ("evaluation", step.evaluation_ref, "get_goal_evaluation", "goal_evaluation_hash"),
-            ("recovery", step.recovery_proposal_ref, "get_recovery_proposal", "recovery_proposal_hash"),
         ):
             if not record_id:
                 continue
@@ -245,7 +249,6 @@ class AgentTraceService:
             model_calls_used=attempt.model_calls_used,
             action_proposals_used=attempt.action_proposals_used,
             repairs_used=attempt.repairs_used,
-            recovery_attempts_used=attempt.recovery_attempts_used,
             input_tokens_used=attempt.input_tokens_used,
             output_tokens_used=attempt.output_tokens_used,
         )

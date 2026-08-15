@@ -1,6 +1,6 @@
 # Planning evidence review
 
-Use only for read-evidence and draft-plan work in planning lifecycle states.
+Use only for request-decision and draft-plan work in planning lifecycle states.
 
 Inputs are the goal, project-evidence, policy, decision-state, plan-state,
 last-action-result, and budget context sections.
@@ -11,5 +11,5 @@ other sections, request files, disclose paths, or propose execution or approval.
 
 Return only an ActionEnvelope that uses the supplied typed references. For a
 plan, distinguish confirmed evidence from assumptions. If evidence is missing,
-request a structured decision instead of inventing a value. If this procedure
-cannot be followed, return the safest allowed finish or decision action.
+request a structured decision instead of inventing a value. Do not emit any
+other action kind.

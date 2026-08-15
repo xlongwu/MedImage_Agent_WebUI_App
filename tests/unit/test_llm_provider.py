@@ -174,12 +174,11 @@ def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata(m
             "prompt_tokens_details": {"cached_tokens": 3},
         },
         "choices": [{"message": {"content": json.dumps({
-            "kind": "finish", "reason": "done", "expected_state": "CREATED",
+            "kind": "draft_plan", "reason": "done", "expected_state": "CREATED",
         })}}],
     }
 
-    result = call_openai_compatible_action_provider(
-        snapshot={
+    snapshot = {
             "schema_version": 2,
             "policy_version": "p",
             "redaction_policy_version": "r",
@@ -190,7 +189,10 @@ def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata(m
                 name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {}}
                 for name in ("goal", "policy", "project_evidence", "decision_state", "plan_state", "execution_state", "latest_observation", "last_action_result", "memory_context", "budget")
             },
-        },
+        }
+    from src.backend.app.planner.agent_model_adapter import build_canonical_model_request
+    result = call_openai_compatible_action_provider(
+        request=build_canonical_model_request(snapshot=snapshot, provider_ref="openai_compatible", repair=False),
         http_post=lambda *_args: FakeResponse(response, {"x-request-id": "req_123"}),
     )
 
@@ -203,15 +205,17 @@ def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata(m
 
 def test_action_provider_keeps_missing_usage_nullable_and_sanitizes_errors(monkeypatch):
     monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
-    result = call_openai_compatible_action_provider(
-        snapshot={
+    snapshot = {
             "schema_version": 2, "policy_version": "p", "redaction_policy_version": "r",
             "prompt_template_version": "t", "skill_refs": [], "omitted_fields": [],
             "sections": {
                 name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {}}
                 for name in ("goal", "policy", "project_evidence", "decision_state", "plan_state", "execution_state", "latest_observation", "last_action_result", "memory_context", "budget")
             },
-        },
+        }
+    from src.backend.app.planner.agent_model_adapter import build_canonical_model_request
+    result = call_openai_compatible_action_provider(
+        request=build_canonical_model_request(snapshot=snapshot, provider_ref="openai_compatible", repair=False),
         http_post=lambda *_args: FakeResponse({"choices": [{"message": {"content": "not json sk-test-key"}}]}),
     )
 
