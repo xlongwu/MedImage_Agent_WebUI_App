@@ -9,6 +9,7 @@ from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_trace import (
     AgentTraceBudget,
     AgentTraceBundle,
+    AgentTraceContextProjection,
     AgentTraceEntry,
     AgentTraceLifecycleEvent,
     AgentTracePage,
@@ -124,6 +125,7 @@ class AgentTraceService:
                 step_no=step.step_no,
                 idempotency_key=step.idempotency_key,
                 context_refs=tuple(context_refs),
+                context_projection=self._context_projection(context_refs),
                 model_calls=step.model_calls,
                 action_record=actions.get(step.step_id),
                 action_kind=step.kind,
@@ -159,6 +161,27 @@ class AgentTraceService:
                     for ref in context.skill_refs
                 )
         return refs
+
+    def _context_projection(
+        self, references: list[AgentTraceReference],
+    ) -> AgentTraceContextProjection | None:
+        """Expose only projection decisions, never model-facing content."""
+        for reference in references:
+            if reference.ref_type != "context" or reference.status != "present":
+                continue
+            context = self.store.get_agent_harness_context(reference.ref_id)
+            if context is None:
+                continue
+            return AgentTraceContextProjection(
+                context_hash=context.context_hash, purpose=context.purpose,
+                required_sections=context.required_sections,
+                included_sections=context.included_sections,
+                omitted_sections=context.omitted_sections,
+                complete=context.complete, incomplete_reason=context.incomplete_reason,
+                evidence_snapshot_hash=context.evidence_snapshot_hash,
+                projection_policy_version=context.projection_policy_version,
+            )
+        return None
 
     def _step_references(self, step, project_id: str, lifecycle_id: str, issues: list[str]) -> list[AgentTraceReference]:
         result: list[AgentTraceReference] = []

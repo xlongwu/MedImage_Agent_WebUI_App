@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -29,6 +30,11 @@ class AgentEvidenceService:
         "HUMAN_HANDOFF": ("plans", "runs", "observations"),
         "WAITING_FOR_APPROVAL": ("project", "dataset", "artifacts", "plans", "runs", "capabilities", "memory"),
     }
+    _CONTEXT_TYPES_BY_PURPOSE: dict[str, tuple[EvidenceType, ...]] = {
+        "decision_request": ("project", "dataset", "artifacts", "observations", "memory"),
+        "plan_draft": ("project", "dataset", "artifacts", "plans", "capabilities", "memory"),
+    }
+    MAX_CONTEXT_SNAPSHOT_AGE = timedelta(minutes=15)
 
     def __init__(self, store) -> None:
         self.store = store
@@ -215,6 +221,72 @@ class AgentEvidenceService:
             "requested_types": requested,
             "facts": facts,
             "source_refs": refs,
+        })
+
+    def read_for_context(
+        self,
+        *,
+        snapshot_hash: str,
+        project_id: str,
+        lifecycle_id: str,
+        purpose: str,
+        now: datetime | None = None,
+    ) -> EvidenceSnapshot:
+        """Read one registered evidence projection after scope and freshness checks.
+
+        Context construction receives this immutable object only.  It never
+        follows a path from a model-visible reference or opens source data.
+        """
+        if purpose not in self._CONTEXT_TYPES_BY_PURPOSE:
+            raise SafetyError("AGENT_CONTEXT_PURPOSE_INVALID", code="AGENT_CONTEXT_PURPOSE_INVALID")
+        snapshot = self.store.get_agent_evidence_snapshot(snapshot_hash)
+        if snapshot is None:
+            raise SafetyError("AGENT_CONTEXT_EVIDENCE_MISSING", code="AGENT_CONTEXT_EVIDENCE_MISSING")
+        if snapshot.snapshot_hash != snapshot_hash:
+            raise SafetyError("AGENT_CONTEXT_EVIDENCE_HASH_MISMATCH", code="AGENT_CONTEXT_EVIDENCE_HASH_MISMATCH")
+        if snapshot.project_id != project_id or snapshot.lifecycle_id != lifecycle_id:
+            raise SafetyError("AGENT_CONTEXT_EVIDENCE_PROJECT_MISMATCH", code="AGENT_CONTEXT_EVIDENCE_PROJECT_MISMATCH")
+        current = now or datetime.now(UTC)
+        if snapshot.created_at + self.MAX_CONTEXT_SNAPSHOT_AGE < current:
+            raise SafetyError("AGENT_CONTEXT_EVIDENCE_STALE", code="AGENT_CONTEXT_EVIDENCE_STALE")
+        return self._select(snapshot, self._CONTEXT_TYPES_BY_PURPOSE[purpose])
+
+    @classmethod
+    def _select(cls, snapshot: EvidenceSnapshot, wanted: tuple[EvidenceType, ...]) -> EvidenceSnapshot:
+        """Return a stable typed projection without changing the source snapshot."""
+        requested = tuple(item for item in snapshot.requested_types if item in wanted)
+        key_prefixes = {
+            "project": {"dataset_type", "subject_count"},
+            "dataset": {"dataset_health", "dataset_subject_count"},
+            "artifacts": {"registered_input_count"},
+            "plans": {"reviewed_plan_count"},
+            "runs": {"run_count"},
+            "observations": {"observation_count", "goal_evaluation_count"},
+            "memory": {"memory_suggestion_count"},
+            "capabilities": {"planner_provider"},
+        }
+        fact_keys = set().union(*(key_prefixes[item] for item in requested))
+        facts = tuple(item for item in snapshot.facts if item.key in fact_keys)
+        prefixes = tuple({
+            "project" if "project" in requested else "",
+            "dataset" if {"dataset", "artifacts"} & set(requested) else "",
+            "reviewed_plan" if "plans" in requested else "",
+            "run" if "runs" in requested else "",
+            "observation" if "observations" in requested else "",
+            "goal_evaluation" if "observations" in requested else "",
+            "memory" if "memory" in requested else "",
+            "planner_provider" if "capabilities" in requested else "",
+        } - {""})
+        refs = tuple(ref for ref in snapshot.source_refs if ref.source_type.startswith(prefixes)) if prefixes else ()
+        identity = {
+            "schema_version": 1, "parent_snapshot_hash": snapshot.snapshot_hash,
+            "requested_types": requested, "facts": [item.model_dump(mode="json") for item in facts],
+            "missing": list(snapshot.missing), "warnings": [item.model_dump(mode="json") for item in snapshot.warnings],
+            "source_refs": [item.model_dump(mode="json") for item in refs],
+        }
+        return snapshot.model_copy(update={
+            "snapshot_hash": stable_hash(identity), "requested_types": requested,
+            "facts": facts, "source_refs": refs,
         })
 
     @staticmethod

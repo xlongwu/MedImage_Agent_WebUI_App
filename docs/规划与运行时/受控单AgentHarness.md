@@ -34,19 +34,27 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
 - 唯一模型协议是 schema version 2 的判别联合 `ActionEnvelope`。允许 kind 仅为
   `request_decision` 和 `draft_plan`；两者使用固定不可变字段，前者直接嵌入正式
   `DecisionItem`，不存在通用 `payload`。所有其他 kind 及额外字段默认拒绝。
-- Context v2 由唯一 builder 从显式 `HarnessContextSources` 产生，最大 32 KiB；
-  builder 不读取 store 或文件。它以固定顺序保存 `goal`、`policy`、
+- Context v3 由唯一 builder 从显式 `HarnessContextSources` 产生，最大 32 KiB；
+  builder 不读取 store 或文件。它按 `decision_request` 或 `plan_draft` 用途，
+  以固定顺序投影 `goal`、`policy`、
   `project_evidence`、`decision_state`、`plan_state`、`execution_state`、
   `latest_observation`、`last_action_result`、`memory_context` 和 `budget` 十个
-  typed sections。每个 section 都带 schema version、稳定 source refs/source hash，
-  总 context 绑定 section hashes、prompt/skill、policy 和 redaction version。
+  typed sections。Context 明确记录用途、required/included/omitted sections、
+  typed evidence refs、evidence snapshot hash、projection policy version 和
+  complete/incomplete reason；每个 section 都带 schema version、稳定 source
+  refs/source hash，context hash 覆盖实际发送的 section hashes、工具目录、MemoryContext、
+  prompt/skill、policy 和 redaction version。
 - Context row 仅在重建后的完整 context hash 相同才可复用；attempt 中的旧 hash
   不能跳过当前动态来源的重建。Observation、计划、答案、上一步结果、预算或策略变化
   都会使缓存失效。provider cache miss 不影响确定性行为。
-- 裁剪只会整项移除非必要 section 数据，绝不截断 ID 或 hash。先裁剪 Memory 和
-  可重新读取的 evidence，再裁剪高优先级状态；仍超限时仅保留 goal、policy、
-  decision state、last action result 和 budget。它们仍无法装入时在模型调用前以
-  `AGENT_CONTEXT_LIMIT_EXCEEDED` 安全停止。
+- 证据只能由 `ProjectStore` 的已登记 snapshot 读取；每个 ref 都有 type、record ID
+  和 hash，并在读取时校验 project/lifecycle binding、hash 和 15 分钟 freshness。
+  不会打开 rawdata、完整日志、未登记路径或任意文件正文。Memory 仅是建议背景，
+  不能作为审批或环境事实。
+- 裁剪只会按固定用途顺序移除完整的可选 section，并在 `omitted_sections` 记录原因；
+  不会截断 JSON、ID 或 hash。必需 section 缺失使 Context 标记 incomplete，必需
+  section 仍超限时在模型调用前以 `AGENT_CONTEXT_REQUIRED_SECTION_TOO_LARGE` 安全停止。
+  `complete=false` 永远不会送入 provider。
 
 ## 模型调用账本
 
@@ -99,7 +107,8 @@ recovery/token 预算、状态、下一步、让出次数、actual fallback 路�
   Plan、ticket、run、Observation、Goal Evaluation 与 Recovery 的权威记录组装一个只读
   `AgentTraceBundle`。它不写入数据库，不复制这些记录，也不会补造缺失数据；缺失和跨项目
   绑定冲突分别标为 `incomplete` 与 `conflict`，并进入 canonical `integrity_hash`。
-- Trace 只保存安全摘要和 typed ID/hash 引用，以及已经脱敏的 `ModelCallRecord` metadata。
+- Trace 只保存安全摘要和 typed ID/hash 引用、Context 的用途/包含与省略 section、
+  完整性和 hash，以及已经脱敏的 `ModelCallRecord` metadata。
   Prompt、原始模型响应、绝对路径、secret、原始影像、完整日志与 Memory 正文都不进入 bundle
   或 `/trace` 响应。高级只读 API 为
   `GET /api/projects/{project_id}/agent/tasks/{task_id}/trace?after=0&limit=50`；前端高级详情

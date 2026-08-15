@@ -21,6 +21,7 @@ from src.backend.app.schemas.agent_harness import (
 from src.backend.app.schemas.agent_lifecycle import DecisionItem, PendingDecisionOption
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_harness_service import AgentHarnessService
+from src.backend.app.services.agent_evidence_service import AgentEvidenceService
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_planning_action_service import HarnessActionResult
 from src.backend.app.services.mock_store import SQLiteDesktopStore
@@ -37,9 +38,16 @@ def _store(tmp_path) -> SQLiteDesktopStore:
 
 
 def _lifecycle(store):
-    return AgentOrchestrator(store).create(
+    lifecycle = AgentOrchestrator(store).create(
         project_id="project-1", command_id="create", actor="user", goal_text="Create a plan"
     )
+    evidence = AgentEvidenceService(store).build_snapshot(
+        project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id,
+    )
+    return lifecycle.model_copy(update={
+        "command_context": {"evidence_snapshot_hash": evidence.snapshot_hash},
+        "evidence_snapshot_hash": evidence.snapshot_hash,
+    })
 
 
 def _decision() -> RequestDecisionAction:
@@ -120,11 +128,14 @@ def test_decision_item_keeps_the_formal_schema_constraints() -> None:
 def test_canonical_request_hash_covers_every_actual_request_field() -> None:
     base = build_canonical_model_request(
         snapshot={
-            "schema_version": 2, "policy_version": "policy", "redaction_policy_version": "redaction",
+            "schema_version": 3, "purpose": "plan_draft", "complete": True,
+            "required_sections": ["goal", "policy"], "included_sections": ["goal", "policy"],
+            "omitted_sections": [], "evidence_refs": [], "evidence_snapshot_hash": "evidence",
+            "projection_policy_version": "projection",
+            "policy_version": "policy", "redaction_policy_version": "redaction",
             "prompt_template_version": "prompt-v1", "skill_refs": [], "skill_error_codes": [],
-            "sections": {name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {}}
-                         for name in ("goal", "policy", "project_evidence", "decision_state", "plan_state", "execution_state", "latest_observation", "last_action_result", "memory_context", "budget")},
-            "omitted_fields": [],
+            "sections": {name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {"value": name}}
+                         for name in ("goal", "policy")},
         }, provider_ref="rule_based", repair=False,
     )
     assert stable_hash(canonical_request_bytes(base)) == stable_hash(canonical_request_bytes(base))
@@ -149,6 +160,22 @@ def test_started_record_write_failure_prevents_provider_call(tmp_path, monkeypat
 
     with pytest.raises(RuntimeError, match="write failed"):
         service.run_one(lifecycle=lifecycle, actor="user")
+    assert adapter.calls == 0
+
+
+def test_missing_required_evidence_stops_before_provider_call(tmp_path) -> None:
+    store = _store(tmp_path)
+    lifecycle = AgentOrchestrator(store).create(
+        project_id="project-1", command_id="missing-evidence", actor="user", goal_text="Create a plan",
+    ).model_copy(update={"command_context": {"evidence_snapshot_hash": "missing"}})
+    adapter = Adapter(DraftPlanAction(kind="draft_plan", reason="Plan", expected_state="CREATED"))
+    service = _service(store, adapter)
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
+
+    result = service.run_one(lifecycle=lifecycle, actor="user")
+
+    assert result.attempt.status == "STOPPED"
+    assert result.attempt.terminal_reason == "AGENT_CONTEXT_EVIDENCE_MISSING"
     assert adapter.calls == 0
 
 

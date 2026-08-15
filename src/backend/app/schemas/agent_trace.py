@@ -42,6 +42,22 @@ class AgentTraceReference(BaseModel):
     status: TraceReferenceStatus = "present"
 
 
+class AgentTraceContextProjection(BaseModel):
+    """Redacted Context v3 audit metadata; it never contains section bodies."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    context_hash: str = Field(min_length=1, max_length=128)
+    purpose: str = Field(min_length=1, max_length=64)
+    required_sections: tuple[str, ...] = ()
+    included_sections: tuple[str, ...] = ()
+    omitted_sections: tuple[str, ...] = ()
+    complete: bool
+    incomplete_reason: str | None = Field(default=None, max_length=256)
+    evidence_snapshot_hash: str | None = Field(default=None, max_length=128)
+    projection_policy_version: str = Field(min_length=1, max_length=128)
+
+
 class AgentTraceLifecycleEvent(BaseModel):
     """Redacted lifecycle reducer input retained in trace order."""
 
@@ -63,6 +79,7 @@ class AgentTraceEntry(BaseModel):
     step_no: int = Field(ge=1)
     idempotency_key: str = Field(min_length=1, max_length=512)
     context_refs: tuple[AgentTraceReference, ...] = ()
+    context_projection: AgentTraceContextProjection | None = None
     model_calls: tuple[ModelCallRecord, ...] = ()
     action_record: AgentActionRecord | None = None
     action_kind: str | None = Field(default=None, max_length=64)

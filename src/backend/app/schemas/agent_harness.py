@@ -35,6 +35,7 @@ AgentHarnessContextSectionName = Literal[
     "memory_context",
     "budget",
 ]
+AgentContextPurpose = Literal["decision_request", "plan_draft"]
 
 ModelCallStatus = Literal["started", "succeeded", "failed", "invalid_output", "unknown"]
 AgentActionStatus = Literal["accepted", "applied", "rejected"]
@@ -237,7 +238,7 @@ class AgentHarnessStep(BaseModel):
 
 
 class AgentHarnessContextSection(BaseModel):
-    """One immutable, provenance-bound, redacted Context v2 partition."""
+    """One immutable, provenance-bound, redacted Context v3 partition."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -265,16 +266,25 @@ class AgentHarnessContextSections(BaseModel):
 
 
 class AgentHarnessContext(BaseModel):
-    """Immutable, redacted, fixed-section Context v2 snapshot."""
+    """Immutable, redacted, purpose-scoped Context v3 snapshot."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     context_hash: str
     lifecycle_id: str
     project_id: str
+    purpose: AgentContextPurpose
     sections: AgentHarnessContextSections
     section_hashes: dict[AgentHarnessContextSectionName, str]
+    required_sections: tuple[AgentHarnessContextSectionName, ...]
+    included_sections: tuple[AgentHarnessContextSectionName, ...]
+    omitted_sections: tuple[str, ...] = ()
+    evidence_refs: tuple[dict[str, str], ...] = ()
+    evidence_snapshot_hash: str | None = None
+    projection_policy_version: str
+    complete: bool
+    incomplete_reason: str | None = None
     memory_context_hash: str | None = None
     project_snapshot_hash: str
     policy_version: str = "agent-harness-policy-v2"
@@ -282,20 +292,30 @@ class AgentHarnessContext(BaseModel):
     prompt_template_version: str = "agent-harness-prompt-v2"
     skill_refs: tuple[SkillContextRef, ...] = Field(default_factory=tuple, max_length=3)
     skill_error_codes: tuple[str, ...] = Field(default_factory=tuple, max_length=3)
-    omitted_fields: tuple[str, ...] = ()
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     def prompt_payload(self) -> dict[str, Any]:
         """Return the only fixed-order payload supplied to an action provider."""
         return {
             "schema_version": self.schema_version,
+            "purpose": self.purpose,
+            "required_sections": list(self.required_sections),
+            "included_sections": list(self.included_sections),
+            "omitted_sections": list(self.omitted_sections),
+            "evidence_refs": [dict(reference) for reference in self.evidence_refs],
+            "evidence_snapshot_hash": self.evidence_snapshot_hash,
+            "projection_policy_version": self.projection_policy_version,
+            "complete": self.complete,
+            "incomplete_reason": self.incomplete_reason,
             "policy_version": self.policy_version,
             "redaction_policy_version": self.redaction_policy_version,
             "prompt_template_version": self.prompt_template_version,
             "skill_refs": [reference.model_dump(mode="json") for reference in self.skill_refs],
             "skill_error_codes": list(self.skill_error_codes),
-            "sections": self.sections.model_dump(mode="json"),
-            "omitted_fields": list(self.omitted_fields),
+            "sections": {
+                name: getattr(self.sections, name).model_dump(mode="json")
+                for name in self.included_sections
+            },
         }
 
 

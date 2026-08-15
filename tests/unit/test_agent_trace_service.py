@@ -33,7 +33,7 @@ def _trace_store(tmp_path) -> tuple[SQLiteDesktopStore, object]:
     project = _project()
     store.add_project(project, health_status="ready", rawdata_dir="")
     lifecycle = AgentOrchestrator(store).create(
-        project_id=project.id, command_id="trace-create", actor="user"
+        project_id=project.id, command_id="trace-create", actor="user", goal_text="Trace a plan"
     )
     attempt = AgentHarnessService(
         store, config=AgentHarnessConfig(enabled=True)
@@ -84,7 +84,9 @@ def test_trace_is_read_only_redacted_and_replays_without_operational_dependencie
 
     assert bundle.integrity_status == "complete"
     assert bundle.entries[0].context_refs[0].ref_type == "context"
-    assert "goal" not in bundle.model_dump_json()
+    assert "Create a plan" not in bundle.model_dump_json()
+    assert bundle.entries[0].context_projection is not None
+    assert bundle.entries[0].context_projection.complete is True
     assert replay.integrity_valid is True
     assert replay.state_valid is True
     assert replay.budget_valid is True

@@ -16,7 +16,7 @@ from src.backend.app.schemas.agent_harness import (
     parse_action_envelope_json,
 )
 
-CONTEXT_V2_SECTION_ORDER = (
+CONTEXT_V3_SECTION_ORDER = (
     "goal", "policy", "project_evidence", "decision_state", "plan_state",
     "execution_state", "latest_observation", "last_action_result", "memory_context", "budget",
 )
@@ -30,19 +30,32 @@ def _canonical_value(value: object) -> object:
     return value
 
 
-def serialize_context_v2(snapshot: dict) -> dict:
-    """Validate and serialize Context v2 in a provider-cache-stable order.
+def serialize_context_v3(snapshot: dict) -> dict:
+    """Validate and serialize Context v3 in a provider-cache-stable order.
 
     This is intentionally the sole adapter boundary.  It accepts no legacy
     flat snapshot, so a stored v1 row cannot silently reach a model provider.
     """
-    if not isinstance(snapshot, dict) or snapshot.get("schema_version") != 2:
+    if not isinstance(snapshot, dict) or snapshot.get("schema_version") != 3:
+        raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
+    if snapshot.get("complete") is not True:
+        raise ValueError("AGENT_CONTEXT_INCOMPLETE")
+    purpose = snapshot.get("purpose")
+    if purpose not in {"decision_request", "plan_draft"}:
+        raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
+    required = snapshot.get("required_sections")
+    included = snapshot.get("included_sections")
+    if not isinstance(required, list) or not isinstance(included, list):
+        raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
+    if not set(required).issubset(included) or not set(included).issubset(CONTEXT_V3_SECTION_ORDER):
         raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
     sections = snapshot.get("sections")
-    if not isinstance(sections, dict) or set(sections) != set(CONTEXT_V2_SECTION_ORDER):
+    if not isinstance(sections, dict) or set(sections) != set(included):
         raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
     fixed_sections: dict[str, object] = {}
-    for name in CONTEXT_V2_SECTION_ORDER:
+    for name in CONTEXT_V3_SECTION_ORDER:
+        if name not in sections:
+            continue
         section = sections[name]
         if not isinstance(section, dict) or section.get("schema_version") != 1:
             raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
@@ -60,7 +73,18 @@ def serialize_context_v2(snapshot: dict) -> dict:
             name: section for name, section in fixed_sections.items() if name in allowed_sections
         }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
+        "purpose": purpose,
+        "required_sections": list(required),
+        "included_sections": [name for name in CONTEXT_V3_SECTION_ORDER if name in included],
+        "omitted_sections": sorted(str(item) for item in snapshot.get("omitted_sections", []) if isinstance(item, str)),
+        "evidence_refs": sorted(
+            [item for item in snapshot.get("evidence_refs", []) if isinstance(item, dict)],
+            key=lambda item: (str(item.get("type") or ""), str(item.get("record_id") or ""), str(item.get("hash") or "")),
+        ),
+        "evidence_snapshot_hash": str(snapshot.get("evidence_snapshot_hash") or ""),
+        "projection_policy_version": str(snapshot.get("projection_policy_version") or ""),
+        "complete": True,
         "policy_version": str(snapshot.get("policy_version") or ""),
         "redaction_policy_version": str(snapshot.get("redaction_policy_version") or ""),
         "prompt_template_version": str(snapshot.get("prompt_template_version") or ""),
@@ -71,7 +95,6 @@ def serialize_context_v2(snapshot: dict) -> dict:
             str(item) for item in snapshot.get("skill_error_codes", []) if isinstance(item, str)
         ),
         "sections": fixed_sections,
-        "omitted_fields": sorted(str(item) for item in snapshot.get("omitted_fields", []) if isinstance(item, str)),
     }
 
 
@@ -143,7 +166,7 @@ def build_canonical_model_request(
     *, snapshot: dict, provider_ref: str, repair: bool,
 ) -> CanonicalModelRequest:
     """Build the sole object from which a provider request may be sent."""
-    serialized = serialize_context_v2(snapshot)
+    serialized = serialize_context_v3(snapshot)
     refs = tuple(SkillContextRef.model_validate(item) for item in serialized["skill_refs"])
     from src.backend.app.agent_skills.loader import AgentSkillLoader
 

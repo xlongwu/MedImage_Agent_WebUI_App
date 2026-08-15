@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from src.backend.app.agent_skills.loader import AgentSkillLoader
 from src.backend.app.core.config_schema import AgentHarnessConfig
+from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.agent_model_adapter import (
     ActionCallMetadata,
     ActionProposal,
@@ -36,6 +37,7 @@ from src.backend.app.schemas.agent_harness import (
 )
 from src.backend.app.services.agent_evidence_service import AgentEvidenceService
 from src.backend.app.services.agent_harness_context_service import (
+    AgentContextIncompleteError,
     AgentContextLimitExceededError,
     HarnessContextBuilder,
     HarnessContextSources,
@@ -180,11 +182,35 @@ class AgentHarnessService:
             return HarnessRunResult(lifecycle=lifecycle, attempt=self.store.get_agent_harness_attempt(lifecycle.lifecycle_id))
         if reason := self._budget_stop_reason(claimed):
             return HarnessRunResult(lifecycle=lifecycle, attempt=self._stop_claimed(claimed, reason))
+        # A reclaimed step may already contain a durable started provider call.
+        # Reconcile it before reading fresh context: rebuilding cannot make an
+        # unknown external outcome safe to retry.
+        if claimed.context_hash:
+            previous_key = f"{claimed.attempt_id}:{claimed.next_step_no}:{stable_hash({'context_hash': claimed.context_hash, 'state': lifecycle.state})}"
+            prior = self.store.get_agent_harness_step_by_idempotency(previous_key)
+            if prior is not None:
+                return self._recover_completed_step(claimed=claimed, lifecycle=lifecycle, step=prior)
         project = self.store.get_project(lifecycle.project_id)
         evidence_hash = str((lifecycle.command_context or {}).get("evidence_snapshot_hash") or "")
-        evidence = self.store.get_agent_evidence_snapshot(evidence_hash) if evidence_hash and hasattr(self.store, "get_agent_evidence_snapshot") else None
-        if evidence is not None:
-            evidence = AgentEvidenceService.select_for_context(evidence, lifecycle_state=lifecycle.state)
+        purpose = self.context_builder.purpose_for(lifecycle)
+        try:
+            if not evidence_hash:
+                # Initial Harness wake-ups precede deterministic planning.  Build
+                # the bounded registered snapshot here; no raw file is opened and
+                # later reads still require its exact typed hash and scope.
+                evidence_hash = AgentEvidenceService(self.store).build_snapshot(
+                    project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id,
+                ).snapshot_hash
+            evidence = AgentEvidenceService(self.store).read_for_context(
+                snapshot_hash=evidence_hash, project_id=lifecycle.project_id,
+                lifecycle_id=lifecycle.lifecycle_id, purpose=purpose, now=self.now(),
+            )
+        except (SafetyError, AgentContextIncompleteError) as exc:
+            code = getattr(exc, "code", None) or str(exc).split(":", 1)[0]
+            return HarnessRunResult(
+                lifecycle=lifecycle,
+                attempt=self._stop_claimed(claimed, code or "AGENT_CONTEXT_EVIDENCE_MISSING"),
+            )
         observation = self._record("get_observation", lifecycle.observation_id)
         evaluation = self._record("get_goal_evaluation", lifecycle.goal_evaluation_id)
         proposal = self._record("get_recovery_proposal", lifecycle.recovery_proposal_id)
@@ -197,20 +223,24 @@ class AgentHarnessService:
                 lifecycle=lifecycle, project=project, evidence_snapshot=evidence,
                 reviewed_plan=reviewed_plan, run_link=run_link, observation=observation,
                 evaluation=evaluation, recovery_proposal=proposal, result_summary=result_summary,
-                last_step=last_step, attempt=claimed,
+                last_step=last_step, attempt=claimed, purpose=purpose,
             ))
+            if not base_context.complete:
+                raise AgentContextIncompleteError(base_context.incomplete_reason or "AGENT_CONTEXT_INCOMPLETE")
             skills = self.skill_loader.load_for_state(state=lifecycle.state, context=base_context)
             built_context = self.context_builder.build(sources=HarnessContextSources(
                 lifecycle=lifecycle, project=project, evidence_snapshot=evidence,
                 reviewed_plan=reviewed_plan, run_link=run_link, observation=observation,
                 evaluation=evaluation, recovery_proposal=proposal, result_summary=result_summary,
-                last_step=last_step, attempt=claimed, skill_refs=skills.references,
+                last_step=last_step, attempt=claimed, purpose=purpose, skill_refs=skills.references,
                 skill_error_codes=skills.error_codes,
             ))
-        except AgentContextLimitExceededError:
+            if not built_context.complete:
+                raise AgentContextIncompleteError(built_context.incomplete_reason or "AGENT_CONTEXT_INCOMPLETE")
+        except (AgentContextLimitExceededError, AgentContextIncompleteError) as exc:
             return HarnessRunResult(
                 lifecycle=lifecycle,
-                attempt=self._stop_claimed(claimed, "AGENT_CONTEXT_LIMIT_EXCEEDED"),
+                attempt=self._stop_claimed(claimed, str(exc)),
             )
         # Always rebuild from explicit current sources.  A previously stored
         # attempt hash must not hide a changed dynamic section.
@@ -622,7 +652,7 @@ class AgentHarnessService:
         if envelope.expected_state != lifecycle.state:
             raise ValueError("AGENT_HARNESS_STALE_ACTION")
         capability = assert_capability_allowed(envelope.kind, lifecycle.state)
-        roots = set(type(context.sections).model_fields)
+        roots = set(context.included_sections)
         requested_sections = {ref.split(".", 1)[0] for ref in envelope.input_refs}
         if not requested_sections.issubset(roots):
             raise ValueError("AGENT_HARNESS_REFERENCE_DENIED")

@@ -179,15 +179,17 @@ def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata(m
     }
 
     snapshot = {
-            "schema_version": 2,
+            "schema_version": 3, "purpose": "plan_draft", "complete": True,
+            "required_sections": ["goal", "policy"], "included_sections": ["goal", "policy"],
+            "omitted_sections": [], "evidence_refs": [], "evidence_snapshot_hash": "evidence",
+            "projection_policy_version": "projection",
             "policy_version": "p",
             "redaction_policy_version": "r",
             "prompt_template_version": "t",
             "skill_refs": [],
-            "omitted_fields": [],
             "sections": {
                 name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {}}
-                for name in ("goal", "policy", "project_evidence", "decision_state", "plan_state", "execution_state", "latest_observation", "last_action_result", "memory_context", "budget")
+                for name in ("goal", "policy")
             },
         }
     from src.backend.app.planner.agent_model_adapter import build_canonical_model_request
@@ -206,11 +208,14 @@ def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata(m
 def test_action_provider_keeps_missing_usage_nullable_and_sanitizes_errors(monkeypatch):
     monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
     snapshot = {
-            "schema_version": 2, "policy_version": "p", "redaction_policy_version": "r",
-            "prompt_template_version": "t", "skill_refs": [], "omitted_fields": [],
+            "schema_version": 3, "purpose": "plan_draft", "complete": True,
+            "required_sections": ["goal", "policy"], "included_sections": ["goal", "policy"],
+            "omitted_sections": [], "evidence_refs": [], "evidence_snapshot_hash": "evidence",
+            "projection_policy_version": "projection", "policy_version": "p", "redaction_policy_version": "r",
+            "prompt_template_version": "t", "skill_refs": [],
             "sections": {
                 name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {}}
-                for name in ("goal", "policy", "project_evidence", "decision_state", "plan_state", "execution_state", "latest_observation", "last_action_result", "memory_context", "budget")
+                for name in ("goal", "policy")
             },
         }
     from src.backend.app.planner.agent_model_adapter import build_canonical_model_request
