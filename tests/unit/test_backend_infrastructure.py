@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from src.backend.app.api import planner_routes
+from src.backend.app.api import planner_routes, run_routes
 from src.backend.app.core.config import ConfigService, get_backend_settings
 from src.backend.app.core.exceptions import PipelineError
 from src.backend.app.main import create_app
@@ -75,7 +76,7 @@ def test_api_v1_prefix_preserves_legacy_route_contract():
     assert versioned.json() == legacy.json()
 
 
-def test_domain_split_legacy_routes_remain_registered():
+def test_domain_routes_register_the_single_agent_task_planning_chain():
     app = create_app()
     registered_paths = _extract_route_paths(app)
 
@@ -85,7 +86,16 @@ def test_domain_split_legacy_routes_remain_registered():
         "/api/dpabi/capability",
         "/api/dpabi/function-list",
         "/api/rsfmri/preprocessing-plan",
-        "/api/agent/plan",
+        "/api/projects/{project_id}/agent/tasks",
+        "/api/projects/{project_id}/agent/tasks/{task_id}",
+        "/api/runs",
+        "/api/runs/{run_id}",
+        "/api/runs/{run_id}/state-detail",
+        "/api/runs/{run_id}/diagnosis",
+        "/api/retry/dry-run",
+        "/api/retry/execute",
+        "/api/retry-runs/{retry_run_id}",
+        "/api/scheduler/plan",
         "/api/gpu/detect",
         "/api/gpu/synthetic-benchmark",
         "/api/pipelines",
@@ -106,6 +116,72 @@ def test_domain_split_legacy_routes_remain_registered():
     }
 
     assert expected_paths <= registered_paths
+    assert "/api/agent/plan" not in registered_paths
+    assert "/api/agent-runs/{agent_run_id}" not in registered_paths
+
+
+def test_runs_routes_preserve_the_established_inspection_contract(monkeypatch):
+    monkeypatch.setattr(
+        run_routes,
+        "list_available_runs",
+        lambda work_dir: {"ok": True, "work_dir": work_dir, "runs": []},
+    )
+    monkeypatch.setattr(
+        run_routes,
+        "inspect_run",
+        lambda run_id, work_dir: {"ok": True, "run_id": run_id, "work_dir": work_dir},
+    )
+    monkeypatch.setattr(
+        run_routes,
+        "read_state_detail",
+        lambda **kwargs: {"ok": True, **kwargs},
+    )
+    monkeypatch.setattr(
+        run_routes,
+        "diagnose_run",
+        lambda run_id: {"ok": True, "run_id": run_id},
+    )
+
+    client = TestClient(create_app())
+
+    assert client.get("/api/runs").json() == {"ok": True, "work_dir": "./work", "runs": []}
+    assert client.get("/api/runs/run-1").json() == {
+        "ok": True,
+        "run_id": "run-1",
+        "work_dir": "./work",
+    }
+    assert client.get("/api/runs/run-1/state-detail?path=states/run-1.json").json() == {
+        "ok": True,
+        "run_id": "run-1",
+        "state_path": "states/run-1.json",
+        "work_dir": "./work",
+    }
+    assert client.get("/api/runs/run-1/diagnosis").json() == {"ok": True, "run_id": "run-1"}
+
+
+def test_legacy_file_planning_implementation_and_cli_are_removed():
+    removed_paths = (
+        "src/backend/app/runtime/agent_plan.py",
+        "src/backend/app/runtime/agent_runtime.py",
+        "src/backend/app/runtime/tool_registry.py",
+        "src/backend/app/runtime/background_review.py",
+        "src/backend/app/tools/agent_plan_cli.py",
+        "src/backend/app/tools/agent_execute_cli.py",
+        "src/backend/app/tools/agent_review_cli.py",
+        "src/backend/app/tools/background_review_status.py",
+    )
+
+    assert all(not Path(path).exists() for path in removed_paths)
+    assert "agent_plan" not in Path("src/backend/app/tools/scheduler_plan_cli.py").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_removed_file_planning_routes_fail_closed():
+    client = TestClient(create_app())
+
+    assert client.post("/api/agent/plan", json={}).status_code == 404
+    assert client.get("/api/agent-runs/legacy").status_code == 404
 
 
 def test_domain_split_routes_do_not_register_duplicate_method_paths():

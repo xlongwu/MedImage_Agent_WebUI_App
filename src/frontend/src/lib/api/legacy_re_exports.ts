@@ -2,14 +2,11 @@ export { DEFAULT_API_BASE } from "./legacyCore";
 
 export {
   checkApprovalGate,
-  createAgentPlan,
-  executeAgentPlan,
   executeReviewedDryRun,
   executeReviewedPlan,
   fetchAuditRecord,
   fetchToolCatalog,
   generatePlanFromGoal,
-  getAgentRun,
   getPipeline,
   getProjectReviewedPlan,
   listPipelines,

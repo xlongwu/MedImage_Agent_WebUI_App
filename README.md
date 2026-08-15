@@ -140,6 +140,10 @@ the same command returns the persisted result without running the executor again
 an interrupted dispatch that had already started is reported as outcome-unknown
 and requires inspection rather than automatic re-execution.
 
+All current planning begins with the project-scoped Agent Task API. The former
+file-backed Agent plan endpoint and `agent_runs/` plan files are removed; task
+details and project Runs are the only supported planning and run projections.
+
 DICOM/FunRaw/T1Raw datasets support read-only detection and conversion dry-run
 preview. Native conversion can enter the reviewed gateway path only when its
 release-readiness evidence is present. The legacy public conversion endpoint

@@ -18,25 +18,6 @@ export type PipelineSummary = {
   }>;
 };
 
-export type AgentPlanRequest = {
-  agent_run_id: string;
-  project_config_path: string;
-  pipeline_path: string;
-};
-
-export type AgentExecuteRequest = AgentPlanRequest & {
-  approved: boolean;
-};
-
-export type AgentRun = {
-  ok: boolean;
-  agent_run_id: string;
-  plan: unknown | null;
-  agent_summary: unknown | null;
-  review_summary: string | null;
-  proposed_memory_patch: string | null;
-};
-
 export type DatasetEvaluationReport = {
   ok: boolean;
   dataset_summary: unknown | null;

@@ -1,10 +1,4 @@
-import type {
-  AgentExecuteRequest,
-  AgentPlanRequest,
-  AgentRun,
-  ExecuteReviewedResponse,
-  ReviewedPlanRecord,
-} from "../../types";
+import type { ExecuteReviewedResponse, ReviewedPlanRecord } from "../../types";
 import { requestJson } from "./legacyCore";
 
 export async function checkApprovalGate(
@@ -16,24 +10,6 @@ export async function checkApprovalGate(
   },
 ) {
   return requestJson<Record<string, unknown>>(baseUrl, "/api/approval/check", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-// === Execute Reviewed ===
-
-// === Audit Record ===
-
-export async function createAgentPlan(baseUrl: string, payload: AgentPlanRequest) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/agent/plan", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function executeAgentPlan(baseUrl: string, payload: AgentExecuteRequest) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/agent/execute", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -117,12 +93,6 @@ export async function generatePlanFromGoal(
     method: "POST",
     body: JSON.stringify(payload),
   });
-}
-
-// === Plan Validator ===
-
-export async function getAgentRun(baseUrl: string, agentRunId: string) {
-  return requestJson<AgentRun>(baseUrl, `/api/agent-runs/${encodeURIComponent(agentRunId)}`);
 }
 
 export async function getPipeline(baseUrl: string, pipelineName: string) {

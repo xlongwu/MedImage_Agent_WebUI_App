@@ -131,6 +131,9 @@ Execution Ticket、唯一 Execution Gateway、Pipeline Runtime 和 artifact 证�
 已持久化结果，不会再次运行 executor。已经进入 started 但缺少终态的崩溃窗口会
 报告 outcome-unknown 并要求检查证据，不会自动重复执行。
 
+所有当前规划均从项目级 Agent Task API 开始。旧的文件型 Agent 规划接口和
+`agent_runs/` 计划文件已经移除；任务详情和项目 Runs 是唯一受支持的规划与运行投影。
+
 DICOM/FunRaw/T1Raw 数据支持只读检测和转换 dry-run 预览。只有存在有效的 release
 readiness 证据时，原生转换才能进入受审网关路径；旧公共转换端点继续 fail-closed，
 系统不会仅凭发现 rawdata 就自动转换。

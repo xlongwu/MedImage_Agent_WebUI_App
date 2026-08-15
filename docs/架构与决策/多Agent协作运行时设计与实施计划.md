@@ -153,7 +153,7 @@ Prompt cache 依赖稳定前缀，顺序为 `tools -> system -> messages`；工�
 
 | 模块 | 原因 | 决策 |
 |---|---|---|
-| `runtime/agent_plan.py` | 旧 plan 运行时，直接写 `work/agent_runs/.../plan.json`，不符合当前 lifecycle 和 managed state 约束 | 不作为新 runtime 基础；按独立废弃评审处理，不接入或保留双合同 |
+| `runtime/agent_plan.py` | 历史旧 plan 运行时，曾直接写 `work/agent_runs/.../plan.json` | 已在阶段十三移除；不作为 Team 入口，也不保留双合同 |
 | `runtime/background_task_manager.py` | 模块级 `ThreadPoolExecutor(max_workers=2)`、进程内任务表、无 durable lease/cancel/restart owner | 不扩建；新建 lifespan-owned Team Scheduler |
 | `services/task_manager.py` | 面向旧 pipeline task/mock store，不是 Agent Task lifecycle | 不复用为 Team 状态机 |
 | `runtime/tool_catalog.py` | 是 pipeline node 描述目录，不是 Agent capability broker；没有完整 read/write/destructive 语义 | 只作为只读 planning evidence；新建 Agent Capability Catalog |
@@ -789,7 +789,7 @@ MEDIMAGE_MULTI_AGENT_STORE_RAW_TRANSCRIPTS=0
 | `execution_ticket_service.py` | 不扩权；必要时仅补 negative test |
 | `approval_summary_service.py` | 不改变审批顺序；仅把 Team snapshot/finding hash 纳入 Reviewed Plan 后的稳定 identity（若正式决策要求） |
 | `runtime/background_task_manager.py` | 不扩建；避免新旧后台模型混用 |
-| `runtime/agent_plan.py` | 不作为 Team 入口 |
+| 已移除的 `runtime/agent_plan.py` | 不作为 Team 入口 |
 
 ### 14.4 前端新增/修改
 

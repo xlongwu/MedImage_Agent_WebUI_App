@@ -5,12 +5,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-class AgentPlanRequest(BaseModel):
-    agent_run_id: str = Field(default="agent_run_001")
-    project_config_path: str = Field(default="examples/project_config_dataset.yaml")
-    pipeline_path: str = Field(default="examples/pipeline_subject_preprocess.yaml")
-
-
 class AgentExecuteRequest(BaseModel):
     agent_run_id: str = Field(default="agent_run_001")
     project_config_path: str = Field(default="examples/project_config_dataset.yaml")

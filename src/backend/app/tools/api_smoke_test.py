@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import uuid
 
 
 def main() -> int:
@@ -12,6 +13,7 @@ def main() -> int:
         return 1
 
     base_url = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
+    project_id = sys.argv[2] if len(sys.argv) > 2 else ""
 
     checks = []
 
@@ -30,6 +32,7 @@ def main() -> int:
             "ok": 200 <= response.status_code < 300,
             "payload": payload,
         })
+        return payload
 
     call("GET", "/health")
     call("GET", "/api/rsfmri/preprocessing-plan")
@@ -52,12 +55,31 @@ def main() -> int:
     call("GET", "/api/rsfmri/report-validations")
     call("GET", "/api/release-readiness")
     call("GET", "/api/pipelines")
-    call("POST", "/api/agent/plan", json={
-        "agent_run_id": "agent_run_001",
-        "project_config_path": "examples/project_config_dataset.yaml",
-        "pipeline_path": "examples/pipeline_subject_preprocess.yaml",
-    })
-    call("GET", "/api/agent-runs/agent_run_001")
+    if not project_id:
+        print("Missing project ID: pass it as the second argument for Agent Task smoke coverage.")
+        return 1
+
+    created = call(
+        "POST",
+        f"/api/projects/{project_id}/agent/tasks",
+        json={
+            "goal": "仅生成静息态预处理方案，不执行计算。",
+            "command_id": f"api-smoke-plan-only-{uuid.uuid4()}",
+            "actor": "api-smoke-test",
+        },
+    )
+    task_id = str(created.get("task_id") or "") if isinstance(created, dict) else ""
+    if not task_id:
+        checks.append({
+            "method": "GET",
+            "path": "/api/projects/{project_id}/agent/tasks/{task_id}",
+            "status_code": 0,
+            "ok": False,
+            "payload": {"error": "Agent Task creation did not return task_id."},
+        })
+    else:
+        call("GET", f"/api/projects/{project_id}/agent/tasks/{task_id}")
+        call("GET", f"/api/projects/{project_id}/agent/tasks")
 
     print(json.dumps({
         "ok": all(item["ok"] for item in checks),

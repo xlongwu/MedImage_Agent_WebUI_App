@@ -145,7 +145,6 @@ categories:
     human_action_required: true
     patterns:
       - "Permission denied"
-      - "requires confirmation for pipeline.execute"
       - "access denied"
       - "operation not permitted"
       - "requires approval"
@@ -156,7 +155,7 @@ categories:
     suggested_fixes:
       - "Review and grant required permissions via approval gate"
       - "Check file ownership and mode"
-      - "Pass approved=true for restricted operations"
+      - "Submit the current task for server-authorized approval"
     affected_backends:
       - python
       - matlab

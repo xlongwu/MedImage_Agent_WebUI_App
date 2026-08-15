@@ -57,6 +57,6 @@ def test_classify_matlab_exit_code():
 
 
 def test_classify_permission_denied():
-    result = classify_error("Permission denied: requires confirmation for pipeline.execute")
+    result = classify_error("Permission denied: requires approval from the Agent Task approval gate")
     assert result["classified"] is True
     assert result["category"] == "permission_denied"

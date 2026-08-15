@@ -44,8 +44,11 @@ from src.backend.app.api.project_history_routes import router as project_history
 from src.backend.app.api.project_routes import router as project_router
 from src.backend.app.api.qc_routes import router as qc_router
 from src.backend.app.api.realdata_routes import router as realdata_router
+from src.backend.app.api.retry_routes import router as retry_router
 from src.backend.app.api.routes import router
+from src.backend.app.api.run_routes import router as run_router
 from src.backend.app.api.rsfmri_routes import router as rsfmri_router
+from src.backend.app.api.scheduler_routes import router as scheduler_router
 from src.backend.app.api.session_routes import router as session_router
 from src.backend.app.api.task_routes import router as task_router
 from src.backend.app.api.tool_catalog_routes import router as tool_catalog_router
@@ -168,6 +171,9 @@ def create_app() -> FastAPI:
     app.include_router(dpabi_router)
     app.include_router(rsfmri_router)
     app.include_router(agent_router)
+    app.include_router(run_router)
+    app.include_router(retry_router)
+    app.include_router(scheduler_router)
     app.include_router(gpu_router)
     app.include_router(pipeline_router)
     app.include_router(session_router)
