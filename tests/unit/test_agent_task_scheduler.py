@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_task_scheduler import AgentTaskScheduler
@@ -86,13 +88,16 @@ def test_lifecycle_creation_commits_its_durable_wake_in_the_same_store(tmp_path)
 
 def test_expired_wake_lease_is_claimable_by_a_restarted_scheduler(tmp_path) -> None:
     store = _store(tmp_path)
-    scheduler = AgentTaskScheduler(store, planning_service=RecordingPlanningService(), start_workers=False)
+    clock = [datetime(2026, 1, 1, tzinfo=UTC)]
+    scheduler = AgentTaskScheduler(
+        store,
+        planning_service=RecordingPlanningService(),
+        start_workers=False,
+        now=lambda: clock[0],
+    )
     scheduler.enqueue(project_id="project-1", lifecycle_id="lifecycle-1", step_key="CREATED:1", reason="create")
     first = scheduler.claim_next(owner="stalled")
     assert first is not None
-    expired = first.model_copy(update={"lease_expires_at": first.available_at})
-    store.retry_agent_task_wake(
-        expired, owner="stalled", now=first.available_at, available_at=first.available_at, error_code="test"
-    )
+    clock[0] = first.lease_expires_at + timedelta(seconds=1)
     claimed = scheduler.claim_next(owner="restarted")
     assert claimed is not None and claimed.lease_owner == "restarted"

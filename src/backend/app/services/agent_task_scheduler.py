@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from threading import Lock, Thread
-from typing import Protocol
+from typing import Callable, Protocol
 from uuid import uuid4
 
 from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
@@ -26,16 +26,24 @@ class AgentTaskScheduler:
     MAX_RETRY_DELAY_SECONDS = 30
     RESCAN_LIMIT = 100
 
-    def __init__(self, store, *, planning_service: AgentPlanningAdvancer, start_workers: bool = True) -> None:
+    def __init__(
+        self,
+        store,
+        *,
+        planning_service: AgentPlanningAdvancer,
+        start_workers: bool = True,
+        now: Callable[[], datetime] | None = None,
+    ) -> None:
         self.store = store
         self.planning_service = planning_service
         self.start_workers = start_workers
+        self.now = now or (lambda: datetime.now(UTC))
         self._accepting = True
         self._lock = Lock()
         self._worker: Thread | None = None
 
     def enqueue(self, *, project_id: str, lifecycle_id: str, step_key: str, reason: str) -> AgentTaskWakeRecord:
-        now = datetime.now(UTC)
+        now = self.now()
         record = AgentTaskWakeRecord(
             wake_id=f"agent_wake_{uuid4().hex}", project_id=project_id,
             lifecycle_id=lifecycle_id, step_key=step_key, reason=reason,
@@ -52,7 +60,7 @@ class AgentTaskScheduler:
             self._start_worker()
 
     def claim_next(self, *, owner: str) -> AgentTaskWakeRecord | None:
-        now = datetime.now(UTC)
+        now = self.now()
         return self.store.claim_next_agent_task_wake(
             owner=owner, now=now, lease_expires_at=now + timedelta(seconds=self.LEASE_SECONDS)
         )
@@ -65,7 +73,7 @@ class AgentTaskScheduler:
         wake = self.claim_next(owner=owner)
         if wake is None:
             return None
-        now = datetime.now(UTC)
+        now = self.now()
         try:
             self.planning_service.advance_planning(
                 project_id=wake.project_id,
@@ -84,7 +92,7 @@ class AgentTaskScheduler:
                 error_code=getattr(exc, "code", None) or type(exc).__name__,
             )
             return wake.lifecycle_id
-        self.store.complete_agent_task_wake(wake, owner=owner, now=datetime.now(UTC))
+        self.store.complete_agent_task_wake(wake, owner=owner, now=self.now())
         return wake.lifecycle_id
 
     def rescan(self) -> tuple[str, ...]:
@@ -96,6 +104,18 @@ class AgentTaskScheduler:
                 if lifecycle.state not in ready:
                     continue
                 key = f"{lifecycle.state}:{lifecycle.updated_at.isoformat()}"
+                existing = [
+                    wake
+                    for wake in self.store.list_agent_task_wakes(
+                        project_id=project.id, include_consumed=True,
+                    )
+                    if wake.lifecycle_id == lifecycle.lifecycle_id and wake.step_key == key
+                ]
+                # Every non-consumed row is already a durable continuation:
+                # pending/retry rows wait for their due time; claimed rows are
+                # either actively leased or directly reclaimable after expiry.
+                if any(wake.status != "CONSUMED" for wake in existing):
+                    continue
                 self.enqueue(
                     project_id=project.id, lifecycle_id=lifecycle.lifecycle_id,
                     step_key=key, reason="persistent_rescan",

@@ -13,6 +13,8 @@ from src.backend.app.planner.agent_model_adapter import (
 )
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_harness import (
+    AgentActionRecord,
+    AgentHarnessStep,
     DraftPlanAction,
     RequestDecisionAction,
     action_envelope_json_schema,
@@ -208,6 +210,75 @@ def test_action_is_accepted_before_apply_and_marked_applied(tmp_path) -> None:
     assert result.attempt.status == "WAITING_FOR_USER"
     assert len(actions) == 1 and actions[0].status == "applied"
     assert store.get_agent_lifecycle(lifecycle.lifecycle_id).pending_decision_batch.items[0] == _decision().decision
+
+
+def test_accepted_action_is_replayed_locally_after_a_crash_without_model_replay(tmp_path) -> None:
+    store = _store(tmp_path)
+    lifecycle = _lifecycle(store)
+    actions = NoopPlanningActions()
+    adapter = Adapter(DraftPlanAction(kind="draft_plan", reason="Plan", expected_state="CREATED"))
+    service = _service(store, adapter, actions)
+    attempt = service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
+    service.run_one(lifecycle=lifecycle, actor="user")
+
+    first_step = store.list_agent_harness_steps(attempt.attempt_id)[0]
+    persisted_attempt = store.get_agent_harness_attempt(lifecycle.lifecycle_id)
+    assert persisted_attempt is not None
+    crashed = persisted_attempt.model_copy(update={
+        "status": "RUNNING",
+        "lease_owner": "crashed-owner",
+        "lease_expires_at": datetime.now(UTC).replace(year=2000),
+    })
+    store.update_agent_harness_attempt(
+        crashed,
+        expected_status="READY",
+        expected_step_no=persisted_attempt.next_step_no,
+        expected_context_hash=persisted_attempt.context_hash,
+    )
+    action = DraftPlanAction(kind="draft_plan", reason="Recover", expected_state="CREATED")
+    step_id = "replay-step"
+    recovered_call = first_step.model_calls[0].model_copy(update={
+        "call_id": "replay-call",
+        "step_id": step_id,
+        "status": "succeeded",
+        "completed_at": datetime.now(UTC),
+    })
+    input_hash = stable_hash({"context_hash": crashed.context_hash, "state": lifecycle.state})
+    store.add_agent_harness_step(AgentHarnessStep(
+        step_id=step_id,
+        attempt_id=attempt.attempt_id,
+        project_id="project-1",
+        step_no=crashed.next_step_no,
+        idempotency_key=f"{attempt.attempt_id}:{crashed.next_step_no}:{input_hash}",
+        input_hash=input_hash,
+        validation_result="error",
+        state_before="CREATED",
+        model_calls=(recovered_call,),
+        summary="Action accepted before a simulated crash.",
+        started_at=datetime.now(UTC),
+    ))
+    store.add_agent_harness_action(AgentActionRecord(
+        action_id="replay-action",
+        attempt_id=attempt.attempt_id,
+        step_id=step_id,
+        request_hash=recovered_call.request_hash,
+        response_hash=recovered_call.response_hash,
+        action_hash=stable_hash(action.model_dump(mode="json")),
+        kind=action.kind,
+        expected_state=action.expected_state,
+        action_payload=action.model_dump(mode="json"),
+        status="accepted",
+        created_at=datetime.now(UTC),
+    ))
+    actions.calls = 0
+    adapter.calls = 0
+
+    result = service.run_one(lifecycle=lifecycle, actor="user", lease_owner="restarted")
+
+    assert result.attempt.status == "READY"
+    assert actions.calls == 1
+    assert adapter.calls == 0
+    assert store.list_agent_harness_actions(attempt.attempt_id)[-1].status == "applied"
 
 
 def test_persisted_ledgers_contain_hashes_and_no_prompt_response_or_credentials(tmp_path) -> None:

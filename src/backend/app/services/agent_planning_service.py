@@ -202,6 +202,9 @@ class AgentPlanningService:
         lifecycle = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
         if lifecycle.state not in {"CREATED", "CONTEXT_READY", "PLAN_DRAFTED", "PLAN_VALIDATED", "WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"}:
             return lifecycle
+        recovered = self._resume_persisted_plan(lifecycle=lifecycle, actor="system-agent-task-scheduler")
+        if recovered is not None:
+            return recovered
         resume = wake_reason != "create"
         return self._harness_or_plan(
             lifecycle=lifecycle,
@@ -264,6 +267,108 @@ class AgentPlanningService:
             lease_owner=f"agent-planning:{lifecycle.lifecycle_id}",
         )
         return result.lifecycle
+
+    def _resume_persisted_plan(self, *, lifecycle, actor: str):
+        """Finish a persisted plan checkpoint without invoking the planner again.
+
+        A process can stop after ``save_reviewed_plan`` but before binding the
+        plan to the lifecycle or rebuilding its approval projection.  The
+        persisted PlanningRequest is the recovery fence: it identifies the
+        exact lifecycle that owns the plan and prevents a second model or
+        deterministic planning invocation.
+        """
+        if lifecycle.state not in {"PLAN_DRAFTED", "PLAN_VALIDATED"}:
+            return None
+        reviewed = self.store.get_reviewed_plan(lifecycle.reviewed_plan_id) if lifecycle.reviewed_plan_id else None
+        if reviewed is None:
+            getter = getattr(self.store, "list_reviewed_plans", None)
+            if not callable(getter):
+                return None
+            reviewed = next(
+                (
+                    record
+                    for record in getter(lifecycle.project_id)
+                    if isinstance(record.payload.get("planning_request"), dict)
+                    and record.payload["planning_request"].get("lifecycle_id") == lifecycle.lifecycle_id
+                ),
+                None,
+            )
+        if reviewed is None or reviewed.project_id != lifecycle.project_id:
+            return None
+        plan = reviewed.payload.get("plan")
+        if not isinstance(plan, dict):
+            return None
+        plan_only = self._is_plan_only(plan)
+        payload = dict(reviewed.payload)
+        if plan_only:
+            payload.update(
+                dry_run={"ok": True, "status": "NOT_RUN_PLAN_ONLY", "execution_performed": False},
+                execution_status="NOT_EXECUTED_PLAN_ONLY",
+                execution_performed=False,
+                rawdata_modified=False,
+            )
+        elif not isinstance(payload.get("approval_envelope"), dict):
+            project = self.store.get_project(lifecycle.project_id)
+            if project is None:
+                raise SafetyError("PROJECT_NOT_FOUND", code="PROJECT_NOT_FOUND")
+            summary = self.summary_service.build(project=project, reviewed_plan=reviewed)
+            payload.update(
+                approval_summary=self._public_summary(summary),
+                approval_envelope=summary.model_dump(mode="json"),
+                dry_run={"ok": None, "status": "PENDING_USER_APPROVAL", "execution_performed": False},
+            )
+        reviewed = self.store.update_reviewed_plan(reviewed.reviewed_plan_id, payload=payload) or reviewed
+        if lifecycle.state == "PLAN_DRAFTED":
+            lifecycle = self.orchestrator.transition(
+                project_id=lifecycle.project_id,
+                lifecycle_id=lifecycle.lifecycle_id,
+                to_state="PLAN_VALIDATED",
+                command_id=f"planning-recovery:{lifecycle.lifecycle_id}:validated",
+                actor=actor,
+                source_command="persisted_plan_recovered",
+                updates={
+                    "reviewed_plan_id": reviewed.reviewed_plan_id,
+                    "goal_contract_id": str((reviewed.payload.get("goal_contract") or {}).get("goal_contract_id") or "") or None,
+                    "goal_contract_hash": str((reviewed.payload.get("goal_contract") or {}).get("goal_contract_hash") or "") or None,
+                },
+                details={"recovered_without_replanning": True},
+            )
+        if plan_only:
+            if lifecycle.state != "PLAN_VALIDATED":
+                return lifecycle
+            return self.orchestrator.transition(
+                project_id=lifecycle.project_id,
+                lifecycle_id=lifecycle.lifecycle_id,
+                to_state="SUCCEEDED",
+                command_id=f"planning-recovery:{lifecycle.lifecycle_id}:plan-only-complete",
+                actor=actor,
+                source_command="persisted_plan_recovered",
+                details={"execution_performed": False, "recovered_without_replanning": True},
+            )
+        if lifecycle.state != "PLAN_VALIDATED":
+            return lifecycle
+        return self.orchestrator.transition(
+            project_id=lifecycle.project_id,
+            lifecycle_id=lifecycle.lifecycle_id,
+            to_state="WAITING_FOR_APPROVAL",
+            command_id=f"planning-recovery:{lifecycle.lifecycle_id}:approval",
+            actor=actor,
+            source_command="persisted_plan_recovered",
+            details={"recovered_without_replanning": True},
+        )
+
+    @staticmethod
+    def _public_summary(summary) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in summary.model_dump(mode="json").items()
+            if key in {
+                "summary_hash", "goal", "dataset_summary", "execution_summary", "write_roots",
+                "rawdata_read_only", "external_tools", "limitations", "science_changes", "sections", "expires_at",
+                "memory_context_hash", "memory_refs", "memory_influence_summary",
+                "planning_inputs_hash", "revision_no", "parent_reviewed_plan_id", "parent_plan_hash", "revision_reason",
+            }
+        }
 
     def _plan(self, *, lifecycle, command_id: str, actor: str, resume: bool = False):
         prepared = self._build_planning_request(

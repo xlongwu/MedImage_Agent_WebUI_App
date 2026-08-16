@@ -153,11 +153,16 @@ class ModelCallRecord(BaseModel):
 
 
 class AgentActionRecord(BaseModel):
-    """Durable, redacted state of applying a validated Harness action."""
+    """Durable, replayable state of applying a validated Harness action.
+
+    The payload is limited to the validated planning-action envelope. It
+    carries no provider response or execution authority, but lets recovery
+    finish an interrupted local action without asking the model again.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     action_id: str = Field(min_length=1, max_length=128)
     attempt_id: str = Field(min_length=1, max_length=128)
     step_id: str = Field(min_length=1, max_length=128)
@@ -166,6 +171,7 @@ class AgentActionRecord(BaseModel):
     action_hash: str = Field(min_length=1, max_length=128)
     kind: AgentHarnessActionKind
     expected_state: str = Field(min_length=1, max_length=64)
+    action_payload: dict[str, Any] = Field(default_factory=dict)
     status: AgentActionStatus
     error_code: str | None = Field(default=None, max_length=128)
     created_at: datetime

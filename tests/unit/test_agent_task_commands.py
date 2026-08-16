@@ -409,6 +409,9 @@ class CommandStore:
     def get_reviewed_plan(self, reviewed_plan_id):
         return self.plans.get(reviewed_plan_id)
 
+    def list_reviewed_plans(self, project_id):
+        return [plan for plan in self.plans.values() if plan.project_id == project_id]
+
     def update_reviewed_plan(self, reviewed_plan_id, **updates):
         current = self.plans.get(reviewed_plan_id)
         if current is None:
@@ -594,6 +597,55 @@ def test_create_is_bounded_and_stops_at_single_approval(tmp_path) -> None:
     assert plan.payload["approval_envelope"]["confirmations"]["approved_nodes"] == [
         "functional_connectivity_subject"
     ]
+
+
+def test_persisted_plan_checkpoint_rebuilds_approval_without_replanning(tmp_path) -> None:
+    store = CommandStore(tmp_path)
+    planner_calls = []
+    service = AgentTaskCommandService(
+        store,
+        planner=lambda **kwargs: planner_calls.append(kwargs) or _planner(**kwargs),
+        plan_saver=_plan_saver(store),
+        dry_runner=lambda **_kwargs: {"ok": True, "status": "DRY_RUN_OK"},
+    )
+    orchestrator = AgentOrchestrator(store)
+    lifecycle = orchestrator.create(
+        project_id="project-1", command_id="checkpoint-create", actor="user", goal_text="Compute FC",
+    )
+    lifecycle = orchestrator.transition(
+        project_id="project-1", lifecycle_id=lifecycle.lifecycle_id,
+        to_state="CONTEXT_READY", command_id="checkpoint-context", actor="user",
+        source_command="context_ready",
+    )
+    lifecycle = orchestrator.transition(
+        project_id="project-1", lifecycle_id=lifecycle.lifecycle_id,
+        to_state="PLAN_DRAFTED", command_id="checkpoint-draft", actor="user",
+        source_command="plan_drafted",
+    )
+    persisted = _plan_saver(store)(
+        project_id="project-1",
+        project_config_path=str(tmp_path / "project.yaml"),
+        plan=_planner(request=None)["plan"],
+        validation={"ok": True},
+        goal="Compute FC",
+        planning_request={"lifecycle_id": lifecycle.lifecycle_id},
+    )
+    persisted = persisted.model_copy(update={
+        "payload": {
+            **persisted.payload,
+            "planning_request": {"lifecycle_id": lifecycle.lifecycle_id},
+        }
+    })
+    store.plans[persisted.reviewed_plan_id] = persisted
+
+    resumed = service._planning.advance_planning(
+        project_id="project-1", lifecycle_id=lifecycle.lifecycle_id, wake_reason="persistent_rescan",
+    )
+
+    assert resumed.state == "WAITING_FOR_APPROVAL"
+    assert resumed.reviewed_plan_id == persisted.reviewed_plan_id
+    assert planner_calls == []
+    assert store.get_reviewed_plan(persisted.reviewed_plan_id).payload["approval_envelope"]
 
 
 def test_planning_never_invokes_execution_dry_run_before_user_approval(tmp_path) -> None:

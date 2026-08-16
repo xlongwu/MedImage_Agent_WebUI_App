@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from src.backend.app.core.config_schema import AgentHarnessConfig
 from src.backend.app.planner.agent_model_adapter import ActionProposal
 from src.backend.app.planner.audit_record import stable_hash
@@ -30,7 +32,16 @@ def _store(tmp_path):
     return store
 
 
-def test_expired_claim_reconciles_a_started_call_without_retrying_provider(tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("network_called", "expected_status", "expected_reason"),
+    [
+        (True, "STOPPED", "AGENT_HARNESS_CALL_OUTCOME_UNKNOWN"),
+        (False, "READY", None),
+    ],
+)
+def test_expired_claim_distinguishes_unknown_network_outcomes_from_pre_network_restarts(
+    tmp_path, network_called, expected_status, expected_reason,
+) -> None:
     store = _store(tmp_path)
     lifecycle = AgentOrchestrator(store).create(project_id="project-1", command_id="create", actor="user")
     adapter = Adapter()
@@ -62,12 +73,12 @@ def test_expired_claim_reconciles_a_started_call_without_retrying_provider(tmp_p
             prompt_template_version="agent-harness-prompt-v2", context_hash=context.context_hash,
             request_hash="request", action_schema_hash="schema", model_parameters_hash="parameters",
             request_bytes=100, request_builder_version="agent-harness-request-v1", response_schema_version=2,
-            started_at=now, network_called=True, status="started",
+            started_at=now, network_called=network_called, status="started",
         ),),
     ))
 
     result = service.run_one(lifecycle=lifecycle, actor="user", lease_owner="restarted")
 
-    assert result.attempt.status == "STOPPED"
-    assert result.attempt.terminal_reason == "AGENT_HARNESS_CALL_OUTCOME_UNKNOWN"
+    assert result.attempt.status == expected_status
+    assert result.attempt.terminal_reason == expected_reason
     assert adapter.calls == 0

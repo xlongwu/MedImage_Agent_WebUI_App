@@ -34,6 +34,7 @@ from src.backend.app.schemas.agent_harness import (
     AgentHarnessContext,
     AgentHarnessStep,
     ModelCallRecord,
+    parse_action_envelope,
 )
 from src.backend.app.services.agent_evidence_service import AgentEvidenceService
 from src.backend.app.services.agent_harness_context_service import (
@@ -325,6 +326,7 @@ class AgentHarnessService:
             action_hash=stable_hash(envelope.model_dump(mode="json")),
             kind=envelope.kind,
             expected_state=envelope.expected_state,
+            action_payload=envelope.model_dump(mode="json"),
             status="accepted",
             created_at=self.now(),
         )
@@ -890,7 +892,26 @@ class AgentHarnessService:
         lifecycle,
         step: AgentHarnessStep,
     ) -> HarnessRunResult:
-        """Finish an accepted, persisted step after a crash without another model call."""
+        """Recover one persisted step without another provider invocation."""
+        action = self._action_for_step(claimed.attempt_id, step.step_id)
+        if action is not None and action.status == "accepted":
+            return self._recover_accepted_action(
+                claimed=claimed, lifecycle=lifecycle, step=step, action=action,
+            )
+        if self._is_pre_network_call(step):
+            skipped = step.model_copy(update={
+                "completed_at": self.now(),
+                "error_code": "AGENT_HARNESS_CALL_NOT_SENT",
+                "summary": "Recovered a provider call before the network boundary.",
+            })
+            self.store.update_agent_harness_step(skipped)
+            recovered = self._complete_claim(
+                claimed,
+                status="READY",
+                terminal_reason=None,
+                model_calls=skipped.model_calls,
+            )
+            return HarnessRunResult(lifecycle=lifecycle, attempt=recovered)
         if step.validation_result != "accepted" or step.completed_at is None:
             reason = step.error_code or "AGENT_HARNESS_CALL_OUTCOME_UNKNOWN"
             return HarnessRunResult(
@@ -920,6 +941,95 @@ class AgentHarnessService:
             proposal_increment=1,
         )
         return HarnessRunResult(lifecycle=lifecycle, attempt=recovered)
+
+    def _recover_accepted_action(
+        self,
+        *,
+        claimed: AgentHarnessAttempt,
+        lifecycle,
+        step: AgentHarnessStep,
+        action: AgentActionRecord,
+    ) -> HarnessRunResult:
+        """Finish or replay a durable local action, never its model request."""
+        try:
+            envelope = parse_action_envelope(action.action_payload)
+            if envelope.kind != action.kind or envelope.expected_state != action.expected_state:
+                raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
+            if lifecycle.state == action.expected_state:
+                applied = self._apply(envelope, lifecycle, "system-agent-task-recovery")
+                lifecycle = applied.lifecycle
+                action_result_code = applied.action_result_code
+            else:
+                # The action service only leaves expected_state after its side
+                # effect is durable. Replaying here could duplicate a plan.
+                action_result_code = "AGENT_HARNESS_ACTION_RECONCILED"
+            self.store.update_agent_harness_action(
+                action.model_copy(update={"status": "applied", "completed_at": self.now()}),
+                expected_status="accepted",
+            )
+        except Exception as exc:
+            code = str(
+                getattr(exc, "code", None)
+                or str(exc).split(":", 1)[0]
+                or "AGENT_HARNESS_ACTION_REPLAY_FAILED"
+            )
+            try:
+                self.store.update_agent_harness_action(
+                    action.model_copy(update={
+                        "status": "rejected", "error_code": code[:128], "completed_at": self.now(),
+                    }),
+                    expected_status="accepted",
+                )
+            except Exception:
+                pass
+            return HarnessRunResult(
+                lifecycle=lifecycle,
+                attempt=self._stop_claimed(
+                    claimed, code, model_calls=step.model_calls,
+                    proposal_increment=1, consume_step=True,
+                ),
+            )
+        completed = step.model_copy(update={
+            "kind": action.kind,
+            "action_id": action.action_id,
+            "action_hash": action.action_hash,
+            "validation_result": "accepted",
+            "state_after": lifecycle.state,
+            "action_result_code": action_result_code,
+            "action_result_hash": stable_hash({
+                "lifecycle_id": lifecycle.lifecycle_id,
+                "state_after": lifecycle.state,
+                "action_result_code": action_result_code,
+            }),
+            "completed_at": self.now(),
+            "summary": "Recovered a durable Harness action without a model replay.",
+        })
+        self.store.update_agent_harness_step(completed)
+        status = (
+            "WAITING_FOR_USER"
+            if lifecycle.state in {"WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"}
+            else "READY"
+        )
+        recovered = self._complete_claim(
+            claimed,
+            status=status,
+            terminal_reason=None,
+            model_calls=completed.model_calls,
+            proposal_increment=1,
+        )
+        return HarnessRunResult(lifecycle=lifecycle, attempt=recovered)
+
+    def _action_for_step(self, attempt_id: str, step_id: str) -> AgentActionRecord | None:
+        getter = getattr(self.store, "list_agent_harness_actions", None)
+        if not callable(getter):
+            return None
+        return next((item for item in getter(attempt_id) if item.step_id == step_id), None)
+
+    @staticmethod
+    def _is_pre_network_call(step: AgentHarnessStep) -> bool:
+        return bool(step.model_calls) and all(
+            call.status == "started" and not call.network_called for call in step.model_calls
+        )
 
     def _fallback_to_deterministic_planner(
         self,
