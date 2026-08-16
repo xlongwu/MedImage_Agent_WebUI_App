@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.backend.app.agent_skills.registry import AgentSkillRegistry
 from src.backend.app.api.advisor_routes import router as advisor_router
 from src.backend.app.api.agent_lifecycle_routes import router as agent_lifecycle_router
+from src.backend.app.api.agent_operations_routes import router as agent_operations_router
 from src.backend.app.api.agent_task_routes import router as agent_task_router
 from src.backend.app.api.approval_gate_routes import router as approval_gate_router
 from src.backend.app.api.artifact_routes import router as artifact_router
@@ -245,6 +246,7 @@ def create_app() -> FastAPI:
     app.include_router(execute_reviewed_router)
     app.include_router(execution_ticket_router)
     app.include_router(agent_lifecycle_router)
+    app.include_router(agent_operations_router)
     app.include_router(agent_task_router)
     app.include_router(memory_router)
     app.include_router(audit_record_router)
