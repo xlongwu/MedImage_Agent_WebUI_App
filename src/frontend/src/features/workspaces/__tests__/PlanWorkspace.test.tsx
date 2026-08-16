@@ -11,16 +11,7 @@ const pipelineApi = vi.hoisted(() => ({
   getProjectReviewedPlan: vi.fn(),
 }));
 
-const planReviewConsole = vi.hoisted(() => vi.fn());
-
 vi.mock("../../../lib/api/pipeline", () => pipelineApi);
-
-vi.mock("../../../components/PlanReviewConsole", () => ({
-  default: (props: unknown) => {
-    planReviewConsole(props);
-    return <div data-testid="plan-review-console">Technical plan tools</div>;
-  },
-}));
 
 function project(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
   return {
@@ -118,7 +109,6 @@ function renderWorkspace(overrides: Partial<ComponentProps<typeof PlanWorkspace>
 describe("PlanWorkspace", () => {
   beforeEach(() => {
     pipelineApi.getProjectReviewedPlan.mockReset();
-    planReviewConsole.mockReset();
   });
 
   it("requires a project before planning", () => {
@@ -270,7 +260,7 @@ describe("PlanWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open technical plan tools" }));
 
-    expect(screen.getByTestId("plan-review-console")).toBeInTheDocument();
+    expect(screen.getByText("No draft goal loaded yet")).toBeInTheDocument();
     expect(screen.queryByTestId("project-runs-panel")).not.toBeInTheDocument();
   });
 
@@ -412,16 +402,7 @@ describe("PlanWorkspace", () => {
     await screen.findByText("Run reviewed preprocessing");
     fireEvent.click(screen.getByRole("button", { name: "Open technical plan tools" }));
 
-    await waitFor(() =>
-      expect(planReviewConsole).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          initialPresetDraft: expect.objectContaining({
-            reviewed_plan_id: reviewedPlan.reviewed_plan_id,
-            goal_contract_candidate: candidate,
-            goal_contract_status: "needs_goal_review",
-          }),
-        }),
-      ),
-    );
+    await screen.findByText("Read-only reviewed plan");
+    expect(screen.getAllByText(/reviewed-needs-goal-review/)).not.toHaveLength(0);
   });
 });

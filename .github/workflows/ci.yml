@@ -108,3 +108,24 @@ jobs:
       - name: Desktop check
         working-directory: desktop/electron
         run: npm run check
+
+  windows-sandbox:
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate Windows sandbox boundary
+        run: >-
+          pytest tests/unit/test_desktop_backend_entry.py
+          tests/unit/test_runtime_subprocess_boundary.py
+          --tb=short
