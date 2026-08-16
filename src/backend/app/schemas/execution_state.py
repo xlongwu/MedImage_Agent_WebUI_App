@@ -14,9 +14,9 @@ Reference:
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # ═══════════════════════════════════════════════════════════════════════
 # 1. Literal type aliases
@@ -55,6 +55,31 @@ NodeState = Literal[
     "invalidated",
     "unknown",
 ]
+
+
+class PersistedNodeState(BaseModel):
+    """Versioned on-disk node progress record shared by runtime readers/writers.
+
+    It deliberately contains runtime evidence and bounded metadata. Plans,
+    approvals, and full runner parameters are not persisted here.
+    """
+
+    schema_version: Literal["state-store-v2"]
+    run_id: str
+    subject: str
+    node: str
+    status: str
+    started_at: str
+    ended_at: str | None = None
+    updated_at: str
+    log_path: str | None = None
+    stderr_log: str | None = None
+    outputs: list[Any] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    result_json: Any = None
+    returncode: int | None = None
 
 # ═══════════════════════════════════════════════════════════════════════
 # 2. Run state categorisation sets

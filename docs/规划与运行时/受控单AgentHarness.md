@@ -134,3 +134,10 @@ recovery/token 预算、状态、下一步、让出次数、actual fallback 路�
 受保护的 `POST /api/projects/{project_id}/agent/tasks/{task_id}/invariant-check` 可请求一次
 显式检查，并只保存 finding code、关联 ID、哈希和报告哈希的最小审计记录。它不返回提示词、
 原始响应、路径、凭据或研究数据；普通 GET 投影保持完全只读。
+
+## 处理流程图只读投影
+
+计划工作区、Runs 和 Agent 任务摘要可读取同一份处理流程图：结构只能来自经
+校验的 Reviewed Plan，运行状态只能来自 `state-store-v2` 与运行摘要。图的 GET
+接口不触发 Harness、审批、dry-run、Gateway 或 runner；其聚合状态仅用于展示，
+不构成执行、审批或科学有效性的证据。

@@ -16,6 +16,7 @@ import { ProjectSummaryCard } from "./components/ProjectSummaryCard";
 import { ResultSummaryCard } from "./components/ResultSummaryCard";
 import { RecoveryActionCard } from "./components/RecoveryActionCard";
 import { TaskDetails } from "./components/TaskDetails";
+import { ExecutionGraphTaskSummary } from "./components/ExecutionGraphTaskSummary";
 import type { AgentTaskController } from "./useAgentTaskController";
 
 type LocalizedAgentError = {
@@ -323,6 +324,12 @@ export function AgentWorkspaceView({
             outcome={task.outcome}
             planOnly={planOnlyResult}
             progress={task.progress}
+          />
+          <ExecutionGraphTaskSummary
+            baseUrl={controller.baseUrl ?? ""}
+            onOpenRuns={onOpenRuns}
+            projectId={controller.projectId ?? null}
+            runId={task.technical_details?.run_id}
           />
           {task.recovery && task.next_action.type === "approve_recovery" ? (
             <RecoveryActionCard

@@ -19,7 +19,9 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\""
   },
   "dependencies": {
+    "@dagrejs/dagre": "3.0.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "@xyflow/react": "12.11.2",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "typescript": "^6.0.3",

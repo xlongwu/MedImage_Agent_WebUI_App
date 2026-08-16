@@ -239,6 +239,7 @@ tests/
 - [Desktop App Packaging](docs/桌面与前端/桌面应用打包.md)
 - [Real Project Run Lifecycle](docs/安全与审批/真实项目运行生命周期.md)
 - [Safety Boundaries](docs/安全与审批/安全边界.md)
+- [Read-only Execution Graph](docs/规划与运行时/处理流程图.md)
 
 ## License
 

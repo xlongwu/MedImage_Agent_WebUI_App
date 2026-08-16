@@ -8,6 +8,7 @@ import type { ProjectDetail } from "../../lib/types/project";
 import type { PlanNodeSelection } from "../../lib/workspaceSelection";
 import type { PresetPlanDraft, ReviewedPlanRecord } from "../../types";
 import { WorkspaceHeader } from "../dashboard/DashboardChrome";
+import { ExecutionGraphView } from "../execution-graph/ExecutionGraphView";
 import styles from "./PlanWorkspace.module.css";
 import layoutStyles from "./WorkspaceLayout.module.css";
 import { useI18n } from "../../i18n/useI18n";
@@ -262,50 +263,30 @@ export function PlanWorkspace({
               <p>{t("plan.pipelineDescription")}</p>
             </div>
           </div>
+          <ExecutionGraphView
+            baseUrl={baseUrl}
+            projectId={projectId}
+            reviewedPlanId={reviewedPlanId}
+            previewPlan={reviewedPlanId ? null : plan}
+          />
+          {/* Maintains the same screen-reader outline while the canonical visual
+              representation is the read-only backend graph above. */}
           {nodes.length ? (
-            <ol className={styles.nodeList} aria-label={t("plan.pipelineSteps")}>
-              {nodes.map((node, index) => (
-                <li
-                  className={styles.nodeItem}
-                  data-risk={node.risk}
-                  data-selected={node.id === selectedNode?.id ? "true" : "false"}
-                  key={`${node.id}-${index}`}
-                >
+            <ol className={styles.visuallyHidden} aria-label={t("plan.pipelineSteps")}>
+              {nodes.map((node) => (
+                <li key={node.id}>
                   <button
                     type="button"
-                    className={styles.nodeSelectButton}
                     onClick={() => setSelectedNodeId(node.id)}
                     aria-label={t("plan.inspectNode", { name: node.name })}
                   >
-                    <span className={styles.nodeIndex}>{index + 1}</span>
+                    {node.name}
                   </button>
-                  <div className={styles.nodeBody}>
-                    <div className={styles.nodeTitleRow}>
-                      <strong>{node.name}</strong>
-                      <Badge tone={riskTone(node.risk)} size="sm">
-                        {riskLabel(node.risk, t)}
-                      </Badge>
-                    </div>
-                    <p>{node.detail}</p>
-                    <div className={styles.nodeMetaRow}>
-                      <span>{t("plan.dependsOn", { value: node.dependsOn })}</span>
-                      <span>{t("plan.backend", { value: node.backend })}</span>
-                    </div>
-                  </div>
+                  <span>{riskLabel(node.risk, t)}</span>
                 </li>
               ))}
             </ol>
-          ) : (
-            <EmptyState
-              title={t("plan.noDraft")}
-              description={t("plan.noDraftDescription")}
-              action={
-                <Button variant="secondary" onClick={() => setShowTechnicalPlanTools(true)}>
-                  {t("plan.openTechnical")}
-                </Button>
-              }
-            />
-          )}
+          ) : null}
         </Card>
 
         <Card className={styles.inspectorCard} aria-label={t("plan.inspector")}>

@@ -393,6 +393,20 @@ def run_pipeline(
                     subject_id = subject_record.get("subject_id", "unknown")
                     subject_started_at = now_iso()
 
+                    # Persist the factual start before invoking the runner.
+                    # If this atomic write cannot be made, execution must not
+                    # proceed without a recoverable progress record.
+                    write_node_state(
+                        run_id=run_id,
+                        node_id=node.id,
+                        subject=subject_id,
+                        status="RUNNING",
+                        started_at=subject_started_at,
+                        ended_at=None,
+                        result={},
+                        work_dir=work_dir,
+                    )
+
                     try:
                         node_result = runner(context, node, subject_record, subject_id)
                     except Exception as exc:
@@ -452,6 +466,17 @@ def run_pipeline(
                 ) -> dict[str, Any]:
                     subject_id = subject_record.get("subject_id", "unknown")
                     subject_started_at = now_iso()
+
+                    write_node_state(
+                        run_id=run_id,
+                        node_id=current_node.id,
+                        subject=subject_id,
+                        status="RUNNING",
+                        started_at=subject_started_at,
+                        ended_at=None,
+                        result={},
+                        work_dir=context.work_dir,
+                    )
 
                     try:
                         result = current_runner(
@@ -530,6 +555,16 @@ def run_pipeline(
 
         else:
             # Project-level node execution
+            write_node_state(
+                run_id=run_id,
+                node_id=node.id,
+                subject="project",
+                status="RUNNING",
+                started_at=node_started_at,
+                ended_at=None,
+                result={},
+                work_dir=work_dir,
+            )
             try:
                 node_result = runner(context, node)
             except Exception as exc:

@@ -26,6 +26,8 @@ export type UseAgentTaskControllerOptions = {
 };
 
 export type AgentTaskController = {
+  baseUrl?: string;
+  projectId?: string | null;
   task: AgentTaskResponse | null;
   tasks: AgentTaskResponse[];
   events: AgentTaskEvent[];
@@ -412,6 +414,7 @@ export function useAgentTaskController({
     answer,
     approve,
     approveRecovery,
+    baseUrl,
     cancel,
     create,
     dismissTask,
@@ -423,6 +426,7 @@ export function useAgentTaskController({
     loading: Boolean(projectId) && loading,
     loadHarnessActivity,
     mutating,
+    projectId,
     refresh,
     selectTask,
     task: visibleTask,

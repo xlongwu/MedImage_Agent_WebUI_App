@@ -1,0 +1,139 @@
+.root {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.empty,
+.error {
+  padding: 18px;
+  border: 1px dashed var(--border-subtle, #728096);
+  border-radius: 10px;
+  color: var(--text-secondary, #536274);
+}
+.error {
+  border-style: solid;
+  color: var(--danger-text, #a12f32);
+}
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: 0.86rem;
+  color: var(--text-secondary, #536274);
+}
+.canvas {
+  height: 420px;
+  min-height: 280px;
+  border: 1px solid var(--border-subtle, #d7dde5);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-muted, #f7f9fb);
+}
+.node {
+  width: 220px;
+  min-height: 96px;
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 2px solid #8592a3;
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: var(--text-primary, #17212f);
+  box-shadow: 0 1px 3px #0002;
+}
+.node:focus-visible,
+.node[data-selected="true"] {
+  outline: 3px solid var(--focus-ring, #3867d6);
+  outline-offset: 2px;
+}
+.node span,
+.node small {
+  color: var(--text-secondary, #536274);
+}
+.node em {
+  color: #a12f32;
+  font-style: normal;
+}
+.node[data-state="running"] {
+  border-color: #166fbe;
+}
+.node[data-state="succeeded"],
+.node[data-state="reused"] {
+  border-color: #237a45;
+}
+.node[data-state="failed"],
+.node[data-state="blocked"],
+.node[data-state="timeout"] {
+  border-color: #b12932;
+}
+.node[data-state="partial"] {
+  border-color: #b56a00;
+}
+.edge_active :global(path) {
+  stroke: #166fbe;
+  stroke-width: 2;
+}
+.edge_completed :global(path) {
+  stroke: #237a45;
+}
+.edge_blocked :global(path) {
+  stroke: #b12932;
+}
+.inspector {
+  padding: 12px;
+  border: 1px solid var(--border-subtle, #d7dde5);
+  border-radius: 8px;
+}
+.inspector h4 {
+  margin: 0 0 8px;
+}
+.inspector dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.inspector dt {
+  color: var(--text-secondary, #536274);
+  font-size: 0.78rem;
+}
+.inspector dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.tableWrap {
+  overflow-x: auto;
+}
+.tableWrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.tableWrap th,
+.tableWrap td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle, #d7dde5);
+}
+.tableWrap caption {
+  text-align: left;
+  font-weight: 600;
+  padding: 6px 0;
+}
+.tableWrap button {
+  border: 0;
+  background: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) {
+  .root :global(.react-flow__edge.animated path) {
+    animation: none;
+  }
+}
+@media (max-width: 720px) {
+  .canvas {
+    height: 340px;
+  }
+}

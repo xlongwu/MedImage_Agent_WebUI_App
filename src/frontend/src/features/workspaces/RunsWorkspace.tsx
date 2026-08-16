@@ -23,6 +23,7 @@ import layoutStyles from "./WorkspaceLayout.module.css";
 import { useI18n } from "../../i18n/useI18n";
 import { getAgentResultMessageKey } from "../agent/components/agentTaskMessages";
 import { useProjectRunDetails, type ProjectRunDetails } from "../runs/useProjectRunDetails";
+import { ExecutionGraphView } from "../execution-graph/ExecutionGraphView";
 
 export interface RunsWorkspaceProps {
   agentTask?: AgentTaskResponse | null;
@@ -40,7 +41,7 @@ export interface RunsWorkspaceProps {
 }
 
 type RunStatusFilter = "all" | "active" | "failed" | "completed";
-type RunDetailTab = "events" | "logs" | "diagnostics" | "artifacts" | "audit";
+type RunDetailTab = "graph" | "events" | "logs" | "diagnostics" | "artifacts" | "audit";
 type RunWorkspaceView = "workspace" | "history";
 type Translate = ReturnType<typeof useI18n>["t"];
 
@@ -228,7 +229,9 @@ export function RunsWorkspace({
                 error={runDetails.error}
                 onRetry={runDetails.reload}
                 activeTab={detailTab}
+                baseUrl={baseUrl}
                 onTabChange={setDetailTab}
+                projectId={projectId}
               />
             ) : (
               <EmptyState
@@ -370,7 +373,9 @@ export function RunsWorkspace({
                 error={runDetails.error}
                 onRetry={runDetails.reload}
                 activeTab={detailTab}
+                baseUrl={baseUrl}
                 onTabChange={setDetailTab}
+                projectId={projectId}
               />
             ) : (
               <EmptyState
@@ -759,21 +764,25 @@ function localizedEvidenceLabel(
 
 interface RunDetailPanelProps {
   activeTab: RunDetailTab;
+  baseUrl: string;
   details: ReturnType<typeof useProjectRunDetails>["data"];
   error: string;
   loading: boolean;
   onRetry: () => Promise<unknown>;
   onTabChange: (value: RunDetailTab) => void;
+  projectId: string | null;
   task: TaskLogEntry;
 }
 
 function RunDetailPanel({
   activeTab,
+  baseUrl,
   details,
   error,
   loading,
   onRetry,
   onTabChange,
+  projectId,
   task,
 }: RunDetailPanelProps) {
   const { t } = useI18n();
@@ -881,6 +890,7 @@ function RunDetailPanel({
         value={activeTab}
         onChange={(value) => onTabChange(value as RunDetailTab)}
         options={[
+          { label: t("executionGraph.tab"), value: "graph" },
           { label: t("runs.tab.events"), value: "events" },
           { label: t("runs.tab.logs"), value: "logs" },
           { label: t("runs.tab.diagnostics"), value: "diagnostics" },
@@ -890,6 +900,9 @@ function RunDetailPanel({
       />
 
       <div className={styles.tabPanel}>
+        {activeTab === "graph" ? (
+          <ExecutionGraphView baseUrl={baseUrl} projectId={projectId} runId={task.id} autoRefresh />
+        ) : null}
         {activeTab === "events" ? (
           <section aria-label={t("runs.events.aria")}>
             {loading ? <div className={styles.loadingLine}>{t("runs.events.loading")}</div> : null}

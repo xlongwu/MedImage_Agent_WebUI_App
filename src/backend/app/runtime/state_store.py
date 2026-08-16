@@ -6,8 +6,9 @@ from typing import Any
 
 from src.backend.app.core.exceptions import StateStoreError
 from src.backend.app.runtime.atomic_file import atomic_write_json
+from src.backend.app.schemas.execution_state import PersistedNodeState
 
-STATE_SCHEMA_VERSION = "state-store-v1"
+STATE_SCHEMA_VERSION = "state-store-v2"
 
 
 def now_iso() -> str:
@@ -34,7 +35,7 @@ def write_node_state(
     subject: str,
     status: str,
     started_at: str,
-    ended_at: str,
+    ended_at: str | None,
     result: dict[str, Any],
     work_dir: str,
 ) -> Path:
@@ -45,13 +46,31 @@ def write_node_state(
         state_dir = Path(work_dir) / "states" / run_id
     state_dir.mkdir(parents=True, exist_ok=True)
 
-    state = {
+    state_path = state_dir / f"{node_id}.json"
+    previous: dict[str, Any] = {}
+    if state_path.exists():
+        try:
+            import json
+
+            raw = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict) and raw.get("_schema_version") == STATE_SCHEMA_VERSION:
+                previous = raw
+        except (OSError, ValueError):
+            # The atomic replacement below is the authoritative result.  A
+            # malformed prior record must not turn a terminal update into an
+            # unrecorded execution outcome.
+            previous = {}
+
+    effective_started_at = str(previous.get("started_at") or started_at)
+    payload = {
+        "schema_version": STATE_SCHEMA_VERSION,
         "run_id": run_id,
         "subject": subject,
         "node": node_id,
         "status": status,
-        "started_at": started_at,
+        "started_at": effective_started_at,
         "ended_at": ended_at,
+        "updated_at": now_iso(),
         "log_path": result.get("stdout_log"),
         "stderr_log": result.get("stderr_log"),
         "outputs": result.get("outputs", result.get("expected_outputs", [])),
@@ -61,8 +80,8 @@ def write_node_state(
         "result_json": result.get("result_json"),
         "returncode": result.get("returncode"),
     }
-
-    state_path = state_dir / f"{node_id}.json"
+    state = PersistedNodeState.model_validate(payload).model_dump()
+    state.pop("schema_version")
     return _write_state_json(state_path, state)
 
 

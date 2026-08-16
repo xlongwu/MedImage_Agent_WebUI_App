@@ -44,6 +44,7 @@ from src.backend.app.api.planner_routes import router as planner_router
 from src.backend.app.api.preprocessing_routes import router as preprocessing_router
 from src.backend.app.api.preset_routes import router as preset_router
 from src.backend.app.api.project_history_routes import router as project_history_router
+from src.backend.app.api.execution_graph_routes import router as execution_graph_router
 from src.backend.app.api.project_routes import router as project_router
 from src.backend.app.api.qc_routes import router as qc_router
 from src.backend.app.api.realdata_routes import router as realdata_router
@@ -236,6 +237,7 @@ def create_app() -> FastAPI:
     app.include_router(preset_router)
     app.include_router(project_router)
     app.include_router(project_history_router)
+    app.include_router(execution_graph_router)
 
     return app
 
