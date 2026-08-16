@@ -14,6 +14,7 @@ from src.backend.app.desktop_backend_entry import (
     _desktop_parent_pid,
     _watch_parent_process,
     ensure_packaged_windows_runtime_dirs,
+    main,
     parse_args,
     run_backend,
     validate_host,
@@ -58,6 +59,12 @@ def test_desktop_backend_entry_runs_uvicorn_without_reload(monkeypatch: pytest.M
     assert captured["port"] == 8765
     assert captured["reload"] is False
     assert captured["factory"] is False
+
+
+def test_sandbox_self_test_rejects_unknown_case_without_starting_backend(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    monkeypatch.setattr("src.backend.app.desktop_backend_entry._is_windows_runtime", lambda: False)
+    assert main(["--sandbox-self-test", "unknown"]) == 2
+    assert "SANDBOX_PROVIDER_UNAVAILABLE" in capsys.readouterr().out
 
 
 def test_desktop_parent_pid_accepts_only_a_distinct_positive_pid(
