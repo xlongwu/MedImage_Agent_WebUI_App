@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -52,14 +53,19 @@ class SandboxWorkspaceService:
         dispatch_id: str,
         policy: SandboxPolicy,
         project_work_root: str | Path,
+        approved_project_root: str | Path,
     ) -> SandboxAttemptRecord:
         _safe_id(run_id, "run_id")
         _safe_id(node_id, "node_id")
         if subject_id is not None:
             _safe_id(subject_id, "subject_id")
         root = Path(project_work_root).expanduser().resolve()
-        if root.name.casefold() == "rawdata" or not root.exists():
+        project_root = Path(approved_project_root).expanduser().resolve()
+        if root.name.casefold() == "rawdata" or not _within(root, project_root):
             raise SafetyError("SANDBOX_PATH_OUTSIDE_PROJECT", code="SANDBOX_PATH_OUTSIDE_PROJECT")
+        if root.exists() and root.is_symlink():
+            raise SafetyError("SANDBOX_PATH_OUTSIDE_PROJECT", code="SANDBOX_PATH_OUTSIDE_PROJECT")
+        root.mkdir(parents=True, exist_ok=True)
         attempt_id = _digest("|".join((dispatch_id, node_id, subject_id or "project")))
         sandbox_id = _digest("|".join((execution_ticket_id, run_id, node_id, subject_id or "project", attempt_id)))
         directory = (root / "sandboxes" / run_id / node_id / attempt_id).resolve()
@@ -70,6 +76,7 @@ class SandboxWorkspaceService:
             subject_id=subject_id, attempt_id=attempt_id,
             execution_ticket_id=execution_ticket_id, dispatch_id=dispatch_id,
             policy_hash=policy.policy_hash, status="PREPARING",
+            owner_pid=os.getpid(),
         )
         try:
             existing = self.store.add_sandbox_attempt(record)
@@ -88,7 +95,14 @@ class SandboxWorkspaceService:
             raise StateStoreError("SANDBOX_ATTEMPT_WRITE_FAILED")
         return updated
 
-    def stage_inputs(self, *, attempt: SandboxAttemptRecord, project_work_root: str | Path, inputs: tuple[str | Path, ...]) -> tuple[dict[str, object], ...]:
+    def stage_inputs(
+        self,
+        *,
+        attempt: SandboxAttemptRecord,
+        project_work_root: str | Path,
+        inputs: tuple[str | Path, ...],
+        approved_input_roots: tuple[str | Path, ...],
+    ) -> tuple[dict[str, object], ...]:
         root = Path(project_work_root).expanduser().resolve()
         directory = (root / "sandboxes" / attempt.run_id / attempt.node_id / attempt.attempt_id).resolve()
         if not _within(directory, root):
@@ -97,7 +111,11 @@ class SandboxWorkspaceService:
         manifest: list[dict[str, object]] = []
         for source_value in inputs:
             source = Path(source_value).expanduser().resolve()
-            if not source.is_file() or source.is_symlink():
+            if (
+                not source.is_file()
+                or source.is_symlink()
+                or not any(_within(source, Path(value).expanduser().resolve()) for value in approved_input_roots)
+            ):
                 raise SafetyError("SANDBOX_INPUT_NOT_APPROVED", code="SANDBOX_INPUT_NOT_APPROVED")
             destination = staged / source.name
             if destination.exists():

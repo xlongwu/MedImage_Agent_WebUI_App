@@ -14,6 +14,7 @@ import {
   listProjectRunEvents,
   listProjectRunLogs,
 } from "../../../lib/api/projectRuns";
+import { listSandboxAttempts } from "../../../lib/api/sandboxes";
 
 vi.mock("../../../lib/api/projectRuns", () => ({
   getProjectRun: vi.fn(),
@@ -22,6 +23,8 @@ vi.mock("../../../lib/api/projectRuns", () => ({
   listProjectRunEvents: vi.fn(),
   listProjectRunLogs: vi.fn(),
 }));
+
+vi.mock("../../../lib/api/sandboxes", () => ({ listSandboxAttempts: vi.fn() }));
 
 function agentTaskEvidence(): AgentTaskResponse {
   return {
@@ -170,6 +173,12 @@ function mockProjectRunDetails({
   nodeErrors?: string[];
   retryEligible?: boolean;
 } = {}) {
+  vi.mocked(listSandboxAttempts).mockResolvedValue({
+    ok: true,
+    project_id: "project-1",
+    run_id: "task-1",
+    sandbox_attempts: [],
+  });
   vi.mocked(getProjectRun).mockResolvedValue({
     ok: true,
     run_link: {

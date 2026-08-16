@@ -18,6 +18,7 @@ from src.backend.app.services.execution_ticket_service import ExecutionTicketSer
 from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 from src.backend.app.schemas.sandbox import SandboxPolicySet
 from src.backend.app.services.sandbox_policy_service import SandboxPolicyService
+from src.backend.app.services.sandbox_workspace_service import SandboxWorkspaceService
 
 _VERIFICATION_SENTINEL = object()
 
@@ -69,6 +70,48 @@ class ExecutionGateway:
         self.environment_service = environment_service or ExecutionEnvironmentService(
             ticket_service.store
         )
+
+    @staticmethod
+    def _sandbox_project_root(ticket: ExecutionTicket) -> Path:
+        if not ticket.output_roots:
+            raise SafetyError("SANDBOX_PATH_OUTSIDE_PROJECT", code="SANDBOX_PATH_OUTSIDE_PROJECT")
+        root = Path(ticket.output_roots[0]).resolve()
+        if root.name.casefold() == "rawdata" or root.is_symlink():
+            raise SafetyError("SANDBOX_PATH_OUTSIDE_PROJECT", code="SANDBOX_PATH_OUTSIDE_PROJECT")
+        return root
+
+    def _prepare_sandboxes(
+        self,
+        *,
+        ticket: ExecutionTicket,
+        dispatch: GatewayDispatch,
+        policy_set: SandboxPolicySet,
+    ) -> None:
+        if not policy_set.policies:
+            return
+        project_root = self._sandbox_project_root(ticket)
+        workspace = SandboxWorkspaceService(self.ticket_service.store)
+        for policy in policy_set.policies:
+            workspace.prepare(
+                project_id=ticket.project_id,
+                run_id=dispatch.run_id,
+                node_id=policy.node_id,
+                subject_id=None,
+                execution_ticket_id=ticket.execution_ticket_id,
+                dispatch_id=dispatch.dispatch_id,
+                policy=policy,
+                project_work_root=project_root / "work",
+                approved_project_root=project_root,
+            )
+        event = GatewayDispatchEvent(
+            event_id=f"dispatch_event_{uuid4().hex}",
+            dispatch_id=dispatch.dispatch_id,
+            project_id=dispatch.project_id,
+            event_type="sandbox_prepared",
+            occurred_at=datetime.now(UTC),
+            redacted_summary="Gateway created deterministic sandbox attempt records before ticket consumption.",
+        )
+        self.ticket_service.store.add_gateway_dispatch_event(event)
 
     def dispatch(
         self,
@@ -193,6 +236,18 @@ class ExecutionGateway:
                 "GATEWAY_DISPATCH_OUTCOME_UNKNOWN",
                 code="GATEWAY_DISPATCH_OUTCOME_UNKNOWN",
             )
+
+        try:
+            self._prepare_sandboxes(ticket=ticket, dispatch=dispatch, policy_set=policy_set)
+        except Exception as exc:
+            code = str(exc.code) if isinstance(exc, SafetyError) and exc.code else "SANDBOX_PREPARE_FAILED"
+            self.ticket_service.record_rejection(
+                project_id=ticket.project_id,
+                ticket_id=ticket.execution_ticket_id,
+                audit_id=ticket.audit_id,
+                reason=code,
+            )
+            raise
 
         consumed = self.ticket_service.consume(
             ticket,

@@ -23,6 +23,8 @@ from src.backend.app.services.execution_ticket_service import (
 )
 from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 from src.backend.app.services.mock_store import SQLiteDesktopStore
+from src.backend.app.schemas.sandbox import SandboxLimits, SandboxPolicy
+from src.backend.app.planner.audit_record import stable_hash
 
 
 def _service(tmp_path):
@@ -200,36 +202,44 @@ def test_gateway_is_only_source_of_verified_runtime_context(tmp_path):
     assert consumed.status == "consumed"
     assert len(calls) == 1
     assert calls[0].ticket.execution_ticket_id == ticket.execution_ticket_id
-    assert calls[0].dispatch.dispatch_id == result["dispatch_id"]
-    dispatch = service.store.get_gateway_dispatch_by_ticket(ticket.execution_ticket_id)
-    assert dispatch is not None
-    assert dispatch.run_id == "run-1"
-    assert [
-        event.event_type
-        for event in service.store.list_gateway_dispatch_events(dispatch.dispatch_id)
-    ] == ["dispatch_started", "dispatch_succeeded"]
 
-    replay, replayed_ticket = ExecutionGateway(service).dispatch(
-        execution_ticket_id=ticket.execution_ticket_id,
-        project_id=ticket.project_id,
-        reviewed_plan_id=ticket.reviewed_plan_id,
-        plan_hash=ticket.plan_hash,
-        approval_summary_hash=ticket.approval_summary_hash,
-        memory_context_hash=ticket.memory_context_hash,
-        scope_hash=ticket.scope_hash,
-        normalized_params_hash=ticket.normalized_params_hash,
-        contract_versions=ticket.contract_versions,
-        project_config_path=ticket.project_config_path,
-        pipeline_path=ticket.pipeline_path,
-        command_id="execute-command-1",
-        run_id="run-1",
-        executor=fake_executor,
+
+def test_gateway_persists_sandbox_preparation_before_ticket_consumption(tmp_path):
+    service = _service(tmp_path)
+    identity = {
+        "schema_version": 1,
+        "policy_version": "windows-sandbox-v1",
+        "node_id": "contract_smoke",
+        "backend_id": "python",
+        "provider": "windows_restricted_process",
+        "executable_id": "python",
+        "executable_path_hash": "environment-bound",
+        "readonly_root_hashes": (),
+        "output_root_hashes": (),
+        "allowed_environment_keys": ("SystemRoot",),
+        "network_isolation": "not_enforced",
+        "limits": {"timeout_seconds": 10, "memory_limit_bytes": 16 * 1024 * 1024, "max_processes": 1},
+    }
+    policy = SandboxPolicy(policy_hash=stable_hash(identity), **identity)
+    policies_hash = stable_hash({"schema_version": 1, "policies": [policy.model_dump(mode="json", exclude={"policy_hash"})]})
+    ticket = _issue(service, tmp_path, sandbox_policies=(policy.model_dump(mode="json"),), sandbox_policies_hash=policies_hash)
+
+    def fake_executor(**_kwargs):
+        return {"status": "SUCCESS", "run_id": "sandbox-run"}
+
+    result, _ = ExecutionGateway(service).dispatch(
+        execution_ticket_id=ticket.execution_ticket_id, project_id=ticket.project_id,
+        reviewed_plan_id=ticket.reviewed_plan_id, plan_hash=ticket.plan_hash,
+        approval_summary_hash=ticket.approval_summary_hash, memory_context_hash=ticket.memory_context_hash,
+        scope_hash=ticket.scope_hash, normalized_params_hash=ticket.normalized_params_hash,
+        contract_versions=ticket.contract_versions, project_config_path=ticket.project_config_path,
+        pipeline_path=ticket.pipeline_path, command_id="sandbox-command", run_id="sandbox-run", executor=fake_executor,
     )
-    assert replay == result
-    assert replayed_ticket.status == "consumed"
-    assert len(calls) == 1
-
-
+    assert result["run_id"] == "sandbox-run"
+    attempt = service.store.list_sandbox_attempts_for_run("project-1", "sandbox-run")
+    assert len(attempt) == 1 and attempt[0].status == "PREPARED"
+    events = service.store.list_gateway_dispatch_events(result["dispatch_id"])
+    assert [event.event_type for event in events] == ["sandbox_prepared", "dispatch_started", "dispatch_succeeded"]
 def test_gateway_resumes_prepared_dispatch_but_never_replays_unknown_outcome(
     tmp_path, monkeypatch
 ):

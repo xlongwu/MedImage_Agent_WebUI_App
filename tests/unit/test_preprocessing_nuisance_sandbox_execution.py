@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-
 def _setup(tmp_path, monkeypatch):
     from src.backend.app.services.mock_store import SQLiteDesktopStore
 
@@ -99,17 +97,3 @@ def test_metadata_only_warning(tmp_path, monkeypatch):
     assert result.status == "warning" and any(
         "nibabel" in str(w).lower() or "metadata-only" in str(w).lower() for w in result.warnings
     )
-
-
-def test_endpoint_200(tmp_path):
-    from fastapi.testclient import TestClient
-
-    from src.backend.app.main import app
-
-    client = TestClient(app)
-    resp = client.post(
-        "/api/projects/brain-tumor-study/preprocessing/runs/pp-test/nuisance-regression/execute-sandbox",
-        json={"dry_run_id": "dr-test", "confirm_sandbox_copy": True},
-    )
-    assert resp.status_code == 410
-    assert resp.json()["detail"]["error_code"] == "EXECUTION_CONTRACT_REQUIRED"

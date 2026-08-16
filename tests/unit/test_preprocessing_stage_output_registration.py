@@ -165,20 +165,6 @@ def test_safety_flags(tmp_path, monkeypatch):
     assert result.safety_flags["no_additional_execution"] is True
 
 
-def test_endpoint_returns_200(tmp_path):
-    from fastapi.testclient import TestClient
-
-    from src.backend.app.main import app
-
-    _make_exec_dir(tmp_path)
-    client = TestClient(app)
-    resp = client.post(
-        "/api/projects/brain-tumor-study/preprocessing/runs/pp-test/stage-outputs/register-sandbox-spm",
-        json={"execution_id": "spm-ex-abc123", "confirm_sandbox_outputs": True},
-    )
-    assert resp.status_code == 200
-
-
 def test_register_fc_outputs_discovers_canonical_matrix_artifacts(tmp_path, monkeypatch):
     _setup_store(tmp_path, monkeypatch)
     exec_id = "fc-ex-abc123"

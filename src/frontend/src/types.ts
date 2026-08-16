@@ -1737,28 +1737,6 @@ export type NativeFullPreprocResponse = {
   finished_at?: string;
   runtime_seconds?: number | null;
 };
-/** Phase 5E — Sandbox execution */
-export type SpmSandboxExecutionResponse = {
-  ok: boolean;
-  status: string;
-  project_id: string;
-  preprocessing_run_id: string;
-  dry_run_id: string;
-  execution_id: string;
-  execution_dir: string;
-  sandbox_input_dir: string;
-  sandbox_output_dir: string;
-  subjects_total: number;
-  subjects_succeeded: number;
-  command_template_path: string;
-  stdout_log_path: string;
-  stderr_log_path: string;
-  manifest_path: string;
-  provenance_path: string;
-  warnings: string[];
-  blocking_issues: string[];
-  safety_flags: Record<string, boolean>;
-};
 /** Phase 5F */
 export type StageOutputRegistrationResponse = {
   ok: boolean;
@@ -1777,29 +1755,6 @@ export type StageOutputRegistrationResponse = {
   warnings: string[];
   blocking_issues: string[];
   next_actions: string[];
-  safety_flags: Record<string, boolean>;
-};
-/** Phase 5K */
-export type NuisanceSandboxExecutionResponse = {
-  ok: boolean;
-  status: string;
-  project_id: string;
-  preprocessing_run_id: string;
-  dry_run_id: string;
-  execution_id: string;
-  execution_dir: string;
-  sandbox_input_dir: string;
-  sandbox_output_dir: string;
-  subjects_total: number;
-  subjects_succeeded: number;
-  regressor_design_path: string;
-  stdout_log_path: string;
-  stderr_log_path: string;
-  manifest_path: string;
-  provenance_path: string;
-  subject_status_path: string;
-  warnings: string[];
-  blocking_issues: string[];
   safety_flags: Record<string, boolean>;
 };
 export type FilteringDryRunResponse = {

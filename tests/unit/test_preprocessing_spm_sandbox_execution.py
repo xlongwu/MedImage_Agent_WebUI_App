@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-
-
 def _make_bold_input(tmp_path: Path, subjects: int = 2) -> Path:
     cb = tmp_path / "converted_bids"
     for i in range(1, subjects + 1):
@@ -14,8 +12,6 @@ def _make_bold_input(tmp_path: Path, subjects: int = 2) -> Path:
         (sub / f"sub-{i:03d}_task-rest_bold.nii.gz").write_text("fake BOLD")
         (sub / f"sub-{i:03d}_task-rest_bold.json").write_text('{"RepetitionTime":2.0}')
     return cb
-
-
 def _setup_store(tmp_path, monkeypatch):
     from src.backend.app.services.mock_store import SQLiteDesktopStore
 
@@ -252,18 +248,3 @@ def test_sandbox_safety_flags(tmp_path, monkeypatch):
     assert result.safety_flags["sandbox_execution_only"] is True
     assert result.safety_flags["no_full_preprocessing"] is True
     assert result.safety_flags["no_dpabi"] is True
-
-
-def test_sandbox_endpoint_returns_200(tmp_path):
-    from fastapi.testclient import TestClient
-
-    from src.backend.app.main import app
-
-    _cb = _make_bold_input(tmp_path, subjects=1)
-    client = TestClient(app)
-    resp = client.post(
-        "/api/projects/brain-tumor-study/preprocessing/runs/pp-test/spm/slice-timing-realign/execute-sandbox",
-        json={"dry_run_id": "dr-test", "confirm_sandbox_copy": True},
-    )
-    assert resp.status_code == 410
-    assert resp.json()["detail"]["error_code"] == "EXECUTION_CONTRACT_REQUIRED"

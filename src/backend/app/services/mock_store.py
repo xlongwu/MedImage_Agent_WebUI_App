@@ -1864,6 +1864,14 @@ class SQLiteDesktopStore:
             ).fetchall()
         return [SandboxAttemptRecord(**json.loads(row["payload"])) for row in rows]
 
+    def list_incomplete_sandbox_attempts(self) -> list[SandboxAttemptRecord]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """SELECT payload FROM sandbox_attempts
+                   WHERE status IN ('PREPARING', 'PREPARED', 'RUNNING') ORDER BY rowid"""
+            ).fetchall()
+        return [SandboxAttemptRecord(**json.loads(row["payload"])) for row in rows]
+
     def create_agent_lifecycle(
         self,
         record: AgentLifecycleRecord,

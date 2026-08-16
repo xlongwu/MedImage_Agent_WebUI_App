@@ -62,6 +62,7 @@ from src.backend.app.core.logging_config import setup_logging
 from src.backend.app.runtime.node_contract_consistency import assert_node_contract_consistency
 from src.backend.app.services.agent_invariant_checker import AgentInvariantChecker
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
+from src.backend.app.services.sandbox_attempt_reconciler import SandboxAttemptReconciler
 from src.backend.app.services.memory_candidate_service import MemoryCandidateService
 from src.backend.app.services.memory_consolidation_service import MemoryConsolidationService
 from src.backend.app.services.memory_llm_proposal_service import (
@@ -74,6 +75,17 @@ from src.backend.app.services.memory_repository import MemoryRepository
 from src.backend.app.version import API_DESCRIPTION, API_TITLE, APP_VERSION
 
 logger = logging.getLogger(__name__)
+
+
+def _remove_legacy_sandbox_routes() -> None:
+    """Delete obsolete direct execution registrations before routers are mounted."""
+    for api_router in (preprocessing_router, dashboard_router):
+        api_router.routes[:] = [
+            route
+            for route in api_router.routes
+            if "execute-sandbox" not in getattr(route, "path", "")
+            and "register-sandbox-" not in getattr(route, "path", "")
+        ]
 
 
 def _run_agent_invariant_startup_check() -> None:
@@ -159,6 +171,9 @@ async def _lifespan(_app: FastAPI):
     task_scheduler = None
     if os.getenv("MEDIMAGE_AGENT_STARTUP_RECONCILE", "0") == "1":
         AgentTaskReconciler(get_project_store()).reconcile_incomplete_on_startup()
+    startup_store = get_project_store()
+    if hasattr(startup_store, "list_incomplete_sandbox_attempts"):
+        SandboxAttemptReconciler(startup_store).reconcile_incomplete_on_startup()
     command_service = get_agent_task_command_service_for_store(get_project_store())
     task_scheduler = command_service.planning_service.scheduler
     _run_agent_invariant_startup_check()
@@ -174,6 +189,7 @@ async def _lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     setup_logging()
     assert_node_contract_consistency()
+    _remove_legacy_sandbox_routes()
     for error in AgentSkillRegistry().validate_all():
         logger.error("agent_skill_unavailable", extra={"error_code": error.code})
     app = FastAPI(
@@ -240,16 +256,6 @@ def create_app() -> FastAPI:
     app.include_router(project_history_router)
     app.include_router(execution_graph_router)
     app.include_router(sandbox_router)
-    # Historical direct sandbox endpoints are deliberately absent from the
-    # public surface. Only the reviewed approval -> ticket -> gateway chain can
-    # ever reach a process provider.
-    app.router.routes[:] = [
-        route
-        for route in app.router.routes
-        if "execute-sandbox" not in getattr(route, "path", "")
-        and "register-sandbox-" not in getattr(route, "path", "")
-    ]
-
     return app
 
 

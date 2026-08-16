@@ -27,10 +27,10 @@ def test_workspace_is_deterministic_and_stages_a_verified_copy(tmp_path: Path) -
     work.mkdir()
     source = tmp_path / "input.txt"
     source.write_text("approved", encoding="utf-8")
-    first = service.prepare(project_id="project", run_id="run", node_id="node", subject_id=None, execution_ticket_id="ticket", dispatch_id="dispatch", policy=_policy(), project_work_root=work)
-    second = service.prepare(project_id="project", run_id="run", node_id="node", subject_id=None, execution_ticket_id="ticket", dispatch_id="dispatch", policy=_policy(), project_work_root=work)
+    first = service.prepare(project_id="project", run_id="run", node_id="node", subject_id=None, execution_ticket_id="ticket", dispatch_id="dispatch", policy=_policy(), project_work_root=work, approved_project_root=tmp_path)
+    second = service.prepare(project_id="project", run_id="run", node_id="node", subject_id=None, execution_ticket_id="ticket", dispatch_id="dispatch", policy=_policy(), project_work_root=work, approved_project_root=tmp_path)
     assert first.sandbox_id == second.sandbox_id
-    manifest = service.stage_inputs(attempt=first, project_work_root=work, inputs=(source,))
+    manifest = service.stage_inputs(attempt=first, project_work_root=work, inputs=(source,), approved_input_roots=(tmp_path,))
     assert manifest[0]["size_bytes"] == len("approved")
     assert (work / "sandboxes" / "run" / "node" / first.attempt_id / "staged_input" / "input.txt").read_text() == "approved"
 
@@ -40,4 +40,15 @@ def test_workspace_rejects_unsafe_identifiers(tmp_path: Path, unsafe: str) -> No
     work = tmp_path / "work"
     work.mkdir()
     with pytest.raises(SafetyError, match="SANDBOX_PATH_OUTSIDE_PROJECT"):
-        SandboxWorkspaceService(SQLiteDesktopStore(tmp_path / "state.sqlite")).prepare(project_id="project", run_id=unsafe, node_id="node", subject_id=None, execution_ticket_id="ticket", dispatch_id="dispatch", policy=_policy(), project_work_root=work)
+        SandboxWorkspaceService(SQLiteDesktopStore(tmp_path / "state.sqlite")).prepare(project_id="project", run_id=unsafe, node_id="node", subject_id=None, execution_ticket_id="ticket", dispatch_id="dispatch", policy=_policy(), project_work_root=work, approved_project_root=tmp_path)
+
+
+def test_workspace_rejects_inputs_outside_the_ticket_roots(tmp_path: Path) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    outside = tmp_path.parent / "outside.txt"
+    outside.write_text("not approved", encoding="utf-8")
+    service = SandboxWorkspaceService(SQLiteDesktopStore(tmp_path / "state.sqlite"))
+    attempt = service.prepare(project_id="project", run_id="run", node_id="node", subject_id=None, execution_ticket_id="ticket", dispatch_id="dispatch", policy=_policy(), project_work_root=work, approved_project_root=tmp_path)
+    with pytest.raises(SafetyError, match="SANDBOX_INPUT_NOT_APPROVED"):
+        service.stage_inputs(attempt=attempt, project_work_root=work, inputs=(outside,), approved_input_roots=(work,))

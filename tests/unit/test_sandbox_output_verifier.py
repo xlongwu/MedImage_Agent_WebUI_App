@@ -16,16 +16,19 @@ def _attempt() -> SandboxAttemptRecord:
 def test_verifier_promotes_only_reloadable_output(tmp_path: Path) -> None:
     root = tmp_path / "sandbox"
     (root / "output").mkdir(parents=True)
+    (root / "meta").mkdir()
     (root / "output" / "result.json").write_text('{"ok": true}', encoding="utf-8")
     destination = tmp_path / "derivatives"
     manifest = SandboxOutputVerifier().verify_and_promote(attempt=_attempt(), sandbox_root=root, approved_output_roots=(str(destination),))
     assert manifest["files"][0]["relative_path"] == "result.json"
     assert (destination / "run" / "node" / "attempt" / "result.json").is_file()
+    assert (root / "meta" / "output_manifest.json").is_file()
 
 
 def test_verifier_rejects_invalid_json_without_promoting(tmp_path: Path) -> None:
     root = tmp_path / "sandbox"
     (root / "output").mkdir(parents=True)
+    (root / "meta").mkdir()
     (root / "output" / "result.json").write_text("not-json", encoding="utf-8")
     with pytest.raises(Exception):
         SandboxOutputVerifier().verify_and_promote(attempt=_attempt(), sandbox_root=root, approved_output_roots=(str(tmp_path / "derivatives"),))

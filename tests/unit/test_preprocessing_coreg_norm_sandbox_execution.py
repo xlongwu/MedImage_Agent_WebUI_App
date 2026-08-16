@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-
 def _setup_store(tmp_path, monkeypatch):
     from src.backend.app.services.mock_store import SQLiteDesktopStore
 
@@ -13,8 +11,6 @@ def _setup_store(tmp_path, monkeypatch):
         "src.backend.app.services.preprocessing_coreg_norm_execution.mock_store", store
     )
     return store
-
-
 def _make_inputs(tmp_path):
     sandbox = tmp_path / "preprocessing_runs" / "pp-test" / "spm_exec" / "ex-1" / "sandbox_output"
     sub = sandbox / "sub-001"
@@ -161,17 +157,3 @@ def test_safety_flags(tmp_path, monkeypatch):
     assert (
         result.safety_flags["no_dpabi"] is True and result.safety_flags["coreg_norm_only"] is True
     )
-
-
-def test_endpoint_200(tmp_path):
-    from fastapi.testclient import TestClient
-
-    from src.backend.app.main import app
-
-    client = TestClient(app)
-    resp = client.post(
-        "/api/projects/brain-tumor-study/preprocessing/runs/pp-test/spm/coreg-normalize/execute-sandbox",
-        json={"dry_run_id": "dr-test", "confirm_sandbox_copy": True},
-    )
-    assert resp.status_code == 410
-    assert resp.json()["detail"]["error_code"] == "EXECUTION_CONTRACT_REQUIRED"

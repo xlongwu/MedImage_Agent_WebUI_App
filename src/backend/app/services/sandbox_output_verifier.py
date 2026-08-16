@@ -10,6 +10,7 @@ from pathlib import Path
 
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.audit_record import stable_hash
+from src.backend.app.runtime.atomic_file import atomic_write_json
 from src.backend.app.schemas.sandbox import SandboxAttemptRecord
 
 
@@ -53,7 +54,14 @@ class SandboxOutputVerifier:
         except Exception:
             # The target is a new, attempt-specific root. It is safe to remove
             # only that exact root after a failed promotion.
-            shutil.rmtree(target_root, ignore_errors=True)
+            approved_root = Path(approved_output_roots[0]).expanduser().resolve()
+            try:
+                target_root.relative_to(approved_root)
+            except ValueError:
+                pass
+            else:
+                if target_root.exists():
+                    shutil.rmtree(target_root)
             raise
         manifest = {
             "schema_version": 1,
@@ -62,6 +70,10 @@ class SandboxOutputVerifier:
             "output_root": str(target_root),
         }
         manifest["output_manifest_hash"] = stable_hash(manifest)
+        meta_dir = root / "meta"
+        if not meta_dir.is_dir():
+            raise SafetyError("SANDBOX_OUTPUT_INVALID", code="SANDBOX_OUTPUT_INVALID")
+        atomic_write_json(meta_dir / "output_manifest.json", manifest, schema_version=1)
         return manifest
 
     @staticmethod

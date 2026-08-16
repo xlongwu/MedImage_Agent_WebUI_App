@@ -49,7 +49,13 @@ class SandboxPolicyService:
             if contract.resources.process_mode != "sandbox_process":
                 continue
             executable_hash = backend_paths.get(contract.backend)
-            if not executable_hash or not contract.executable:
+            # A disabled contract deliberately receives no process authority.
+            # This keeps plan/review usable while external backends remain
+            # unavailable and prevents a policy from becoming an enablement
+            # mechanism by itself.
+            if not contract.executable:
+                continue
+            if not executable_hash:
                 raise SafetyError("SANDBOX_POLICY_MISSING", code="SANDBOX_POLICY_MISSING")
             limits = SandboxLimits(timeout_seconds=600, memory_limit_bytes=2 * 1024**3, max_processes=8)
             identity = {

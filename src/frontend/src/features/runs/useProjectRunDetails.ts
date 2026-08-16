@@ -7,6 +7,8 @@ import {
   listProjectRunEvents,
   listProjectRunLogs,
 } from "../../lib/api/projectRuns";
+import { listSandboxAttempts } from "../../lib/api/sandboxes";
+import type { SandboxAttemptsResponse } from "../../lib/types/sandbox";
 import type {
   ProjectRunArtifactsResponse,
   ProjectRunDetailResponse,
@@ -21,6 +23,7 @@ export type ProjectRunDetails = {
   events: ProjectRunEventsResponse;
   logs: ProjectRunLogsResponse;
   timeline: ProjectRunStateTimelineResponse;
+  sandboxAttempts: SandboxAttemptsResponse;
 };
 
 type ProjectRunDetailsState = {
@@ -45,6 +48,7 @@ function assertProjectRunResponse(
     response.logs.project_id,
     response.artifacts.project_id,
     response.timeline.project_id,
+    response.sandboxAttempts.project_id,
   ];
   const runIds = [
     response.detail.run_link.run_id,
@@ -52,6 +56,7 @@ function assertProjectRunResponse(
     response.logs.run_id,
     response.artifacts.run_id,
     response.timeline.run_id,
+    response.sandboxAttempts.run_id,
   ];
   if (projectIds.some((value) => value !== projectId) || runIds.some((value) => value !== runId)) {
     throw new Error("Project run response did not match the selected project and run.");
@@ -87,7 +92,7 @@ export function useProjectRunDetails(
       loading: true,
     }));
     try {
-      const [detail, events, logs, artifacts, timeline] = await Promise.all([
+      const [detail, events, logs, artifacts, timeline, sandboxAttempts] = await Promise.all([
         getProjectRun(baseUrl, projectId, runId),
         listProjectRunEvents(baseUrl, projectId, runId),
         listProjectRunLogs(baseUrl, projectId, runId, {
@@ -96,8 +101,9 @@ export function useProjectRunDetails(
         }),
         listProjectRunArtifacts(baseUrl, projectId, runId),
         getProjectRunStateTimeline(baseUrl, projectId, runId),
+        listSandboxAttempts(baseUrl, projectId, runId),
       ]);
-      const data = { artifacts, detail, events, logs, timeline };
+      const data = { artifacts, detail, events, logs, timeline, sandboxAttempts };
       assertProjectRunResponse(projectId, runId, data);
       if (requestVersion.current === version) {
         setState({ data, error: "", key, loading: false });

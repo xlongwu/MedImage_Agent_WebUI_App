@@ -223,26 +223,6 @@ export async function registerConvertedPreprocessingInput(
   );
 }
 
-export async function registerSandboxSpmOutputs(
-  baseUrl: string,
-  projectId: string,
-  preprocessingRunId: string,
-  body: {
-    execution_id: string;
-    confirm_sandbox_outputs?: boolean;
-    confirm_rawdata_readonly?: boolean;
-    confirm_converted_input_readonly?: boolean;
-    confirm_no_additional_execution?: boolean;
-    confirm_use_as_next_stage_input?: boolean;
-  },
-) {
-  return requestJson<import("../../types").StageOutputRegistrationResponse>(
-    baseUrl,
-    `/api/projects/${encodeURIComponent(projectId)}/preprocessing/runs/${encodeURIComponent(preprocessingRunId)}/stage-outputs/register-sandbox-spm`,
-    { method: "POST", body: JSON.stringify(body) },
-  );
-}
-
 export async function runFilteringDryRun(
   baseUrl: string,
   projectId: string,

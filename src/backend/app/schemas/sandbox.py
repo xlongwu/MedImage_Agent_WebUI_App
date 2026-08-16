@@ -57,7 +57,7 @@ SandboxAttemptStatus = Literal[
 class SandboxAttemptRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     sandbox_id: str
     project_id: str
     run_id: str
@@ -74,6 +74,7 @@ class SandboxAttemptRecord(BaseModel):
     command_hash: str | None = None
     output_manifest_hash: str | None = None
     output_count: int = Field(default=0, ge=0)
+    owner_pid: int | None = Field(default=None, ge=1)
     provider: str = "windows_restricted_process"
     network_isolation: Literal["not_enforced"] = "not_enforced"
 
@@ -89,6 +90,9 @@ class SandboxProcessRequest(BaseModel):
     cwd: str
     environment: dict[str, str]
     policy_hash: str
+    timeout_seconds: int = Field(ge=1, le=86_400)
+    memory_limit_bytes: int = Field(ge=16 * 1024 * 1024)
+    max_processes: int = Field(ge=1, le=128)
 
 
 class SandboxProcessResult(BaseModel):

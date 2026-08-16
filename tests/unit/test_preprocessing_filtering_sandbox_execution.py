@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-
 def _setup(tmp_path, monkeypatch):
     from src.backend.app.services.mock_store import SQLiteDesktopStore
 
@@ -83,17 +81,3 @@ def test_sandbox_copies_and_writes(tmp_path, monkeypatch):
         "brain-tumor-study", "pp-test", req, env=_ALL, project_dir=str(tmp_path)
     )
     assert result.ok and Path(result.manifest_path).exists()
-
-
-def test_endpoint_200(tmp_path):
-    from fastapi.testclient import TestClient
-
-    from src.backend.app.main import app
-
-    client = TestClient(app)
-    resp = client.post(
-        "/api/projects/brain-tumor-study/preprocessing/runs/pp-test/temporal-filtering/execute-sandbox",
-        json={"dry_run_id": "dr", "confirm_sandbox_copy": True},
-    )
-    assert resp.status_code == 410
-    assert resp.json()["detail"]["error_code"] == "EXECUTION_CONTRACT_REQUIRED"

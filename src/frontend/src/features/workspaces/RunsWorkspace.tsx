@@ -24,6 +24,7 @@ import { useI18n } from "../../i18n/useI18n";
 import { getAgentResultMessageKey } from "../agent/components/agentTaskMessages";
 import { useProjectRunDetails, type ProjectRunDetails } from "../runs/useProjectRunDetails";
 import { ExecutionGraphView } from "../execution-graph/ExecutionGraphView";
+import { SandboxAttemptPanel } from "../runs/components/SandboxAttemptPanel";
 
 export interface RunsWorkspaceProps {
   agentTask?: AgentTaskResponse | null;
@@ -884,6 +885,8 @@ function RunDetailPanel({
           <RunFact label={t("runs.node.retry")} value={nodeInspector.retry} />
         </div>
       </div>
+
+      <SandboxAttemptPanel attempts={details?.sandboxAttempts.sandbox_attempts ?? []} />
 
       <SegmentedControl
         aria-label={t("runs.sections")}
