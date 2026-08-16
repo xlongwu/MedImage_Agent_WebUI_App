@@ -106,6 +106,7 @@ class CanonicalModelRequest(BaseModel):
     context_payload: dict[str, object]
     action_schema: dict[str, object]
     model_parameters: dict[str, object]
+    model_profile_hash: str = Field(min_length=64, max_length=64)
     repair: bool = False
 
 
@@ -133,6 +134,7 @@ class ModelCallRecord(BaseModel):
     request_hash: str = Field(min_length=1, max_length=128)
     action_schema_hash: str = Field(min_length=1, max_length=128)
     model_parameters_hash: str = Field(min_length=1, max_length=128)
+    model_profile_hash: str = Field(min_length=64, max_length=64)
     request_bytes: int = Field(ge=1)
     request_builder_version: str = Field(min_length=1, max_length=128)
     response_schema_version: int = Field(ge=1, le=32)

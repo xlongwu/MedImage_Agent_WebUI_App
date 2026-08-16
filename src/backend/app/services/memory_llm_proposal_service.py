@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.services.memory_filter_service import MemoryFilterService
 
 MEMORY_LLM_PROMPT_VERSION = "memory-llm-proposal-v1"
@@ -162,28 +162,21 @@ class MemoryLLMProposalService:
         )
 
 
-def build_memory_llm_provider_from_env() -> tuple[Callable[..., Any] | None, str | None]:
-    """Build an isolated OpenAI-compatible JSON provider only when fully configured."""
+def build_memory_llm_provider(
+    config: AgentModelRuntimeConfig,
+) -> tuple[Callable[..., Any] | None, str | None]:
+    """Build an isolated provider from the shared, validated model config."""
 
-    if os.environ.get("MEDIMAGE_LLM_ENABLED", "false").strip().casefold() not in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
+    if not config.enabled or config.provider != "openai_compatible":
         return None, None
-    api_key = os.environ.get("MEDIMAGE_LLM_API_KEY")
-    model = os.environ.get("MEDIMAGE_LLM_MODEL")
+    api_key = config.api_key.get_secret_value() if config.api_key else None
+    model = config.model
     if not api_key or not model:
         return None, model
-    base_url = os.environ.get("MEDIMAGE_LLM_BASE_URL", "https://api.openai.com/v1")
-    try:
-        timeout = max(
-            1.0,
-            min(float(os.environ.get("MEDIMAGE_LLM_TIMEOUT_SECONDS", "30")), 120.0),
-        )
-    except ValueError:
-        timeout = 30.0
+    base_url = config.base_url
+    if not base_url:
+        return None, model
+    timeout = float(config.timeout_seconds)
 
     def provider(*, task: str, schema: str, input: dict[str, Any]):
         import httpx

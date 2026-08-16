@@ -4,7 +4,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.backend.app.config.settings import ProjectSettings
-from src.backend.app.core.config_schema import AgentHarnessConfig, AppConfig, MemoryConfig, ServerConfig
+from src.backend.app.core.config_schema import (
+    AgentHarnessConfig,
+    AgentModelPublicConfig,
+    AgentModelRuntimeConfig,
+    AppConfig,
+    MemoryConfig,
+    ServerConfig,
+)
 
 
 @dataclass(frozen=True)
@@ -22,6 +29,7 @@ class ConfigService:
         self.server = ServerConfig.from_env()
         self.memory = MemoryConfig.from_env()
         self.harness = AgentHarnessConfig.from_env()
+        self.model = AgentModelRuntimeConfig.from_env()
         self.project = (
             ProjectSettings.from_yaml(project_config_path)
             if project_config_path is not None
@@ -50,6 +58,7 @@ class ConfigService:
             server=self.server,
             memory=self.memory,
             harness=self.harness,
+            model=AgentModelPublicConfig.from_runtime(self.model),
             project=project_payload,
             project_config_path=self.project_config_path,
         )

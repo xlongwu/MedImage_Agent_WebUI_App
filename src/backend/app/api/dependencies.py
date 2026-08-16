@@ -406,6 +406,7 @@ def _build_agent_task_command_service(store: ProjectStore):
         memory_initialization_error=memory_initialization_error,
         memory_influence_guard=MemoryInfluenceGuard(),
         harness_config=config.harness,
+        model_config=config.model,
         evidence_service=AgentEvidenceService(store),
     )
     scheduler = AgentTaskScheduler(store, planning_service=planning)
@@ -419,6 +420,7 @@ def _build_agent_task_command_service(store: ProjectStore):
         harness = AgentHarnessService(
             store,
             config=config.harness,
+            model_config=config.model,
             draft_plan=lambda **kwargs: planning.draft_plan(**kwargs),
             planning_action_service=action_service,
         )

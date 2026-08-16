@@ -64,7 +64,7 @@ from src.backend.app.services.memory_candidate_service import MemoryCandidateSer
 from src.backend.app.services.memory_consolidation_service import MemoryConsolidationService
 from src.backend.app.services.memory_llm_proposal_service import (
     MemoryLLMProposalService,
-    build_memory_llm_provider_from_env,
+    build_memory_llm_provider,
 )
 from src.backend.app.services.memory_maintenance_service import MemoryMaintenanceService
 from src.backend.app.services.memory_projection_service import MemoryProjectionService
@@ -121,7 +121,8 @@ def _run_agent_invariant_startup_check() -> None:
 def _run_memory_startup_reconcile() -> None:
     """Run one bounded, single-owner recovery pass; never a daemon loop."""
 
-    config = ConfigService().memory
+    app_config = ConfigService()
+    config = app_config.memory
     if not config.enabled:
         return
     store = get_project_store()
@@ -132,7 +133,7 @@ def _run_memory_startup_reconcile() -> None:
     maintenance = MemoryMaintenanceService(
         project_store=store, memory_repository=repository
     )
-    llm_provider, llm_model = build_memory_llm_provider_from_env()
+    llm_provider, llm_model = build_memory_llm_provider(app_config.model)
     candidate_service = MemoryCandidateService(
         project_store=store,
         memory_repository=repository,

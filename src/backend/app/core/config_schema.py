@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -165,11 +165,77 @@ class AgentHarnessConfig(BaseModel):
         )
 
 
+class AgentModelRuntimeConfig(BaseModel):
+    """The one private configuration source for Agent model calls."""
+
+    enabled: bool = False
+    provider: Literal["rule_based", "openai_compatible"] = "rule_based"
+    model: str | None = None
+    base_url: str | None = None
+    timeout_seconds: int = Field(default=60, ge=1, le=120)
+    max_output_tokens: int = Field(default=1024, ge=128, le=4096)
+    api_key: SecretStr | None = None
+
+    def incomplete_reason(self) -> str | None:
+        if self.provider == "rule_based":
+            return None
+        if not self.enabled or not self.model or not self.base_url or self.api_key is None:
+            return "AGENT_MODEL_CONFIG_INCOMPLETE"
+        return None
+
+    @classmethod
+    def from_env(cls) -> AgentModelRuntimeConfig:
+        provider = os.environ.get("MEDIMAGE_AGENT_MODEL_PROVIDER", "rule_based").strip().casefold()
+        if provider not in {"rule_based", "openai_compatible"}:
+            provider = "rule_based"
+
+        def bounded(name: str, default: int, minimum: int, maximum: int) -> int:
+            try:
+                value = int(os.environ.get(name, str(default)))
+            except ValueError:
+                return default
+            return value if minimum <= value <= maximum else default
+
+        model = os.environ.get("MEDIMAGE_AGENT_MODEL_NAME", "").strip() or None
+        base_url = os.environ.get("MEDIMAGE_AGENT_MODEL_BASE_URL", "").strip() or None
+        api_key = os.environ.get("MEDIMAGE_AGENT_MODEL_API_KEY", "").strip() or None
+        return cls(
+            enabled=_env_bool("MEDIMAGE_AGENT_MODEL_ENABLED"),
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            timeout_seconds=bounded("MEDIMAGE_AGENT_MODEL_TIMEOUT_SECONDS", 60, 1, 120),
+            max_output_tokens=bounded("MEDIMAGE_AGENT_MODEL_MAX_OUTPUT_TOKENS", 1024, 128, 4096),
+            api_key=SecretStr(api_key) if api_key else None,
+        )
+
+
+class AgentModelPublicConfig(BaseModel):
+    """Safe model configuration projection for state and diagnostics."""
+
+    enabled: bool
+    provider: Literal["rule_based", "openai_compatible"]
+    model: str | None
+    endpoint_class: str
+    api_key_configured: bool
+
+    @classmethod
+    def from_runtime(cls, config: AgentModelRuntimeConfig) -> AgentModelPublicConfig:
+        return cls(
+            enabled=config.enabled,
+            provider=config.provider,
+            model=config.model,
+            endpoint_class="rule_based" if config.provider == "rule_based" else "chat_completions",
+            api_key_configured=config.api_key is not None,
+        )
+
+
 class AppConfig(BaseModel):
     """Top-level configuration snapshot exposed by ConfigService."""
 
     server: ServerConfig
     memory: MemoryConfig
     harness: AgentHarnessConfig = Field(default_factory=AgentHarnessConfig)
+    model: AgentModelPublicConfig
     project: dict[str, Any] | None = None
     project_config_path: str | None = None

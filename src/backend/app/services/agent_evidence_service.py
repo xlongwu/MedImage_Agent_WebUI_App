@@ -140,19 +140,6 @@ class AgentEvidenceService:
                 facts.append(EvidenceFact(key="memory_suggestion_count", value=len(memory_refs), source_refs=memory_refs))
                 refs.extend(memory_refs)
 
-        if "capabilities" in requested:
-            provider = metadata.get("agent_planner_provider")
-            if isinstance(provider, str) and provider:
-                facts.append(EvidenceFact(
-                    key="planner_provider", value=provider,
-                    source_refs=(EvidenceSourceRef(
-                        source_type="planner_provider", source_id=provider,
-                        source_hash=stable_hash({"provider": provider}),
-                    ),),
-                ))
-            else:
-                missing.append("planner_provider")
-
         identity = {
             "schema_version": 1, "project_id": project_id, "lifecycle_id": lifecycle_id,
             "requested_types": requested,

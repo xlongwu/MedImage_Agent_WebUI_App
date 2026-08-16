@@ -8,11 +8,12 @@ every generated plan passes through Plan Validator before it is returned.
 from __future__ import annotations
 
 import re
-import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from uuid import uuid4
 
 from src.backend.app.planner.audit_record import stable_hash
@@ -713,11 +714,13 @@ def generate_plan_from_goal(
     provider: str = "rule_based",
     constraints: dict[str, Any] | None = None,
     project_config_path: str | None = None,
+    model_config: AgentModelRuntimeConfig | None = None,
 ) -> PlannerResponse:
     """Generate a candidate pipeline plan from a natural-language goal.
 
     The caller explicitly selects either deterministic rules or the remote provider.
     """
+    model_config = model_config or AgentModelRuntimeConfig()
     errors: list[str] = []
     warnings: list[str] = []
     messages: list[str] = []
@@ -725,7 +728,7 @@ def generate_plan_from_goal(
         invocation_id=f"planner_invocation_{uuid4().hex}",
         provider_id=provider,
         model_id=(
-            os.environ.get("MEDIMAGE_LLM_MODEL", "gpt-4.1-mini")
+            model_config.model or "unconfigured"
             if provider == "openai_compatible"
             else "deterministic-rules-v1"
         ),
@@ -823,7 +826,9 @@ def generate_plan_from_goal(
             parse_llm_plan_json,
         )
 
-        pr = call_openai_compatible_provider(goal, constraints=constraints)
+        pr = call_openai_compatible_provider(
+            goal, constraints=constraints, config=model_config
+        )
         if not pr.ok:
             return response(
                 ok=False,

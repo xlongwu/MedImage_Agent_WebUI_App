@@ -34,6 +34,7 @@ class ApprovalSummary(BaseModel):
     science_answers_hash: str
     planner_provider_ref: str
     planner_prompt_version: str
+    model_profile_hash: str
     planner_skill_hashes: tuple[str, ...] = ()
     normalized_plan_hash: str
     plan_payload_hash: str

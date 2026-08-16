@@ -7,6 +7,7 @@ from src.backend.app.planner.agent_model_adapter import (
     build_action_prompt,
     serialize_context_v3,
 )
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.schemas.agent_evidence import EvidenceFact, EvidenceSnapshot, EvidenceSourceRef
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleRecord
 from src.backend.app.schemas.desktop import ProjectDetail
@@ -216,9 +217,11 @@ def test_adapter_serializes_context_v2_in_fixed_order_and_rejects_flat_v1() -> N
     payload["sections"] = dict(reversed(list(payload["sections"].items())))
 
     serialized = serialize_context_v3(payload)
-    request = build_canonical_model_request(snapshot=payload, provider_ref="rule_based", repair=False)
+    request = build_canonical_model_request(
+        snapshot=payload, config=AgentModelRuntimeConfig(), repair=False
+    )
     prompt = build_action_prompt(request)
-    action = DefaultAgentModelAdapter().propose_action(request=request)
+    action = DefaultAgentModelAdapter(config=AgentModelRuntimeConfig()).propose_action(request=request)
 
     assert tuple(serialized["sections"]) == tuple(name for name in HarnessContextBuilder.SECTION_ORDER if name in context.included_sections)
     assert '"safe_context"' in prompt

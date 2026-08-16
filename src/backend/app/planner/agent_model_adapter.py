@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from typing import Protocol
 
 from src.backend.app.agent_skills.schemas import SkillContextRef
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
+from src.backend.app.schemas.agent_model import build_agent_model_profile
 from src.backend.app.schemas.agent_harness import (
     ActionEnvelope,
     CanonicalModelRequest,
@@ -163,7 +164,7 @@ def canonical_request_bytes(request: CanonicalModelRequest) -> bytes:
 
 
 def build_canonical_model_request(
-    *, snapshot: dict, provider_ref: str, repair: bool,
+    *, snapshot: dict, config: AgentModelRuntimeConfig, repair: bool,
 ) -> CanonicalModelRequest:
     """Build the sole object from which a provider request may be sent."""
     serialized = serialize_context_v3(snapshot)
@@ -171,7 +172,7 @@ def build_canonical_model_request(
     from src.backend.app.agent_skills.loader import AgentSkillLoader
 
     skill_result = AgentSkillLoader().render(refs)
-    provider = provider_ref.strip().casefold()
+    provider = config.provider
     if provider == "rule_based":
         model = None
         endpoint_class = "rule_based"
@@ -182,17 +183,22 @@ def build_canonical_model_request(
             "response_format": "typed_local",
         }
     else:
-        from src.backend.app.planner.llm_provider import get_openai_compatible_action_request_config
-
-        config = get_openai_compatible_action_request_config()
         model = config.model
         endpoint_class = "chat_completions"
         parameters = {
             "temperature": 0,
-            "max_output_tokens": 1024,
-            "timeout_seconds": 60,
+            "max_output_tokens": config.max_output_tokens,
+            "timeout_seconds": config.timeout_seconds,
             "response_format": {"type": "json_object"},
         }
+    profile = build_agent_model_profile(
+        config,
+        prompt_template_version=str(serialized["prompt_template_version"]),
+        skill_refs=refs,
+        action_schema=action_envelope_json_schema(),
+        context_policy_version=str(serialized["projection_policy_version"]),
+        request_builder_version=REQUEST_BUILDER_VERSION,
+    )
     return CanonicalModelRequest(
         provider=provider or "unknown",
         model=model,
@@ -211,6 +217,7 @@ def build_canonical_model_request(
         },
         action_schema=action_envelope_json_schema(),
         model_parameters=parameters,
+        model_profile_hash=profile.profile_hash,
         repair=repair,
     )
 
@@ -222,6 +229,9 @@ class DefaultAgentModelAdapter:
     deterministically. An OpenAI-compatible provider must be explicitly
     configured; provider failure stops the enabled Harness.
     """
+
+    def __init__(self, *, config: AgentModelRuntimeConfig) -> None:
+        self.config = config
 
     def propose_action(self, *, request: CanonicalModelRequest) -> ActionProposal:
         raw_context = request.context_payload.get("safe_context")
@@ -246,9 +256,10 @@ class DefaultAgentModelAdapter:
                 reason="Use the existing deterministic reviewed-planning service.",
                 expected_state=state,
             ))
-        if provider != "openai_compatible" or not os.environ.get("MEDIMAGE_LLM_API_KEY"):
+        incomplete = self.config.incomplete_reason()
+        if provider != "openai_compatible" or incomplete is not None:
             raise AgentModelProviderError(
-                "AGENT_HARNESS_PROVIDER_UNAVAILABLE",
+                incomplete or "AGENT_HARNESS_PROVIDER_UNAVAILABLE",
                 ActionCallMetadata(
                     provider="openai_compatible", model=None, endpoint_class="chat_completions",
                     response_hash=None, input_tokens=None, output_tokens=None,
@@ -259,7 +270,7 @@ class DefaultAgentModelAdapter:
         from src.backend.app.planner.audit_record import stable_hash
         from src.backend.app.planner.llm_provider import call_openai_compatible_action_provider
 
-        result = call_openai_compatible_action_provider(request=request)
+        result = call_openai_compatible_action_provider(request=request, config=self.config)
         metadata = ActionCallMetadata(
             provider="openai_compatible", model=result.model,
             endpoint_class=result.endpoint_class, response_hash=(stable_hash(result.content) if result.content else None),

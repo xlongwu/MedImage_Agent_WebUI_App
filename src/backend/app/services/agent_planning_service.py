@@ -9,6 +9,10 @@ from typing import Any
 from uuid import uuid4
 
 from src.backend.app.core.exceptions import SafetyError
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
+from src.backend.app.planner.agent_model_adapter import REQUEST_BUILDER_VERSION, action_schema
+from src.backend.app.schemas.agent_model import build_agent_model_profile
+from src.backend.app.agent_skills.registry import AgentSkillRegistry, BUILTIN_SKILL_IDS
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.planner.goal_contract_builder import build_goal_contract_semantics
 from src.backend.app.planner.memory_influence_guard import (
@@ -46,6 +50,7 @@ class AgentPlanningService:
         memory_influence_guard: MemoryInfluenceGuard,
         harness_service: AgentHarnessService | None = None,
         harness_config,
+        model_config: AgentModelRuntimeConfig | None = None,
         evidence_service: AgentEvidenceService,
         scheduler=None,
     ) -> None:
@@ -62,6 +67,7 @@ class AgentPlanningService:
         self.harness_service = harness_service
         self.evidence_service = evidence_service
         self.harness_config = harness_config
+        self.model_config = model_config or AgentModelRuntimeConfig()
         self.memory_initialization_error = memory_initialization_error
         self.scheduler = scheduler
 
@@ -245,7 +251,7 @@ class AgentPlanningService:
         """Select the controlled or deterministic planning path for one wake."""
         project = self.store.get_project(lifecycle.project_id)
         metadata = project.metadata if project is not None and isinstance(project.metadata, dict) else {}
-        provider = str(metadata.get("agent_planner_provider") or "rule_based")
+        provider = self.model_config.provider
         if not self.harness_config.enabled and self.harness_service is None:
             return self._plan(lifecycle=lifecycle, command_id=command_id, actor=actor, resume=resume)
         existing_attempt = self.store.get_agent_harness_attempt(lifecycle.lifecycle_id)
@@ -462,7 +468,6 @@ class AgentPlanningService:
         lifecycle = lifecycle.model_copy(
             update={"command_context": command_context, "evidence_snapshot_hash": evidence.snapshot_hash}
         )
-        provider = str(metadata.get("agent_planner_provider") or "rule_based")
         parent = self.store.get_reviewed_plan(lifecycle.reviewed_plan_id) if lifecycle.reviewed_plan_id else None
         request = PlanningRequest(
             project_id=lifecycle.project_id,
@@ -486,10 +491,23 @@ class AgentPlanningService:
                     "revision_reason", "decision_answered" if resume else "initial"
                 )
             ),
-            provider_ref=provider,
-            prompt_version=str(metadata.get("agent_planner_prompt_version") or "planner-v1"),
+            provider_ref=self.model_config.provider,
+            prompt_version="agent-harness-prompt-v3",
+            model_profile_hash=self._model_profile_hash(),
         )
         return lifecycle, request, memory_context, metadata, project
+
+    def _model_profile_hash(self) -> str:
+        registry = AgentSkillRegistry()
+        refs = tuple(registry.load(skill_id).reference for skill_id in BUILTIN_SKILL_IDS)
+        return build_agent_model_profile(
+            self.model_config,
+            prompt_template_version="agent-harness-prompt-v3",
+            skill_refs=refs,
+            action_schema=action_schema(),
+            context_policy_version="agent-context-v3",
+            request_builder_version=REQUEST_BUILDER_VERSION,
+        ).profile_hash
 
     def _generate_candidate_plan(self, *, request: PlanningRequest) -> dict[str, Any]:
         if self.planner is not None:

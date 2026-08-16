@@ -376,7 +376,6 @@ class CommandStore:
             metadata={
                 "project_dir": str(tmp_path),
                 "project_config_path": str(tmp_path / "project.yaml"),
-                "agent_planner_provider": "rule_based",
             },
         )
         self.lifecycles: dict[str, AgentLifecycleRecord] = {}
@@ -1317,7 +1316,6 @@ def test_plan_only_task_passes_real_reviewed_plan_contract_validation(tmp_path) 
             metadata={
                 "project_dir": str(tmp_path),
                 "project_config_path": str(config_path),
-                "agent_planner_provider": "rule_based",
             },
         ),
         health_status="Ready",

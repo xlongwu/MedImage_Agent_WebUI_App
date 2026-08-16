@@ -123,6 +123,20 @@ class AgentInvariantChecker:
                     lifecycle_id=lifecycle.lifecycle_id, related_ids=(reviewed.reviewed_plan_id,),
                     evidence_hashes=(reviewed.plan_hash,),
                 )
+            planning_request = reviewed.payload.get("planning_request")
+            if isinstance(planning_request, dict) and not planning_request.get("model_profile_hash"):
+                self._finding(
+                    findings, code="AGENT_INV_MODEL_PROFILE_MISSING", severity="blocking",
+                    lifecycle_id=lifecycle.lifecycle_id, related_ids=(reviewed.reviewed_plan_id,),
+                )
+            elif isinstance(planning_request, dict) and (
+                not isinstance(raw_summary, dict)
+                or raw_summary.get("model_profile_hash") != planning_request.get("model_profile_hash")
+            ):
+                self._finding(
+                    findings, code="AGENT_INV_MODEL_PROFILE_MISMATCH", severity="blocking",
+                    lifecycle_id=lifecycle.lifecycle_id, related_ids=(reviewed.reviewed_plan_id,),
+                )
         return reviewed
 
     def _check_harness(self, lifecycle, findings: list[AgentInvariantFinding]) -> None:
@@ -145,6 +159,8 @@ class AgentInvariantChecker:
         for call in calls:
             if call.network_called and not call.request_hash:
                 self._finding(findings, code="AGENT_INV_CALL_WITHOUT_REQUEST_HASH", severity="blocking", lifecycle_id=lifecycle.lifecycle_id, related_ids=(call.call_id,))
+            if not call.model_profile_hash:
+                self._finding(findings, code="AGENT_INV_MODEL_PROFILE_MISSING", severity="blocking", lifecycle_id=lifecycle.lifecycle_id, related_ids=(call.call_id,))
         for action in list_actions(attempt.attempt_id):
             if action.request_hash not in completed_hashes:
                 self._finding(findings, code="AGENT_INV_ACTION_WITHOUT_CALL", severity="blocking", lifecycle_id=lifecycle.lifecycle_id, related_ids=(action.action_id, action.step_id))

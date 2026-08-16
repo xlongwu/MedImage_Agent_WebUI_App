@@ -24,7 +24,7 @@ def test_step_persists_only_redacted_nested_model_call_ledger() -> None:
         call_id="call-1", step_id="step-1", attempt_id="attempt-1", provider="openai_compatible", phase="planning",
         model="gpt-safe", endpoint_class="chat_completions", prompt_template_version="v2",
         context_hash="context-hash", request_hash="request-hash", action_schema_hash="schema-hash",
-        model_parameters_hash="parameters-hash", request_bytes=100,
+        model_parameters_hash="parameters-hash", model_profile_hash="a" * 64, request_bytes=100,
         request_builder_version="agent-harness-request-v1", response_schema_version=2, response_hash="response-hash",
         schema_valid=True, started_at=now, completed_at=now, latency_ms=5,
         input_tokens=10, output_tokens=4, cached_input_tokens=None, provider_request_id="req-1",

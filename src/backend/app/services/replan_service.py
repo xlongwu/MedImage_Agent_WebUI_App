@@ -187,6 +187,9 @@ class ReplanService:
         try:
             raw_memory_context = lifecycle.command_context.get("memory_context")
             memory_context = raw_memory_context if isinstance(raw_memory_context, dict) else {}
+            parent_request = parent_plan.payload.get("planning_request")
+            if not isinstance(parent_request, dict) or not isinstance(parent_request.get("model_profile_hash"), str):
+                raise SafetyError("AGENT_INV_MODEL_PROFILE_MISSING", code="AGENT_INV_MODEL_PROFILE_MISSING")
             planning_request = PlanningRequest(
                 project_id=project_id,
                 lifecycle_id=lifecycle_id,
@@ -210,6 +213,7 @@ class ReplanService:
                 recovery_candidate_hash=candidate.candidate_hash,
                 provider_ref="recovery_replan_service",
                 prompt_version="recovery-replan-v1",
+                model_profile_hash=parent_request["model_profile_hash"],
             )
             reviewed = save_reviewed_plan(
                 project_id=project_id,

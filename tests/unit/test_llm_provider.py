@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
@@ -14,6 +13,17 @@ from src.backend.app.planner.llm_provider import (
     call_openai_compatible_provider,
     parse_llm_plan_json,
 )
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
+
+
+def _model_config(*, api_key: str | None = "sk-test-key") -> AgentModelRuntimeConfig:
+    return AgentModelRuntimeConfig(
+        enabled=True,
+        provider="openai_compatible",
+        model="gpt-test-1",
+        base_url="https://models.example.test/v1",
+        api_key=api_key,
+    )
 
 # ── Prompt builder ──
 
@@ -88,11 +98,10 @@ def test_parse_unknown_fields_raises():
 # ── Provider without API key ──
 
 
-def test_no_api_key_returns_error(monkeypatch):
-    monkeypatch.delenv("MEDIMAGE_LLM_API_KEY", raising=False)
-    result = call_openai_compatible_provider("motion")
+def test_no_api_key_returns_error():
+    result = call_openai_compatible_provider("motion", config=_model_config(api_key=None))
     assert result.ok is False
-    assert any("LLM_API_KEY_MISSING" in e for e in result.errors)
+    assert result.errors == ["AGENT_MODEL_CONFIG_INCOMPLETE"]
 
 
 # ── Provider with fake HTTP client ──
@@ -152,19 +161,17 @@ class FakeResponse:
         pass
 
 
-def test_fake_http_returns_valid_plan(monkeypatch):
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+def test_fake_http_returns_valid_plan():
 
     def fake_post(url, headers, body, timeout):
         return FakeResponse(_valid_plan_response())
 
-    result = call_openai_compatible_provider("motion", http_post=fake_post)
+    result = call_openai_compatible_provider("motion", http_post=fake_post, config=_model_config())
     assert result.ok is True
     assert "data_inspection" in result.content
 
 
-def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata(monkeypatch):
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata():
     response = {
         "id": "chatcmpl-secret-looking-id",
         "model": "gpt-test-1",
@@ -194,7 +201,8 @@ def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata(m
         }
     from src.backend.app.planner.agent_model_adapter import build_canonical_model_request
     result = call_openai_compatible_action_provider(
-        request=build_canonical_model_request(snapshot=snapshot, provider_ref="openai_compatible", repair=False),
+        request=build_canonical_model_request(snapshot=snapshot, config=_model_config(), repair=False),
+        config=_model_config(),
         http_post=lambda *_args: FakeResponse(response, {"x-request-id": "req_123"}),
     )
 
@@ -205,8 +213,7 @@ def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata(m
     assert result.network_called is True
 
 
-def test_action_provider_keeps_missing_usage_nullable_and_sanitizes_errors(monkeypatch):
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+def test_action_provider_keeps_missing_usage_nullable_and_sanitizes_errors():
     snapshot = {
             "schema_version": 3, "purpose": "plan_draft", "complete": True,
             "required_sections": ["goal", "policy"], "included_sections": ["goal", "policy"],
@@ -220,7 +227,8 @@ def test_action_provider_keeps_missing_usage_nullable_and_sanitizes_errors(monke
         }
     from src.backend.app.planner.agent_model_adapter import build_canonical_model_request
     result = call_openai_compatible_action_provider(
-        request=build_canonical_model_request(snapshot=snapshot, provider_ref="openai_compatible", repair=False),
+        request=build_canonical_model_request(snapshot=snapshot, config=_model_config(), repair=False),
+        config=_model_config(),
         http_post=lambda *_args: FakeResponse({"choices": [{"message": {"content": "not json sk-test-key"}}]}),
     )
 
@@ -229,20 +237,18 @@ def test_action_provider_keeps_missing_usage_nullable_and_sanitizes_errors(monke
     assert "sk-test-key" not in " ".join(result.errors)
 
 
-def test_fake_http_invalid_json_returns_error(monkeypatch):
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+def test_fake_http_invalid_json_returns_error():
 
     def fake_post(url, headers, body, timeout):
         return FakeResponse({"choices": [{"message": {"content": "not json"}}]})
 
-    result = call_openai_compatible_provider("motion", http_post=fake_post)
+    result = call_openai_compatible_provider("motion", http_post=fake_post, config=_model_config())
     assert result.ok is False
     assert result.content == ""
     assert any("LLM_PLAN_JSON_PARSE_ERROR" in error for error in result.errors)
 
 
-def test_fake_http_invalid_json_gets_exactly_one_schema_repair(monkeypatch):
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+def test_fake_http_invalid_json_gets_exactly_one_schema_repair():
     calls = 0
 
     def fake_post(url, headers, body, timeout):
@@ -252,14 +258,13 @@ def test_fake_http_invalid_json_gets_exactly_one_schema_repair(monkeypatch):
             return FakeResponse({"choices": [{"message": {"content": "not json"}}]})
         return FakeResponse(_valid_plan_response())
 
-    result = call_openai_compatible_provider("motion", http_post=fake_post)
+    result = call_openai_compatible_provider("motion", http_post=fake_post, config=_model_config())
 
     assert result.ok is True
     assert calls == 2
 
 
-def test_fake_http_unknown_node_returns_error(monkeypatch):
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+def test_fake_http_unknown_node_returns_error():
 
     def fake_post(url, headers, body, timeout):
         return FakeResponse(
@@ -286,7 +291,7 @@ def test_fake_http_unknown_node_returns_error(monkeypatch):
             }
         )
 
-    result = call_openai_compatible_provider("motion", http_post=fake_post)
+    result = call_openai_compatible_provider("motion", http_post=fake_post, config=_model_config())
     assert result.ok is False
     assert any("UNKNOWN_NODE_ID" in error for error in result.errors)
 
@@ -294,14 +299,13 @@ def test_fake_http_unknown_node_returns_error(monkeypatch):
 # ── Integration with Planner ──
 
 
-def test_openai_planner_with_fake_client(monkeypatch):
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+def test_openai_planner_with_fake_client():
 
     def fake_post(url, headers, body, timeout):
         return FakeResponse(_valid_plan_response())
 
     _resp = generate_plan_from_goal(
-        "motion", provider="openai_compatible", constraints={}, project_config_path=None
+        "motion", provider="openai_compatible", constraints={}, project_config_path=None, model_config=_model_config()
     )
     # We can't inject the fake client here directly — the integration
     # would call real httpx.  This test only checks that the provider
@@ -310,24 +314,22 @@ def test_openai_planner_with_fake_client(monkeypatch):
     pass
 
 
-def test_openai_provider_calls_validator(monkeypatch):
+def test_openai_provider_calls_validator():
     """Verify that the openai_compatible path exists and validates."""
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
     # This test verifies the code path exists; real call needs real API
-    resp = generate_plan_from_goal("motion", provider="openai_compatible")
+    resp = generate_plan_from_goal("motion", provider="openai_compatible", model_config=_model_config())
     # Should fail because fake key won't work with real API,
     # but the code path should not crash
     assert isinstance(resp, PlannerResponse)
     assert resp.provider == "openai_compatible"
 
 
-def test_api_key_not_in_response(monkeypatch):
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "sk-test-key")
+def test_api_key_not_in_response():
 
     def fake_post(url, headers, body, timeout):
         return FakeResponse(_valid_plan_response())
 
-    result = call_openai_compatible_provider("motion", http_post=fake_post)
+    result = call_openai_compatible_provider("motion", http_post=fake_post, config=_model_config())
     d = json.dumps({"content": result.content, "errors": result.errors})
     assert "sk-test-key" not in d
 
@@ -337,8 +339,6 @@ def test_api_key_not_in_response(monkeypatch):
 
 def test_no_real_network():
     """Without API key, provider must not make network calls."""
-    if "MEDIMAGE_LLM_API_KEY" in os.environ:
-        del os.environ["MEDIMAGE_LLM_API_KEY"]
-    result = call_openai_compatible_provider("motion")
+    result = call_openai_compatible_provider("motion", config=_model_config(api_key=None))
     assert result.ok is False
-    assert any("LLM_API_KEY_MISSING" in e for e in result.errors)
+    assert result.errors == ["AGENT_MODEL_CONFIG_INCOMPLETE"]

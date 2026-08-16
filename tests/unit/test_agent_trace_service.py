@@ -47,7 +47,7 @@ def _trace_store(tmp_path) -> tuple[SQLiteDesktopStore, object]:
         call_id="call-trace", step_id="step-trace", attempt_id=attempt.attempt_id,
         provider="rule_based", phase="planning", endpoint_class="rule_based",
         prompt_template_version=context.prompt_template_version, context_hash=context.context_hash,
-        request_hash="request-trace", action_schema_hash="action-schema", model_parameters_hash="model-parameters",
+        request_hash="request-trace", action_schema_hash="action-schema", model_parameters_hash="model-parameters", model_profile_hash="a" * 64,
         request_bytes=100, request_builder_version="agent-harness-request-v1", response_schema_version=2,
         response_hash="response-trace", schema_valid=True,
         started_at=now, completed_at=now, status="succeeded",

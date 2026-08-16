@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from src.backend.app.core.config_schema import MemoryConfig
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig, MemoryConfig
 from src.backend.app.services.memory_llm_proposal_service import (
     MemoryLLMProposalService,
-    build_memory_llm_provider_from_env,
+    build_memory_llm_provider,
 )
 
 
@@ -148,16 +148,15 @@ def test_consolidation_proposal_cannot_name_unprovided_candidate(tmp_path) -> No
     assert [item.candidate_id for item in actions] == ["candidate-1"]
 
 
-def test_environment_provider_remains_off_without_both_global_gate_and_credentials(
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv("MEDIMAGE_LLM_ENABLED", "false")
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "secret")
-    monkeypatch.setenv("MEDIMAGE_LLM_MODEL", "fixture")
-    assert build_memory_llm_provider_from_env() == (None, None)
+def test_shared_model_provider_remains_off_without_complete_config() -> None:
+    assert build_memory_llm_provider(AgentModelRuntimeConfig()) == (None, None)
 
-    monkeypatch.setenv("MEDIMAGE_LLM_ENABLED", "true")
-    monkeypatch.delenv("MEDIMAGE_LLM_API_KEY")
-    provider, model = build_memory_llm_provider_from_env()
+    provider, model = build_memory_llm_provider(
+        AgentModelRuntimeConfig(
+            enabled=True,
+            provider="openai_compatible",
+            model="fixture",
+        )
+    )
     assert provider is None
     assert model == "fixture"

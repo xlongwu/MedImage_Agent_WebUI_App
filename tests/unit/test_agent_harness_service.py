@@ -11,6 +11,7 @@ from src.backend.app.planner.agent_model_adapter import (
     build_canonical_model_request,
     canonical_request_bytes,
 )
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_harness import (
     AgentActionRecord,
@@ -138,7 +139,7 @@ def test_canonical_request_hash_covers_every_actual_request_field() -> None:
             "prompt_template_version": "prompt-v1", "skill_refs": [], "skill_error_codes": [],
             "sections": {name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {"value": name}}
                          for name in ("goal", "policy")},
-        }, provider_ref="rule_based", repair=False,
+        }, config=AgentModelRuntimeConfig(), repair=False,
     )
     assert stable_hash(canonical_request_bytes(base)) == stable_hash(canonical_request_bytes(base))
     for changed in (

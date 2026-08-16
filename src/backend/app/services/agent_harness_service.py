@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from src.backend.app.agent_skills.loader import AgentSkillLoader
-from src.backend.app.core.config_schema import AgentHarnessConfig
+from src.backend.app.core.config_schema import AgentHarnessConfig, AgentModelRuntimeConfig
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.agent_model_adapter import (
     ActionCallMetadata,
@@ -92,6 +92,7 @@ class AgentHarnessService:
         store,
         *,
         config: AgentHarnessConfig,
+        model_config: AgentModelRuntimeConfig | None = None,
         adapter: AgentModelAdapter | None = None,
         context_builder: HarnessContextBuilder | None = None,
         skill_loader: AgentSkillLoader | None = None,
@@ -101,7 +102,8 @@ class AgentHarnessService:
     ) -> None:
         self.store = store
         self.config = config
-        self.adapter = adapter or DefaultAgentModelAdapter()
+        self.model_config = model_config or AgentModelRuntimeConfig()
+        self.adapter = adapter or DefaultAgentModelAdapter(config=self.model_config)
         self.context_builder = context_builder or HarnessContextBuilder()
         self.skill_loader = skill_loader or AgentSkillLoader()
         self.draft_plan = draft_plan
@@ -565,7 +567,7 @@ class AgentHarnessService:
         started = self.now()
         phase = self._phase_for(lifecycle_state=step.state_before)
         request = build_canonical_model_request(
-            snapshot=context.prompt_payload(), provider_ref=attempt.provider_ref, repair=repair,
+            snapshot=context.prompt_payload(), config=self.model_config, repair=repair,
         )
         serialized_request = canonical_request_bytes(request)
         pending_call = ModelCallRecord(
@@ -578,6 +580,7 @@ class AgentHarnessService:
             request_hash=stable_hash(serialized_request),
             action_schema_hash=stable_hash(request.action_schema),
             model_parameters_hash=stable_hash(request.model_parameters),
+            model_profile_hash=request.model_profile_hash,
             request_bytes=len(serialized_request),
             request_builder_version=REQUEST_BUILDER_VERSION,
             response_schema_version=2,

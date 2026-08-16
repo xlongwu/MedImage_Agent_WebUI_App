@@ -11,6 +11,7 @@ from src.backend.app.api.memory_dependencies import (
     get_memory_config,
     get_memory_store,
 )
+from src.backend.app.core.config import ConfigService
 from src.backend.app.core.exceptions import NotFoundError, PipelineError
 from src.backend.app.schemas.memory import (
     MemoryCandidatePage,
@@ -31,7 +32,7 @@ from src.backend.app.services.memory_consolidation_service import (
 from src.backend.app.services.memory_management_service import MemoryManagementService
 from src.backend.app.services.memory_llm_proposal_service import (
     MemoryLLMProposalService,
-    build_memory_llm_provider_from_env,
+    build_memory_llm_provider,
 )
 from src.backend.app.services.memory_repository import MemoryRepositoryError
 from src.backend.app.services.memory_retrieval_service import MemoryRetrievalService
@@ -241,7 +242,7 @@ def _review_candidate(
         reason=request.reason,
     )
     if accept:
-        llm_provider, llm_model = build_memory_llm_provider_from_env()
+        llm_provider, llm_model = build_memory_llm_provider(ConfigService().model)
         result = {
             **result,
             "consolidation": MemoryConsolidationService(

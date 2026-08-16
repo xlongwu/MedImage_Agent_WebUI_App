@@ -13,13 +13,13 @@ Security:
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.schemas.planner_plan import canonical_plan_payload
 
 # ── Config / Result dataclasses ──────────────────────────────────────────────
@@ -30,6 +30,8 @@ class LLMProviderConfig:
     base_url: str
     model: str
     api_key_set: bool
+    timeout_seconds: int
+    max_output_tokens: int
 
 
 @dataclass(frozen=True)
@@ -109,12 +111,14 @@ def _result_metadata(
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _get_config() -> LLMProviderConfig:
+def _get_config(config: AgentModelRuntimeConfig) -> LLMProviderConfig:
     return LLMProviderConfig(
-        provider="openai_compatible",
-        base_url=os.environ.get("MEDIMAGE_LLM_BASE_URL", "https://api.openai.com/v1"),
-        model=os.environ.get("MEDIMAGE_LLM_MODEL", "gpt-4.1-mini"),
-        api_key_set=bool(os.environ.get("MEDIMAGE_LLM_API_KEY")),
+        provider=config.provider,
+        base_url=config.base_url or "",
+        model=config.model or "",
+        api_key_set=config.api_key is not None,
+        timeout_seconds=config.timeout_seconds,
+        max_output_tokens=config.max_output_tokens,
     )
 
 
@@ -223,6 +227,8 @@ def call_openai_compatible_provider(
     goal: str,
     constraints: dict[str, Any] | None = None,
     http_post: Callable[..., Any] | None = None,
+    *,
+    config: AgentModelRuntimeConfig,
 ) -> LLMProviderResult:
     """Call an OpenAI-compatible chat completions API.
 
@@ -236,32 +242,32 @@ def call_openai_compatible_provider(
     Returns:
         LLMProviderResult with ok=True and parsed plan content on success.
     """
-    config = _get_config()
+    provider_config = _get_config(config)
 
-    if not config.api_key_set:
+    if provider_config.provider != "openai_compatible" or config.incomplete_reason() is not None:
         return LLMProviderResult(
             ok=False,
             content="",
-            errors=["LLM_API_KEY_MISSING: set MEDIMAGE_LLM_API_KEY environment variable."],
+            errors=["AGENT_MODEL_CONFIG_INCOMPLETE"],
         )
 
     prompt = build_planner_prompt(goal, constraints=constraints)
-    api_key = os.environ["MEDIMAGE_LLM_API_KEY"]
+    api_key = config.api_key.get_secret_value() if config.api_key is not None else ""
 
     body = {
-        "model": config.model,
+        "model": provider_config.model,
         "messages": [
             {"role": "system", "content": "You are a medical imaging pipeline planner. Output only valid JSON."},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.1,
-        "max_tokens": 4096,
+        "max_tokens": provider_config.max_output_tokens,
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    url = f"{config.base_url.rstrip('/')}/chat/completions"
+    url = f"{provider_config.base_url.rstrip('/')}/chat/completions"
 
     last_raw: dict[str, Any] | None = None
     last_metadata: dict[str, object] = {"endpoint_class": "chat_completions", "network_called": False}
@@ -338,22 +344,17 @@ def call_openai_compatible_provider(
     )
 
 
-def get_openai_compatible_action_request_config() -> LLMProviderConfig:
-    """Return the non-secret provider settings used by canonical requests."""
-    return _get_config()
-
-
 def call_openai_compatible_action_provider(
-    *, request, http_post: Callable[..., Any] | None = None
+    *, request, config: AgentModelRuntimeConfig, http_post: Callable[..., Any] | None = None
 ) -> LLMProviderResult:
     """Request one strict Harness ActionEnvelope from the configured provider.
 
     This intentionally has no Tool Catalog in its prompt. The returned action
     is validated by both Pydantic and the capability catalog before use.
     """
-    config = _get_config()
-    if not config.api_key_set:
-        return LLMProviderResult(ok=False, content="", errors=["AGENT_HARNESS_PROVIDER_UNAVAILABLE"])
+    provider_config = _get_config(config)
+    if provider_config.provider != "openai_compatible" or config.incomplete_reason() is not None:
+        return LLMProviderResult(ok=False, content="", errors=["AGENT_MODEL_CONFIG_INCOMPLETE"])
     from src.backend.app.planner.agent_model_adapter import build_action_prompt
     from src.backend.app.schemas.agent_harness import parse_action_envelope_json
 
@@ -372,8 +373,8 @@ def call_openai_compatible_action_provider(
         if http_post is None:
             import httpx  # noqa: E402
             response = httpx.post(
-                f"{config.base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {os.environ['MEDIMAGE_LLM_API_KEY']}", "Content-Type": "application/json"},
+                f"{provider_config.base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {config.api_key.get_secret_value() if config.api_key else ''}", "Content-Type": "application/json"},
                 json=body,
                 timeout=float(request.model_parameters["timeout_seconds"]),
             )
@@ -381,7 +382,7 @@ def call_openai_compatible_action_provider(
             raw = response.json()
         else:
             response = http_post(
-                f"{config.base_url.rstrip('/')}/chat/completions", {}, body,
+                f"{provider_config.base_url.rstrip('/')}/chat/completions", {}, body,
                 float(request.model_parameters["timeout_seconds"]),
             )
             if hasattr(response, "raise_for_status"):

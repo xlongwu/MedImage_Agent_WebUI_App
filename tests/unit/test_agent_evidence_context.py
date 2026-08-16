@@ -16,7 +16,7 @@ def _store(tmp_path) -> tuple[SQLiteDesktopStore, AgentLifecycleRecord]:
     store.add_project(ProjectDetail(
         id="project-context", name="context", study_id="study", modality="rs-fMRI",
         created_date="today", subjects_count=1, current_pipeline_id="", sequences=[],
-        scans_count=1, total_size="0", current_model_id="", metadata={"agent_planner_provider": "rule_based"},
+        scans_count=1, total_size="0", current_model_id="", metadata={},
     ), health_status="ready", rawdata_dir="")
     lifecycle = AgentLifecycleRecord(lifecycle_id="lifecycle-context", project_id="project-context", goal_text="Plan")
     from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent

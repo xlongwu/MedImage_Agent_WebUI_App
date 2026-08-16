@@ -153,6 +153,7 @@ class ApprovalSummaryService:
                 planning_request.get("provider_ref") or payload.get("provider") or ""
             ),
             "planner_prompt_version": str(planning_request.get("prompt_version") or ""),
+            "model_profile_hash": str(planning_request.get("model_profile_hash") or ""),
             "planner_skill_hashes": tuple(sorted({item for item in skill_hashes if isinstance(item, str) and item})),
             "normalized_plan_hash": str(payload.get("normalized_plan_hash") or stable_hash(plan)),
             # Bind the actual persisted normalized plan as well as its saved

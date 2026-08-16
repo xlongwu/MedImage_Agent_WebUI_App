@@ -41,6 +41,7 @@ class PlanningRequest(BaseModel):
     recovery_candidate_hash: str | None = None
     provider_ref: str
     prompt_version: str
+    model_profile_hash: str = Field(min_length=64, max_length=64)
 
     def identity_payload(self) -> dict[str, Any]:
         """Return the exact data that can affect a reviewed-plan identity."""

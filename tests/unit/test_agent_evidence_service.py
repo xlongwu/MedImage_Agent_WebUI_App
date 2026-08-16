@@ -13,7 +13,7 @@ def _project(tmp_path: Path) -> ProjectDetail:
         id="project-evidence", name="Evidence", study_id="study", modality="rs-fMRI",
         created_date="2026-08-09", subjects_count=2, current_pipeline_id="", sequences=[],
         scans_count=2, total_size="0", current_model_id="", metadata={
-            "project_dir": str(tmp_path), "agent_planner_provider": "rule_based", "subject_count": 3,
+            "project_dir": str(tmp_path), "subject_count": 3,
         },
     )
 
