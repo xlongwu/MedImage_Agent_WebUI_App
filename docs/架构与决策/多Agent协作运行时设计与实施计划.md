@@ -10,9 +10,9 @@
 >
 > 输入材料：用户提供的《Claude Code 源码：Multi-Agent 机制》PDF、当前仓库源码与测试、Anthropic 官方资料
 >
-> 离线 Gate 证据（2026-08-10）：`multi-agent-eval-v1` 的 30 个 synthetic/redacted
-> fixture 在人工确认的 Gate 下通过；这只允许本设计进入独立 capability review，**不**
-> 授权 durable Team PoC、公开 API、feature flag、scheduler 或生产执行能力。
+> 当前准入状态（2026-08-16）：阶段十三的严格离线预检仅使用 synthetic 样例，因缺少
+> 可人工标注的脱敏 Trace/Replay 证据而明确失败关闭，结论保持 `single_agent`。本文件
+> 不授权 durable Team PoC、公开 API、feature flag、scheduler 或生产执行能力。
 
 ## 0. 执行结论
 
@@ -28,25 +28,20 @@
 
 推荐的首个生产用途是“复杂目标的并行只读分析 + 独立安全/科学审查”，而不是并行修改代码或并行运行科学 pipeline。这样能获得上下文隔离、并行探索和交叉审查的收益，同时保持项目现有审批、执行和科学真实性边界。
 
-### 0.1 已完成的离线评估 Gate
+### 0.1 阶段十三离线评估前提
 
-`tests/fixtures/agent_eval/multi_agent/manifest.json` 冻结了 10 个 eligible、10 个
-ineligible 与 10 个 adversarial synthetic/redacted case。固定三个只读角色由
-`MultiAgentEvaluationService` 的 deterministic coordinator 汇总；该服务无
-ProjectStore、provider、planner、Approval、Gateway、runner、runtime 或 scheduler
-依赖，不能创建生产状态或副作用。
+`tests/fixtures/agent_eval/multi_agent/manifest.json` 当前只提供无研究数据的 synthetic
+合同预检：固定为科学合理性、安全边界、完整性三种只读评审角色，输出只能是受冻结
+`AgentHarnessContext` 引用约束的 finding。确定性聚合器不访问 ProjectStore、provider、
+planner、Approval、Gateway、runner、runtime 或 scheduler，不能创建生产状态或副作用。
 
-人工确认的初值在 manifest 中版本化：复杂 case 的 blocking-finding recall 相对
-single baseline 至少提高 10 个百分点，平均 input token 不超过 3 倍，p95 latency
-不超过 2.5 倍，且安全、项目隔离、审批和 scientific truthfulness 零退化。运行
-`python scripts/run_multi_agent_evaluation.py --summary` 得到 manifest hash
-`5e67e188fd0842a7b701b1f6dc2ab475c846cd18dc84c38da7ad890cd135138e`：recall 从
-0.3889 提升到 0.6667，false blocker rate 从 0.1429 降至 0，input token 为 1.425 倍，
-p95 latency 为 1.3 倍，Gate 通过。safety reviewer failure 会 truthful fallback，
-contradiction 或无效 evidence ref 会 handoff；该评测没有宣布任何科学或执行结果。
+真实比较必须使用人工标注的脱敏 Trace/Replay 样本，并同时达到以下门槛：关键遗漏召回
+至少提升 10 个百分点、误报阻断不超过任务数的 3%、结论一致率不低于单 Agent、平均调用
+不超过 2.5 倍、输入不超过 2 倍、P95 时延不超过 1.8 倍且人工操作不增加。当前 synthetic
+预检的比较数字不能满足“真实 Trace/Replay”的来源要求，因此 Gate 未通过并保持单 Agent。
 
-这项证据不改变本文的 `Proposed` 状态，也不解除 RC2 capability-review、审批或唯一
-Execution Gateway 的约束。
+即使未来 Gate 通过，也只允许新建并人工批准生产设计方案；不会解除 capability review、
+审批或唯一 Execution Gateway 的约束。
 
 ---
 

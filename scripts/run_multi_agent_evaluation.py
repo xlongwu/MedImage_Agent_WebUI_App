@@ -37,6 +37,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print comparison metrics and Gate verdict without per-case detail.",
     )
+    parser.add_argument(
+        "--require-gate",
+        action="store_true",
+        help="Return a non-zero status when the evidence Gate does not pass.",
+    )
     return parser.parse_args()
 
 
@@ -61,12 +66,13 @@ def main() -> int:
             "candidate_metrics": report.candidate_metrics,
             "gate_passed": report.gate_passed,
             "gate_failures": report.gate_failures,
+            "conclusion": report.conclusion,
         }
         if args.summary
         else report.model_dump(mode="json")
     )
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0 if report.gate_passed else 1
+    return 1 if args.require_gate and not report.gate_passed else 0
 
 
 if __name__ == "__main__":
