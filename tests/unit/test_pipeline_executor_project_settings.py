@@ -7,6 +7,7 @@ No real MATLAB/SPM/DPABI nodes are executed.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -20,6 +21,7 @@ from src.backend.app.runtime.execution_gateway import (
 from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.runtime.pipeline_executor import load_project_config, run_pipeline
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
+from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 
 # ── Helpers ──
@@ -108,6 +110,17 @@ def _run_via_gateway(tmp_path: Path, config: Path, pipeline: Path) -> dict:
     node_ids = [str(node["id"]) for node in payload.get("nodes", [])]
     backends = [str(node["backend"]) for node in payload.get("nodes", [])]
     service = ExecutionTicketService(SQLiteDesktopStore(tmp_path / f"ticket-{uuid4().hex}.sqlite"))
+    environment = ExecutionEnvironmentService(service.store).capture_for_plan(
+        project_id="executor-settings-test",
+        reviewed_plan=SimpleNamespace(
+            payload={"plan": {"nodes": [
+                {"id": node_id, "backend": backend}
+                for node_id, backend in zip(node_ids, backends, strict=True)
+            ]}},
+        ),
+        write_roots=("project://derivatives",),
+        readonly_roots=("project://rawdata",),
+    )
     ticket = service.issue(
         project_id="executor-settings-test",
         reviewed_plan_id="reviewed-settings-test",
@@ -115,6 +128,8 @@ def _run_via_gateway(tmp_path: Path, config: Path, pipeline: Path) -> dict:
         goal_contract_hash="goal-contract-hash",
         evaluation_policy_version="goal-evaluator-v1",
         approval_summary_hash="settings-test-approval",
+        execution_environment_snapshot_id=environment.snapshot_id,
+        execution_environment_hash=environment.environment_hash,
         memory_context_hash=None,
         approved_actor="test",
         approved_node_ids=node_ids,
@@ -262,10 +277,9 @@ def test_bad_config_writes_summary_in_work_dir(tmp_path: Path):
 
 
 def test_valid_config_with_nonexistent_node(tmp_path: Path):
-    """Valid config + node id not in NODE_REGISTRY → execution fails
-    but NOT because of config validation.  The pipeline execution was
-    attempted — it just couldn't find the runner."""
-    # Use a node id that definitely doesn't exist in NODE_REGISTRY
+    """An unregistered plan node is rejected before a ticket can dispatch."""
+    # A reviewed plan must be fully contract-bound before its environment can
+    # be snapshotted, so an unknown node never reaches a runner.
     cfg = _write_project_config(
         tmp_path, work_dir=str(tmp_path / "work"), log_dir=str(tmp_path / "logs")
     )
@@ -273,10 +287,7 @@ def test_valid_config_with_nonexistent_node(tmp_path: Path):
         tmp_path, run_id="run_no_node", node_id="nonexistent_node_xyz"
     )
 
-    with pytest.raises(SafetyError, match="CAPABILITY_NODE_CONTRACT_MISSING"):
+    with pytest.raises(SafetyError, match="EXECUTION_ENVIRONMENT_PLAN_INVALID"):
         _run_via_gateway(tmp_path, cfg, pipeline)
 
-    # Config loaded → pipeline parsed → node lookup failed
-    # Status: FAILED because node not found in registry
-    # Verify the pipeline did NOT reach any real MATLAB/SPM node —
-    # the only node was 'nonexistent_node_xyz' which failed before execution
+    # No runner is selected or invoked for an unbound environment snapshot.

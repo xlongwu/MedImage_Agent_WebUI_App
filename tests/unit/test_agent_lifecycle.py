@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,6 +20,7 @@ from src.backend.app.schemas.agent_lifecycle import AgentLifecycleRecord
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
+from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 
 
@@ -55,6 +57,14 @@ def _ticket(store: SQLiteDesktopStore, tmp_path: Path, *, retry_quota: int = 0):
     inputs.mkdir(exist_ok=True)
     outputs.mkdir(exist_ok=True)
     service = ExecutionTicketService(store)
+    environment = ExecutionEnvironmentService(store).capture_for_plan(
+        project_id="project-1",
+        reviewed_plan=SimpleNamespace(
+            payload={"plan": {"nodes": [{"id": "data_inspection", "backend": "python"}]}},
+        ),
+        write_roots=("project://derivatives",),
+        readonly_roots=("project://rawdata",),
+    )
     ticket = service.issue(
         project_id="project-1",
         reviewed_plan_id="reviewed-1",
@@ -62,6 +72,8 @@ def _ticket(store: SQLiteDesktopStore, tmp_path: Path, *, retry_quota: int = 0):
         goal_contract_hash="goal-contract-hash",
         evaluation_policy_version="goal-evaluator-v1",
         approval_summary_hash="approval-1",
+        execution_environment_snapshot_id=environment.snapshot_id,
+        execution_environment_hash=environment.environment_hash,
         memory_context_hash=None,
         approved_actor="reviewer",
         approved_node_ids=["data_inspection"],

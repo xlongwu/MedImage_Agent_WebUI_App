@@ -26,6 +26,8 @@ class GatewayDispatch(BaseModel):
     reviewed_plan_id: str
     execution_ticket_id: str
     approval_summary_hash: str
+    execution_environment_snapshot_id: str
+    execution_environment_hash: str
     plan_hash: str
     memory_context_hash: str | None = None
     scope_hash: str

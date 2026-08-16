@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ import src.backend.app.services.execution_ticket_service as execution_ticket_ser
 from src.backend.app.api.dependencies import get_project_store
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.main import app
+from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.runtime.execution_gateway import (
     ExecutionGateway,
     VerifiedExecutionContext,
@@ -19,6 +21,7 @@ from src.backend.app.services.execution_ticket_service import (
     ExecutionTicketService,
     calculate_ticket_hash,
 )
+from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 
 
@@ -31,6 +34,14 @@ def _issue(service: ExecutionTicketService, tmp_path, **overrides):
     pipeline = tmp_path / "pipeline.yaml"
     config.write_text("runtime: {}\n", encoding="utf-8")
     pipeline.write_text("nodes: []\n", encoding="utf-8")
+    environment = ExecutionEnvironmentService(service.store).capture_for_plan(
+        project_id="project-1",
+        reviewed_plan=SimpleNamespace(
+            payload={"plan": {"nodes": [{"id": "contract_smoke", "backend": "python"}]}},
+        ),
+        write_roots=("project://derivatives",),
+        readonly_roots=("project://rawdata",),
+    )
     values = {
         "project_id": "project-1",
         "reviewed_plan_id": "reviewed-1",
@@ -38,6 +49,8 @@ def _issue(service: ExecutionTicketService, tmp_path, **overrides):
         "goal_contract_hash": "goal-contract-hash",
         "evaluation_policy_version": "goal-evaluator-v1",
         "approval_summary_hash": "approval-1",
+        "execution_environment_snapshot_id": environment.snapshot_id,
+        "execution_environment_hash": environment.environment_hash,
         "memory_context_hash": None,
         "approved_actor": "reviewer",
         "approved_node_ids": ["contract_smoke"],
@@ -301,6 +314,82 @@ def test_gateway_rejects_before_executor_on_mismatch(tmp_path):
     assert called is False
 
 
+def test_gateway_rejects_changed_environment_before_ticket_consumption(tmp_path):
+    config = {"matlab_command": "matlab-a", "spm_dir": str(tmp_path / "spm-a")}
+    environment_service = ExecutionEnvironmentService(
+        _service(tmp_path).store,
+        config_reader=lambda: config,
+    )
+    service = ExecutionTicketService(environment_service.store)
+    environment = environment_service.capture_for_plan(
+        project_id="project-1",
+        reviewed_plan=SimpleNamespace(
+            payload={"plan": {"nodes": [{"id": "spm_realign_subject", "backend": "matlab-spm"}]}},
+        ),
+        write_roots=("project://derivatives",),
+        readonly_roots=("project://rawdata",),
+    )
+    config_path = tmp_path / "project.yaml"
+    pipeline_path = tmp_path / "pipeline.yaml"
+    config_path.write_text("runtime: {}\n", encoding="utf-8")
+    pipeline_path.write_text("nodes: []\n", encoding="utf-8")
+    contract = get_node_contract("spm_realign_subject")
+    ticket = service.issue(
+        project_id="project-1",
+        reviewed_plan_id="reviewed-1",
+        plan_hash="plan-1",
+        goal_contract_hash="goal-1",
+        evaluation_policy_version="policy-1",
+        approval_summary_hash="approval-1",
+        execution_environment_snapshot_id=environment.snapshot_id,
+        execution_environment_hash=environment.environment_hash,
+        memory_context_hash=None,
+        approved_actor="reviewer",
+        approved_node_ids=["spm_realign_subject"],
+        approved_backend_ids=["matlab-spm"],
+        input_roots=[str(tmp_path)],
+        output_roots=[str(tmp_path)],
+        project_config_path=str(config_path),
+        pipeline_path=str(pipeline_path),
+        allowlist_hash=current_allowlist_hash(),
+        normalized_params_hash="params-1",
+        contract_versions={"spm_realign_subject": contract.contract_version},
+        audit_id="audit-1",
+    )
+    config["matlab_command"] = "matlab-b"
+    called = False
+
+    def executor(**kwargs):
+        nonlocal called
+        called = True
+        return {"status": "SUCCESS", "run_id": "run-1"}
+
+    with pytest.raises(SafetyError, match="EXECUTION_ENVIRONMENT_CHANGED"):
+        ExecutionGateway(service, environment_service=environment_service).dispatch(
+            execution_ticket_id=ticket.execution_ticket_id,
+            project_id=ticket.project_id,
+            reviewed_plan_id=ticket.reviewed_plan_id,
+            plan_hash=ticket.plan_hash,
+            approval_summary_hash=ticket.approval_summary_hash,
+            memory_context_hash=ticket.memory_context_hash,
+            scope_hash=ticket.scope_hash,
+            normalized_params_hash=ticket.normalized_params_hash,
+            contract_versions=ticket.contract_versions,
+            project_config_path=ticket.project_config_path,
+            pipeline_path=ticket.pipeline_path,
+            command_id="changed-environment",
+            run_id="run-1",
+            executor=executor,
+        )
+
+    assert called is False
+    assert service.store.get_execution_ticket(ticket.execution_ticket_id).status == "issued"
+    assert service.store.get_gateway_dispatch_by_ticket(ticket.execution_ticket_id) is None
+    assert service.store.list_execution_ticket_events(ticket.execution_ticket_id)[-1].reason == (
+        "EXECUTION_ENVIRONMENT_CHANGED"
+    )
+
+
 def test_ticket_and_rejection_events_are_queryable_by_project(tmp_path):
     service = _service(tmp_path)
     service.store.add_project(
@@ -333,6 +422,8 @@ def test_ticket_and_rejection_events_are_queryable_by_project(tmp_path):
         assert response.status_code == 200
         body = response.json()
         assert body["execution_ticket"]["execution_ticket_id"] == ticket.execution_ticket_id
+        assert body["execution_ticket"]["execution_environment_hash"] == ticket.execution_environment_hash
+        assert str(tmp_path) not in str(body)
         assert [event["event_type"] for event in body["events"]] == ["issued", "rejected"]
 
         wrong_project = client.get(

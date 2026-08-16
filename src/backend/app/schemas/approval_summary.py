@@ -19,11 +19,13 @@ class ApprovalSummarySection(BaseModel):
 class ApprovalSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: int = 1
+    schema_version: int = 2
     summary_hash: str
     project_id: str
     reviewed_plan_id: str
     plan_hash: str
+    execution_environment_snapshot_id: str
+    execution_environment_hash: str
     planning_inputs_hash: str
     evidence_snapshot_hash: str | None = None
     science_answers_hash: str

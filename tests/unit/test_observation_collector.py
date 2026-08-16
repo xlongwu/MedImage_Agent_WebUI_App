@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -20,6 +21,7 @@ from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord, RunLinkRecord
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
+from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 from src.backend.app.services.observation_collector import (
     ObservationCollector,
@@ -101,11 +103,21 @@ def _prepared_run(
 
     contract = get_node_contract(node_id)
     ticket_service = ExecutionTicketService(store)
+    environment = ExecutionEnvironmentService(store).capture_for_plan(
+        project_id="project-1",
+        reviewed_plan=SimpleNamespace(
+            payload={"plan": {"nodes": [{"id": node_id, "backend": contract.backend}]}},
+        ),
+        write_roots=("project://derivatives",),
+        readonly_roots=("project://rawdata",),
+    )
     ticket = ticket_service.issue(
         project_id="project-1",
         reviewed_plan_id=reviewed.reviewed_plan_id,
         plan_hash=reviewed.plan_hash,
         approval_summary_hash="approval-1",
+        execution_environment_snapshot_id=environment.snapshot_id,
+        execution_environment_hash=environment.environment_hash,
         memory_context_hash=None,
         approved_actor="reviewer",
         approved_node_ids=[node_id],

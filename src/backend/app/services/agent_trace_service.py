@@ -224,6 +224,18 @@ class AgentTraceService:
     def _append_authority_references(self, lifecycle, project_id: str, references: list[AgentTraceReference], issues: list[str]) -> None:
         self._append_reference(references, issues, "reviewed_plan", lifecycle.reviewed_plan_id, self.store.get_reviewed_plan, project_id, "plan_hash")
         self._append_reference(references, issues, "ticket", lifecycle.execution_ticket_id, self.store.get_execution_ticket, project_id, "ticket_hash")
+        ticket = self.store.get_execution_ticket(lifecycle.execution_ticket_id) if lifecycle.execution_ticket_id else None
+        snapshot_getter = getattr(self.store, "get_execution_environment_snapshot", None)
+        if ticket is not None and callable(snapshot_getter):
+            self._append_reference(
+                references,
+                issues,
+                "execution_environment",
+                ticket.execution_environment_snapshot_id,
+                snapshot_getter,
+                project_id,
+                "environment_hash",
+            )
         if lifecycle.run_id:
             run = self.store.get_run_link_by_run_id(project_id, lifecycle.run_id)
             if run is None:

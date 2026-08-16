@@ -134,6 +134,8 @@ describe("useAgentTaskController", () => {
       ...task("project-a", "task-a", "waiting_for_user"),
       approval_summary: {
         summary_hash: "sha256:summary",
+        execution_environment_snapshot_id: "environment-1",
+        execution_environment_hash: "environment-hash-1",
         goal: "Run preprocessing and FC",
         dataset_summary: "3 subjects",
         execution_summary: "Reviewed native pipeline",

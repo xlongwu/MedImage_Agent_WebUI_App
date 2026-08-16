@@ -52,6 +52,9 @@ _IMMUTABLE_FIELDS = (
     "goal_contract_hash",
     "evaluation_policy_version",
     "approval_summary_hash",
+    "execution_environment_snapshot_id",
+    "execution_environment_hash",
+    "execution_provider_kind",
     "memory_context_hash",
     "approved_actor",
     "approved_node_ids",
@@ -183,6 +186,9 @@ class ExecutionTicketService:
         reviewed_plan_id: str,
         plan_hash: str,
         approval_summary_hash: str,
+        execution_environment_snapshot_id: str,
+        execution_environment_hash: str,
+        execution_provider_kind: str = "local",
         memory_context_hash: str | None,
         approved_actor: str,
         approved_node_ids: list[str] | tuple[str, ...],
@@ -212,6 +218,8 @@ class ExecutionTicketService:
             or not reviewed_plan_id
             or not normalized_params_hash
             or not contract_versions
+            or not execution_environment_snapshot_id
+            or not execution_environment_hash
         ):
             raise SafetyError(
                 "EXECUTION_TICKET_BINDING_REQUIRED",
@@ -220,7 +228,7 @@ class ExecutionTicketService:
         now = datetime.now(UTC)
         ticket_id = f"ticket_{uuid4().hex}"
         payload: dict[str, Any] = {
-            "schema_version": 3,
+            "schema_version": 4,
             "execution_ticket_id": ticket_id,
             "project_id": project_id,
             "reviewed_plan_id": reviewed_plan_id,
@@ -228,6 +236,9 @@ class ExecutionTicketService:
             "goal_contract_hash": goal_contract_hash,
             "evaluation_policy_version": evaluation_policy_version,
             "approval_summary_hash": approval_summary_hash,
+            "execution_environment_snapshot_id": execution_environment_snapshot_id,
+            "execution_environment_hash": execution_environment_hash,
+            "execution_provider_kind": execution_provider_kind,
             "memory_context_hash": memory_context_hash,
             "approved_actor": approved_actor,
             "approved_node_ids": tuple(sorted(set(approved_node_ids))),
@@ -469,7 +480,7 @@ class ExecutionTicketService:
             for node_id in sorted(candidate.target_node_ids)
         )
         payload = {
-            "schema_version": 3,
+            "schema_version": 4,
             "ticket_kind": "recovery_child",
             "execution_ticket_id": child_id,
             "project_id": parent.project_id,
@@ -478,6 +489,9 @@ class ExecutionTicketService:
             "goal_contract_hash": parent.goal_contract_hash,
             "evaluation_policy_version": parent.evaluation_policy_version,
             "approval_summary_hash": approval.recovery_approval_id,
+            "execution_environment_snapshot_id": parent.execution_environment_snapshot_id,
+            "execution_environment_hash": parent.execution_environment_hash,
+            "execution_provider_kind": parent.execution_provider_kind,
             "memory_context_hash": parent.memory_context_hash,
             "approved_actor": approval.approved_actor,
             "approved_node_ids": tuple(sorted(candidate.target_node_ids)),
@@ -556,6 +570,16 @@ class ExecutionTicketService:
         reservation = self.store.get_recovery_quota_reservation(ticket.quota_reservation_id or "")
         if parent is None or parent.status != "consumed" or parent.canonical_hash != ticket.parent_ticket_hash:
             raise SafetyError("RECOVERY_CHILD_PARENT_INVALID", code="RECOVERY_CHILD_PARENT_INVALID")
+        if (
+            ticket.execution_environment_snapshot_id
+            != parent.execution_environment_snapshot_id
+            or ticket.execution_environment_hash != parent.execution_environment_hash
+            or ticket.execution_provider_kind != parent.execution_provider_kind
+        ):
+            raise SafetyError(
+                "RECOVERY_CHILD_ENVIRONMENT_SWITCHED",
+                code="RECOVERY_CHILD_ENVIRONMENT_SWITCHED",
+            )
         if (
             proposal is None
             or proposal.recovery_proposal_hash != ticket.recovery_proposal_hash

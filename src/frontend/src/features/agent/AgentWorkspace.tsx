@@ -57,6 +57,13 @@ function localizeAgentError(
       title: t("agent.actionProblem"),
     };
   }
+  if (code === "EXECUTION_ENVIRONMENT_CHANGED") {
+    return {
+      message: t("agent.error.executionEnvironmentChanged.message"),
+      retryLabel: null,
+      title: t("agent.error.executionEnvironmentChanged.title"),
+    };
+  }
   if (code?.includes("BUDGET_EXHAUSTED")) {
     return {
       message: t("agent.error.budgetExhausted"),
@@ -114,6 +121,13 @@ function localizeAgentError(
       message: t("agent.error.dryRunBlocked.message"),
       retryLabel: null,
       title: t("agent.error.dryRunBlocked.title"),
+    };
+  }
+  if (error.includes("EXECUTION_ENVIRONMENT_CHANGED")) {
+    return {
+      message: t("agent.error.executionEnvironmentChanged.message"),
+      retryLabel: null,
+      title: t("agent.error.executionEnvironmentChanged.title"),
     };
   }
   if (error.includes("EXECUTION_TICKET_EXPIRED")) {

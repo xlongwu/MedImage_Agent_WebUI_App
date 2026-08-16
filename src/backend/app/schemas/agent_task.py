@@ -173,6 +173,8 @@ class AgentTaskApprovalSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     summary_hash: str
+    execution_environment_snapshot_id: str
+    execution_environment_hash: str
     goal: str
     dataset_summary: str
     execution_summary: str

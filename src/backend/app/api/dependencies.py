@@ -341,6 +341,7 @@ def _build_agent_task_command_service(store: ProjectStore):
     from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
     from src.backend.app.services.agent_task_scheduler import AgentTaskScheduler
     from src.backend.app.services.approval_summary_service import ApprovalSummaryService
+    from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
     from src.backend.app.services.goal_planning_service import GoalPlanningService
     from src.backend.app.services.memory_repository import MemoryRepository
     from src.backend.app.services.memory_retrieval_service import MemoryRetrievalService
@@ -362,7 +363,9 @@ def _build_agent_task_command_service(store: ProjectStore):
             memory_initialization_error = "MEMORY_STORE_UNHEALTHY"
 
     executor = ReviewedExecutionService()
-    summary_service = ApprovalSummaryService()
+    summary_service = ApprovalSummaryService(
+        environment_service=ExecutionEnvironmentService(store)
+    )
     reconciler = AgentTaskReconciler(store)
 
     def dry_runner(**kwargs):

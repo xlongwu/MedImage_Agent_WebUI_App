@@ -46,6 +46,8 @@ def _ticket() -> ExecutionTicket:
         goal_contract_hash="goal-hash",
         evaluation_policy_version="goal-evaluator-v1",
         approval_summary_hash="approval-1",
+        execution_environment_snapshot_id="environment-1",
+        execution_environment_hash="environment-hash-1",
         approved_actor="reviewer",
         approved_node_ids=("functional_connectivity_subject",),
         approved_backend_ids=("python",),

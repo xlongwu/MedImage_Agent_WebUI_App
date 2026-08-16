@@ -36,6 +36,7 @@ from src.backend.app.schemas.recovery import (
     RecoveryQuotaUsage,
 )
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
+from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 from src.backend.app.services.goal_evaluator import calculate_goal_evaluation_hash
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 from src.backend.app.services.observation_collector import calculate_observation_hash
@@ -181,6 +182,12 @@ def build_recovery_fixture(
 
     contract = get_node_contract("contract_smoke")
     ticket_service = ExecutionTicketService(store)
+    environment = ExecutionEnvironmentService(store).capture_for_plan(
+        project_id=project_id,
+        reviewed_plan=reviewed,
+        write_roots=("project://derivatives",),
+        readonly_roots=("project://rawdata",),
+    )
     parent = ticket_service.issue(
         project_id=project_id,
         reviewed_plan_id=reviewed_plan_id,
@@ -188,6 +195,8 @@ def build_recovery_fixture(
         goal_contract_hash=goal.goal_contract_hash,
         evaluation_policy_version=goal.evaluation_policy_version,
         approval_summary_hash="parent-approval",
+        execution_environment_snapshot_id=environment.snapshot_id,
+        execution_environment_hash=environment.environment_hash,
         memory_context_hash=None,
         approved_actor="test-reviewer",
         approved_node_ids=("contract_smoke",),
@@ -218,6 +227,8 @@ def build_recovery_fixture(
         "reviewed_plan_id": reviewed_plan_id,
         "execution_ticket_id": parent.execution_ticket_id,
         "approval_summary_hash": parent.approval_summary_hash,
+        "execution_environment_snapshot_id": parent.execution_environment_snapshot_id,
+        "execution_environment_hash": parent.execution_environment_hash,
         "plan_hash": parent.plan_hash,
         "memory_context_hash": parent.memory_context_hash,
         "scope_hash": parent.scope_hash,

@@ -104,10 +104,10 @@ recovery/token 预算、状态、下一步、让出次数、actual fallback 路�
 ## Trace、Replay 与离线评测
 
 - `AgentTraceService` 从 lifecycle、Harness attempt/context/step、生命周期事件、Reviewed
-  Plan、ticket、run、Observation、Goal Evaluation 与 Recovery 的权威记录组装一个只读
+  Plan、ticket、绑定的执行环境快照、run、Observation、Goal Evaluation 与 Recovery 的权威记录组装一个只读
   `AgentTraceBundle`。它不写入数据库，不复制这些记录，也不会补造缺失数据；缺失和跨项目
   绑定冲突分别标为 `incomplete` 与 `conflict`，并进入 canonical `integrity_hash`。
-- Trace 只保存安全摘要和 typed ID/hash 引用、Context 的用途/包含与省略 section、
+- Trace 只保存安全摘要和 typed ID/hash 引用（包括执行环境快照 ID/hash）、Context 的用途/包含与省略 section、
   完整性和 hash，以及已经脱敏的 `ModelCallRecord` metadata。
   Prompt、原始模型响应、绝对路径、secret、原始影像、完整日志与 Memory 正文都不进入 bundle
   或 `/trace` 响应。高级只读 API 为

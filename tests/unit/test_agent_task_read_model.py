@@ -72,6 +72,8 @@ def _plan() -> ReviewedPlanRecord:
             "goal_contract": {"goal_contract_id": "goal-1", "goal_text": "Compute FC"},
             "approval_summary": {
                 "summary_hash": "summary-hash",
+                "execution_environment_snapshot_id": "environment-snapshot-1",
+                "execution_environment_hash": "environment-hash",
                 "goal": "Compute FC",
                 "dataset_summary": "12 subjects",
                 "execution_summary": "Native preprocessing and FC",

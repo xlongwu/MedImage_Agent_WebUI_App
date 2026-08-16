@@ -15,6 +15,7 @@ from src.backend.app.runtime.node_contract_registry import executable_contract_v
 from src.backend.app.schemas.execution_ticket import ExecutionTicket
 from src.backend.app.schemas.gateway_dispatch import GatewayDispatch, GatewayDispatchEvent
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
+from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 
 _VERIFICATION_SENTINEL = object()
 
@@ -56,8 +57,16 @@ def assert_verified_execution_context(context: VerifiedExecutionContext | None) 
 
 
 class ExecutionGateway:
-    def __init__(self, ticket_service: ExecutionTicketService) -> None:
+    def __init__(
+        self,
+        ticket_service: ExecutionTicketService,
+        *,
+        environment_service: ExecutionEnvironmentService | None = None,
+    ) -> None:
         self.ticket_service = ticket_service
+        self.environment_service = environment_service or ExecutionEnvironmentService(
+            ticket_service.store
+        )
 
     def dispatch(
         self,
@@ -99,6 +108,19 @@ class ExecutionGateway:
             evaluation_policy_version=evaluation_policy_version,
             replay_idempotency_key=replay_key,
         )
+        # This must remain ahead of dispatch-record creation and ticket
+        # consumption. A changed host can never turn an old approval into a run.
+        try:
+            self.environment_service.verify_for_dispatch(execution_ticket=ticket)
+        except SafetyError as exc:
+            reason = str(exc.code or "EXECUTION_ENVIRONMENT_CHANGED")
+            self.ticket_service.record_rejection(
+                project_id=ticket.project_id,
+                ticket_id=ticket.execution_ticket_id,
+                audit_id=ticket.audit_id,
+                reason=reason,
+            )
+            raise
         identity = {
             "schema_version": 1,
             "command_id": command_id,
@@ -106,6 +128,8 @@ class ExecutionGateway:
             "reviewed_plan_id": reviewed_plan_id,
             "execution_ticket_id": ticket.execution_ticket_id,
             "approval_summary_hash": approval_summary_hash,
+            "execution_environment_snapshot_id": ticket.execution_environment_snapshot_id,
+            "execution_environment_hash": ticket.execution_environment_hash,
             "plan_hash": plan_hash,
             "memory_context_hash": memory_context_hash,
             "scope_hash": scope_hash,

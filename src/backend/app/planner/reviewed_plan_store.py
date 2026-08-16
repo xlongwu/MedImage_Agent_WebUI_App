@@ -374,11 +374,16 @@ def save_reviewed_plan(
         from src.backend.app.services.approval_summary_service import (
             ApprovalSummaryService,
         )
+        from src.backend.app.services.execution_environment_service import (
+            ExecutionEnvironmentService,
+        )
 
         project = project_store.get_project(project_id)
         if project is None:
             raise ReviewedPlanStoreError(f"PROJECT_NOT_FOUND: {project_id}")
-        summary = ApprovalSummaryService().build(
+        summary = ApprovalSummaryService(
+            environment_service=ExecutionEnvironmentService(project_store)
+        ).build(
             project=project,
             reviewed_plan=record,
         )
@@ -388,6 +393,8 @@ def save_reviewed_plan(
             if key
             in {
                 "summary_hash",
+                "execution_environment_snapshot_id",
+                "execution_environment_hash",
                 "goal",
                 "dataset_summary",
                 "execution_summary",

@@ -40,6 +40,8 @@ function approvalTask(): AgentTaskResponse {
     decision_batch: null,
     approval_summary: {
       summary_hash: "sha256:summary",
+      execution_environment_snapshot_id: "environment-1",
+      execution_environment_hash: "environment-hash-1",
       goal: "Preprocess three subjects and generate FC",
       dataset_summary: "3 subjects · converted BIDS",
       execution_summary: "Reviewed native preprocessing and FC",

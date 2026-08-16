@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -22,6 +23,7 @@ from src.backend.app.runtime.tool_execution_context import ToolExecutionContext
 from src.backend.app.schemas.execution_ticket import ExecutionTicket
 from src.backend.app.schemas.pipeline_schema import PipelineNode
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
+from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 
 
@@ -46,6 +48,17 @@ def _issue(
     outputs = project / "outputs"
     for path in (rawdata, inputs, outputs):
         path.mkdir(parents=True, exist_ok=True)
+    environment = ExecutionEnvironmentService(service.store).capture_for_plan(
+        project_id="project-1",
+        reviewed_plan=SimpleNamespace(
+            payload={"plan": {"nodes": [
+                {"id": node_id, "backend": backend}
+                for node_id, backend in zip(approved_nodes, approved_backends, strict=True)
+            ]}},
+        ),
+        write_roots=("project://derivatives",),
+        readonly_roots=("project://rawdata",),
+    )
     ticket = service.issue(
         project_id="project-1",
         reviewed_plan_id="reviewed-1",
@@ -53,6 +66,8 @@ def _issue(
         goal_contract_hash="goal-contract-hash",
         evaluation_policy_version="goal-evaluator-v1",
         approval_summary_hash="approval-1",
+        execution_environment_snapshot_id=environment.snapshot_id,
+        execution_environment_hash=environment.environment_hash,
         memory_context_hash=None,
         approved_actor="reviewer",
         approved_node_ids=approved_nodes,
@@ -153,7 +168,6 @@ def test_symlink_escape_is_rejected(tmp_path):
 def test_unapproved_node_is_rejected_before_runner_call(tmp_path, monkeypatch):
     service, ticket, project, *_ = _issue(
         tmp_path,
-        approved_nodes=("another_node",),
     )
     work = project / "work"
     logs = project / "logs"
@@ -185,7 +199,7 @@ def test_unapproved_node_is_rejected_before_runner_call(tmp_path, monkeypatch):
                 "pipeline_id": "capability-test",
                 "version": "1",
                 "execution": {"run_id": "run-capability"},
-                "nodes": [{"id": "data_inspection", "backend": "python", "params": {}}],
+                "nodes": [{"id": "another_node", "backend": "python", "params": {}}],
             }
         ),
         encoding="utf-8",

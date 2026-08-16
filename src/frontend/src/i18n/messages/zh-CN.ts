@@ -126,6 +126,9 @@ export const messagesZhCn = {
   "agent.error.dryRunBlocked.title": "执行前检查未通过",
   "agent.error.dryRunBlocked.message":
     "该方案未通过后端执行前检查。未创建执行票据或运行；请取消该任务后重新创建方案。",
+  "agent.error.executionEnvironmentChanged.title": "执行环境已变化",
+  "agent.error.executionEnvironmentChanged.message":
+    "审批后的本地执行环境已变化。系统未消费票据，也未创建运行；请重新生成并审批摘要。",
   "agent.error.checkAgain": "重新检查",
   "agent.planOnlyResult.title": "预处理方案已准备完成",
   "agent.planOnlyResult.summary":

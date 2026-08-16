@@ -10,11 +10,15 @@ from src.backend.app.config.settings import ProjectSettings
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.approval_summary import ApprovalSummary, ApprovalSummarySection
+from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 
 _OUTPUT_KEYS = frozenset({"output_dir", "output_root", "derivatives_dir", "work_dir"})
 
 
 class ApprovalSummaryService:
+    def __init__(self, *, environment_service: ExecutionEnvironmentService | None = None) -> None:
+        self.environment_service = environment_service or ExecutionEnvironmentService()
+
     def build(
         self,
         *,
@@ -71,6 +75,21 @@ class ApprovalSummaryService:
             plan=plan,
             project_config_path=reviewed_plan.project_config_path,
         )
+        existing_envelope = (
+            reviewed_plan.payload.get("approval_envelope")
+            if isinstance(reviewed_plan.payload.get("approval_envelope"), dict)
+            else {}
+        )
+        environment = self.environment_service.capture_for_plan(
+            project_id=reviewed_plan.project_id,
+            reviewed_plan=reviewed_plan,
+            write_roots=write_roots,
+            readonly_roots=("project://rawdata",),
+            persist=not bool(existing_envelope.get("execution_environment_snapshot_id")),
+        )
+        prior_snapshot_id = str(existing_envelope.get("execution_environment_snapshot_id") or "")
+        if prior_snapshot_id:
+            environment = environment.model_copy(update={"snapshot_id": prior_snapshot_id})
         external = tuple(value for value in backends if value.startswith("matlab") or value == "dpabi")
         acpc_node = next(
             (
@@ -106,10 +125,12 @@ class ApprovalSummaryService:
         )
         expires = issued + timedelta(minutes=max(1, ttl_minutes))
         base: dict[str, Any] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "project_id": reviewed_plan.project_id,
             "reviewed_plan_id": reviewed_plan.reviewed_plan_id,
             "plan_hash": reviewed_plan.plan_hash,
+            "execution_environment_snapshot_id": environment.snapshot_id,
+            "execution_environment_hash": environment.environment_hash,
             "planning_inputs_hash": str(reviewed_plan.planning_inputs_hash or ""),
             "evidence_snapshot_hash": (
                 str(planning_request.get("evidence_snapshot_hash") or "")
@@ -160,6 +181,22 @@ class ApprovalSummaryService:
                     id="safety",
                     title="Safety boundary",
                     summary="Source rawdata remains read-only; writes are limited to the listed project roots.",
+                ),
+                ApprovalSummarySection(
+                    id="environment",
+                    title="Execution environment",
+                    summary=(
+                        "Approve the current local environment for the reviewed backends: "
+                        + ", ".join(
+                            f"{item.backend_id} ({item.status})"
+                            for item in environment.backend_capabilities
+                        )
+                    ),
+                    warnings=tuple(
+                        warning
+                        for item in (*environment.tool_capabilities, *environment.backend_capabilities)
+                        for warning in item.warnings
+                    ),
                 ),
                 *(
                     (
@@ -228,6 +265,10 @@ class ApprovalSummaryService:
     @staticmethod
     def _identity_payload(value: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(value)
+        # Snapshot identity is a storage locator. Approval validity is bound to
+        # the canonical environment facts, so equivalent fresh captures remain
+        # approval-stable while still receiving distinct immutable record IDs.
+        normalized.pop("execution_environment_snapshot_id", None)
         for field in ("issued_at", "expires_at"):
             if isinstance(normalized.get(field), datetime):
                 normalized[field] = normalized[field].isoformat().replace("+00:00", "Z")

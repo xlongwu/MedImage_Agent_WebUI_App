@@ -105,6 +105,10 @@ def test_recovery_child_executes_once_in_isolated_output_and_closes_goal_loop(tm
     assert list(fixture.rawdata.rglob("*")) == []
     child = fixture.store.get_execution_ticket(attempt.child_execution_ticket_id or "")
     assert child is not None and child.ticket_kind == "recovery_child"
+    assert child.execution_environment_snapshot_id == fixture.parent.execution_environment_snapshot_id
+    assert child.execution_environment_hash == fixture.parent.execution_environment_hash
+    assert child.execution_environment_snapshot_id == fixture.parent.execution_environment_snapshot_id
+    assert child.execution_environment_hash == fixture.parent.execution_environment_hash
     assert child.status == "consumed"
     assert Path(child.output_roots[0]) != Path(fixture.parent.output_roots[0])
     assert Path(child.output_roots[0]).is_relative_to(Path(fixture.parent.output_roots[0]))

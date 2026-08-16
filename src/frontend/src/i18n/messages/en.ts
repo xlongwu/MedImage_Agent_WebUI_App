@@ -136,6 +136,9 @@ export const messagesEn = {
   "agent.error.dryRunBlocked.title": "Pre-execution check did not pass",
   "agent.error.dryRunBlocked.message":
     "This plan did not pass the backend pre-execution check. No execution ticket or run was created; cancel this task and create a new plan.",
+  "agent.error.executionEnvironmentChanged.title": "Execution environment changed",
+  "agent.error.executionEnvironmentChanged.message":
+    "The approved local execution environment changed before dispatch. No ticket was consumed and no run was created; generate and approve a new summary.",
   "agent.error.checkAgain": "Check again",
   "agent.error.ticketExpired.title": "Execution ticket expired",
   "agent.error.ticketExpired.message":

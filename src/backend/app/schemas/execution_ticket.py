@@ -29,7 +29,7 @@ class ExecutionTicket(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    schema_version: int = 3
+    schema_version: int = 4
     ticket_kind: ExecutionTicketKind = "reviewed_execution"
     execution_ticket_id: str
     project_id: str
@@ -38,6 +38,9 @@ class ExecutionTicket(BaseModel):
     goal_contract_hash: str
     evaluation_policy_version: str
     approval_summary_hash: str
+    execution_environment_snapshot_id: str
+    execution_environment_hash: str
+    execution_provider_kind: Literal["local"] = "local"
     memory_context_hash: str | None = None
     approved_actor: str
     approved_node_ids: tuple[str, ...]
@@ -99,6 +102,8 @@ class ExecutionTicket(BaseModel):
         )
         if any(not value for value in required) or not self.recovery_node_ids:
             raise ValueError("recovery child ticket requires complete immutable lineage")
+        if self.execution_provider_kind != "local":
+            raise ValueError("recovery child ticket cannot switch execution provider")
         if self.recovery_action == "RETRY_FAILED_SUBJECTS" and not self.recovery_subject_ids:
             raise ValueError("failed-subject recovery requires an explicit subject scope")
         if self.recovery_action == "RESUME" and not self.checkpoint_id:

@@ -37,6 +37,7 @@ from src.backend.app.schemas.desktop import (
     TaskStatus,
 )
 from src.backend.app.schemas.execution_ticket import ExecutionTicket, ExecutionTicketEvent
+from src.backend.app.schemas.execution_environment import ExecutionEnvironmentSnapshot
 from src.backend.app.schemas.gateway_dispatch import GatewayDispatch, GatewayDispatchEvent
 from src.backend.app.schemas.goal_contract import GoalEvaluationRecord
 from src.backend.app.schemas.observation import ObservationRecord
@@ -182,6 +183,15 @@ class SQLiteDesktopStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_execution_tickets_project_issued
                     ON execution_tickets(project_id, issued_at);
+                CREATE TABLE IF NOT EXISTS execution_environment_snapshots (
+                    snapshot_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    environment_hash TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    captured_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_execution_environment_snapshots_project_captured
+                    ON execution_environment_snapshots(project_id, captured_at);
                 CREATE TABLE IF NOT EXISTS execution_ticket_events (
                     event_id TEXT PRIMARY KEY,
                     execution_ticket_id TEXT NOT NULL,
@@ -1518,6 +1528,39 @@ class SQLiteDesktopStore:
                 ),
             )
         return ticket
+
+    def add_execution_environment_snapshot(
+        self, snapshot: ExecutionEnvironmentSnapshot
+    ) -> ExecutionEnvironmentSnapshot:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO execution_environment_snapshots
+                    (snapshot_id, project_id, environment_hash, payload, captured_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot.snapshot_id,
+                    snapshot.project_id,
+                    snapshot.environment_hash,
+                    self._dump_model(snapshot),
+                    snapshot.captured_at.isoformat(),
+                ),
+            )
+        return snapshot
+
+    def get_execution_environment_snapshot(
+        self, snapshot_id: str
+    ) -> ExecutionEnvironmentSnapshot | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT payload FROM execution_environment_snapshots
+                WHERE snapshot_id = ?
+                """,
+                (snapshot_id,),
+            ).fetchone()
+        return ExecutionEnvironmentSnapshot(**json.loads(row["payload"])) if row else None
 
     def get_execution_ticket(self, execution_ticket_id: str) -> ExecutionTicket | None:
         with self._lock, self._connect() as conn:

@@ -1317,6 +1317,9 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                 reviewed_plan=reviewed_plan,
                 approval=request.approval,
             )
+            approval_summary = ApprovalSummary.model_validate(
+                reviewed_plan.payload["approval_envelope"]
+            )
             input_roots, output_roots = _ticket_roots(
                 context=context,
                 settings=settings,
@@ -1342,6 +1345,8 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                 reviewed_plan_id=reviewed_plan.reviewed_plan_id,
                 plan_hash=reviewed_plan.plan_hash,
                 approval_summary_hash=approval_summary_hash,
+                execution_environment_snapshot_id=approval_summary.execution_environment_snapshot_id,
+                execution_environment_hash=approval_summary.execution_environment_hash,
                 memory_context_hash=reviewed_plan.memory_context_hash,
                 approved_actor=str(
                     (request.approval or {}).get("approved_by") or request.actor or "local-user"

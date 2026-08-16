@@ -141,6 +141,8 @@ export type AgentTaskApprovalSection = {
 
 export type AgentTaskApprovalSummary = {
   summary_hash: string;
+  execution_environment_snapshot_id: string;
+  execution_environment_hash: string;
   goal: string;
   dataset_summary: string;
   execution_summary: string;
