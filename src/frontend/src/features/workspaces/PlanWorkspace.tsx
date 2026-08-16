@@ -396,10 +396,7 @@ export function PlanWorkspace({
           {reviewedPlanRecord ? (
             <ReadOnlyReviewedPlan record={reviewedPlanRecord} />
           ) : (
-            <EmptyState
-              title={t("plan.noGoal")}
-              description={t("plan.technicalSafety")}
-            />
+            <EmptyState title={t("plan.noGoal")} description={t("plan.technicalSafety")} />
           )}
         </>
       </TechnicalModuleSection>

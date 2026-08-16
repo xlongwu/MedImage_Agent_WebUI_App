@@ -9,6 +9,7 @@ import styles from "./AgentWorkspace.module.css";
 import { CurrentAction } from "./components/CurrentAction";
 import { DecisionBatchCard } from "./components/DecisionBatchCard";
 import { HarnessStatusCard } from "./components/HarnessStatusCard";
+import { AgentOperationalHealthCard } from "./components/AgentOperationalHealthCard";
 import { GoalComposer } from "./components/GoalComposer";
 import { MacroProgress } from "./components/MacroProgress";
 import { isDecisionAction, NextActionCard } from "./components/NextActionCard";
@@ -266,6 +267,7 @@ export function AgentWorkspaceView({
       </header>
 
       <ProjectSummaryCard dataStateLabel={dataStateLabel} projectName={projectName} task={task} />
+      <AgentOperationalHealthCard baseUrl={controller.baseUrl} projectId={controller.projectId} />
 
       <Dialog
         description={t("agent.newTaskConfirmation")}

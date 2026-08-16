@@ -29,6 +29,15 @@ export const messagesEn = {
   "agent.taskStatus": "Task status",
   "agent.recentResult": "Recent result",
   "agent.attentionItems": "Attention items",
+  "agent.operations.eyebrow": "Read-only health",
+  "agent.operations.title": "Agent operational health",
+  "agent.operations.states":
+    "{count} tasks in the last seven days; {approvals} waiting for approval.",
+  "agent.operations.calls":
+    "Model calls — {success} succeeded, {failure} failed, {unknown} unknown.",
+  "agent.operations.attention": "{code}: {count}",
+  "agent.operations.truncated": "The operational view is truncated to the safe task limit.",
+  "agent.operations.unavailable": "Operational health is not available.",
   "agent.noTask": "Ready",
   "agent.noResult": "No evaluated result",
   "agent.goalTitle": "Describe your research goal",
