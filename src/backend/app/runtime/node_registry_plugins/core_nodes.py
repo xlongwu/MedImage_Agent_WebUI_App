@@ -1,13 +1,14 @@
 """Core Nodes registry plugin."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from src.backend.app.runtime.node_registry_plugins.base import NodeExecutionContext, NodeRunner
+from src.backend.app.runtime.atomic_file import atomic_write_json
 from src.backend.app.schemas.pipeline_schema import PipelineNode
 from src.backend.app.tools.data_inspector import inspect_dataset
 from src.backend.app.tools.dataset_evaluator import evaluate_dataset
-from src.backend.app.tools.matlab_runner import run_matlab_check
 from src.backend.app.tools.node_contract_smoke import run_contract_smoke_node
 from src.backend.app.tools.report_writer import write_dataset_evaluation_report
 from src.backend.app.tools.synthetic_bids import create_synthetic_bids_dataset
@@ -17,15 +18,39 @@ def run_environment_check_node(
     context: NodeExecutionContext,
     node: PipelineNode,
 ) -> dict[str, Any]:
-    output_json = f"{context.work_dir}/environment_check.json"
-    return run_matlab_check(
-        matlab_command=context.matlab_command,
-        spm_dir=context.spm_dir,
-        dpabi_dir=context.dpabi_dir,
-        output_json=output_json,
-        log_dir=context.log_dir,
-        matlab_script_dir="./matlab",
-    )
+    """Record configured tool locations without launching an external process.
+
+    Environment checks run before approval in several flows.  They therefore
+    only inspect the already-configured filesystem facts; an executable probe
+    must be represented by a reviewed sandbox-process node in a future task.
+    """
+    output_path = Path(context.work_dir) / "environment_check.json"
+    configured_tools = {
+        "matlab": context.matlab_command,
+        "spm": context.spm_dir,
+        "dpabi": context.dpabi_dir,
+    }
+    tool_status = {
+        key: {
+            "configured": bool(value),
+            "path_exists": bool(value) and Path(value).expanduser().exists(),
+        }
+        for key, value in configured_tools.items()
+    }
+    payload = {
+        "ok": True,
+        "node_id": node.id,
+        "backend": "python",
+        "probe_mode": "configuration_only",
+        "external_process_started": False,
+        "tools": tool_status,
+        "outputs": [str(output_path)],
+        "warnings": [
+            "Executable probes are unavailable before reviewed sandbox approval."
+        ],
+    }
+    atomic_write_json(output_path, payload, schema_version=1)
+    return payload
 
 
 def run_create_synthetic_bids_node(

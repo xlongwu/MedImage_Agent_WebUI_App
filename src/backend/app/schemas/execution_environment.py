@@ -44,7 +44,7 @@ class ExecutionEnvironmentSnapshot(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     snapshot_id: str = Field(min_length=1, max_length=128)
     project_id: str = Field(min_length=1, max_length=128)
     captured_at: datetime
@@ -58,4 +58,11 @@ class ExecutionEnvironmentSnapshot(BaseModel):
     backend_capabilities: tuple[BackendCapabilitySnapshot, ...] = ()
     write_roots_hash: str = Field(min_length=1, max_length=128)
     readonly_roots_hash: str = Field(min_length=1, max_length=128)
+    sandbox_provider: Literal["windows_restricted_process"] = "windows_restricted_process"
+    sandbox_provider_version: str = "windows-sandbox-v1"
+    sandbox_runtime_hash: str = Field(
+        default="windows-sandbox-runtime-v1",
+        min_length=1,
+        max_length=128,
+    )
     environment_hash: str = Field(min_length=1, max_length=128)

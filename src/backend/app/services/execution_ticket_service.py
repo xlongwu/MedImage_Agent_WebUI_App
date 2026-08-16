@@ -55,6 +55,10 @@ _IMMUTABLE_FIELDS = (
     "execution_environment_snapshot_id",
     "execution_environment_hash",
     "execution_provider_kind",
+    "sandbox_policies",
+    "sandbox_policy_version",
+    "sandbox_policies_hash",
+    "sandbox_provider",
     "memory_context_hash",
     "approved_actor",
     "approved_node_ids",
@@ -188,6 +192,9 @@ class ExecutionTicketService:
         approval_summary_hash: str,
         execution_environment_snapshot_id: str,
         execution_environment_hash: str,
+        sandbox_policies: tuple[dict[str, object], ...] = (),
+        sandbox_policy_version: str = "windows-sandbox-v1",
+        sandbox_policies_hash: str | None = None,
         execution_provider_kind: str = "local",
         memory_context_hash: str | None,
         approved_actor: str,
@@ -225,10 +232,18 @@ class ExecutionTicketService:
                 "EXECUTION_TICKET_BINDING_REQUIRED",
                 code="EXECUTION_TICKET_BINDING_REQUIRED",
             )
+        from src.backend.app.schemas.sandbox import SandboxPolicySet
+        from src.backend.app.services.sandbox_policy_service import SandboxPolicyService, empty_policy_set
+
+        policy_set = SandboxPolicySet(
+            policies=tuple(sandbox_policies),
+            policies_hash=sandbox_policies_hash or empty_policy_set().policies_hash,
+        )
+        SandboxPolicyService.verify(policy_set)
         now = datetime.now(UTC)
         ticket_id = f"ticket_{uuid4().hex}"
         payload: dict[str, Any] = {
-            "schema_version": 4,
+            "schema_version": 5,
             "execution_ticket_id": ticket_id,
             "project_id": project_id,
             "reviewed_plan_id": reviewed_plan_id,
@@ -239,6 +254,10 @@ class ExecutionTicketService:
             "execution_environment_snapshot_id": execution_environment_snapshot_id,
             "execution_environment_hash": execution_environment_hash,
             "execution_provider_kind": execution_provider_kind,
+            "sandbox_policies": tuple(item.model_dump(mode="json") for item in policy_set.policies),
+            "sandbox_policy_version": sandbox_policy_version,
+            "sandbox_policies_hash": policy_set.policies_hash,
+            "sandbox_provider": "windows_restricted_process",
             "memory_context_hash": memory_context_hash,
             "approved_actor": approved_actor,
             "approved_node_ids": tuple(sorted(set(approved_node_ids))),
@@ -480,7 +499,7 @@ class ExecutionTicketService:
             for node_id in sorted(candidate.target_node_ids)
         )
         payload = {
-            "schema_version": 4,
+            "schema_version": 5,
             "ticket_kind": "recovery_child",
             "execution_ticket_id": child_id,
             "project_id": parent.project_id,
@@ -492,6 +511,10 @@ class ExecutionTicketService:
             "execution_environment_snapshot_id": parent.execution_environment_snapshot_id,
             "execution_environment_hash": parent.execution_environment_hash,
             "execution_provider_kind": parent.execution_provider_kind,
+            "sandbox_policies": parent.sandbox_policies,
+            "sandbox_policy_version": parent.sandbox_policy_version,
+            "sandbox_policies_hash": parent.sandbox_policies_hash,
+            "sandbox_provider": parent.sandbox_provider,
             "memory_context_hash": parent.memory_context_hash,
             "approved_actor": approval.approved_actor,
             "approved_node_ids": tuple(sorted(candidate.target_node_ids)),

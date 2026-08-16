@@ -654,7 +654,11 @@ def _build_contracts() -> dict[str, NodeContract]:
             resources=ResourceRequirements(
                 backend=fields["backend"],
                 gpu_required=fields["backend"] == "gpu",
-                external_process=fields["backend"] in {"matlab-spm", "dpabi"},
+                process_mode=(
+                    "sandbox_process"
+                    if fields["backend"] in {"matlab-spm", "dpabi"}
+                    else "in_process"
+                ),
             ),
             retry_policy=_recovery_policy(node_id, external=external),
             idempotency=_idempotency_policy(node_id),

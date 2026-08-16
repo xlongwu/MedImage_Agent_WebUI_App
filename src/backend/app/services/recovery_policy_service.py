@@ -399,7 +399,7 @@ class RecoveryPolicyService:
                 contract = get_node_contract(node_id)
             except KeyError as exc:
                 raise SafetyError("RECOVERY_NODE_CONTRACT_MISSING", code="RECOVERY_NODE_CONTRACT_MISSING") from exc
-            if contract.resources.external_process or contract.backend in {"matlab-spm", "dpabi", "gpu"}:
+            if contract.resources.process_mode == "sandbox_process" or contract.backend in {"matlab-spm", "dpabi", "gpu"}:
                 raise SafetyError("RECOVERY_EXTERNAL_EXECUTION_DISABLED", code="RECOVERY_EXTERNAL_EXECUTION_DISABLED")
             contracts.append(contract)
         if require_execution and candidate.action == "RETRY_FAILED_SUBJECTS":

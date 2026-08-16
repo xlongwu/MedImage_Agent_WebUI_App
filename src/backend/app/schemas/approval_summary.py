@@ -19,13 +19,16 @@ class ApprovalSummarySection(BaseModel):
 class ApprovalSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: int = 2
+    schema_version: int = 3
     summary_hash: str
     project_id: str
     reviewed_plan_id: str
     plan_hash: str
     execution_environment_snapshot_id: str
     execution_environment_hash: str
+    sandbox_policies_hash: str = "2fa91d28b8039d17bb1463c12c1d7823b8e474ae7d9c7d0109b36f17283f04bb"
+    sandbox_policy_version: str = "windows-sandbox-v1"
+    sandbox_policies: tuple[dict[str, object], ...] = ()
     planning_inputs_hash: str
     evidence_snapshot_hash: str | None = None
     science_answers_hash: str

@@ -11,6 +11,7 @@ from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.approval_summary import ApprovalSummary, ApprovalSummarySection
 from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
+from src.backend.app.services.sandbox_policy_service import SandboxPolicyService
 
 _OUTPUT_KEYS = frozenset({"output_dir", "output_root", "derivatives_dir", "work_dir"})
 
@@ -90,6 +91,12 @@ class ApprovalSummaryService:
         prior_snapshot_id = str(existing_envelope.get("execution_environment_snapshot_id") or "")
         if prior_snapshot_id:
             environment = environment.model_copy(update={"snapshot_id": prior_snapshot_id})
+        sandbox_policy_set = SandboxPolicyService().build_for_plan(
+            reviewed_plan=reviewed_plan,
+            environment=environment,
+            write_roots=write_roots,
+            readonly_roots=("project://rawdata",),
+        )
         external = tuple(value for value in backends if value.startswith("matlab") or value == "dpabi")
         acpc_node = next(
             (
@@ -125,12 +132,17 @@ class ApprovalSummaryService:
         )
         expires = issued + timedelta(minutes=max(1, ttl_minutes))
         base: dict[str, Any] = {
-            "schema_version": 2,
+            "schema_version": 3,
             "project_id": reviewed_plan.project_id,
             "reviewed_plan_id": reviewed_plan.reviewed_plan_id,
             "plan_hash": reviewed_plan.plan_hash,
             "execution_environment_snapshot_id": environment.snapshot_id,
             "execution_environment_hash": environment.environment_hash,
+            "sandbox_policies_hash": sandbox_policy_set.policies_hash,
+            "sandbox_policy_version": "windows-sandbox-v1",
+            "sandbox_policies": tuple(
+                item.model_dump(mode="json") for item in sandbox_policy_set.policies
+            ),
             "planning_inputs_hash": str(reviewed_plan.planning_inputs_hash or ""),
             "evidence_snapshot_hash": (
                 str(planning_request.get("evidence_snapshot_hash") or "")

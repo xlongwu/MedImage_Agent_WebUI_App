@@ -42,7 +42,7 @@ class ResourceRequirements(BaseModel):
     backend: str
     cpu_cores_min: int = 1
     gpu_required: bool = False
-    external_process: bool = False
+    process_mode: Literal["in_process", "sandbox_process"] = "in_process"
 
 
 class ContractRetryPolicy(BaseModel):

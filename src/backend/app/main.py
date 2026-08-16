@@ -53,6 +53,7 @@ from src.backend.app.api.routes import router
 from src.backend.app.api.run_routes import router as run_router
 from src.backend.app.api.rsfmri_routes import router as rsfmri_router
 from src.backend.app.api.scheduler_routes import router as scheduler_router
+from src.backend.app.api.sandbox_routes import router as sandbox_router
 from src.backend.app.api.session_routes import router as session_router
 from src.backend.app.api.task_routes import router as task_router
 from src.backend.app.api.tool_catalog_routes import router as tool_catalog_router
@@ -238,6 +239,16 @@ def create_app() -> FastAPI:
     app.include_router(project_router)
     app.include_router(project_history_router)
     app.include_router(execution_graph_router)
+    app.include_router(sandbox_router)
+    # Historical direct sandbox endpoints are deliberately absent from the
+    # public surface. Only the reviewed approval -> ticket -> gateway chain can
+    # ever reach a process provider.
+    app.router.routes[:] = [
+        route
+        for route in app.router.routes
+        if "execute-sandbox" not in getattr(route, "path", "")
+        and "register-sandbox-" not in getattr(route, "path", "")
+    ]
 
     return app
 

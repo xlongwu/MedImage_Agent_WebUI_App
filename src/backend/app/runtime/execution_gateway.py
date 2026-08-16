@@ -16,6 +16,8 @@ from src.backend.app.schemas.execution_ticket import ExecutionTicket
 from src.backend.app.schemas.gateway_dispatch import GatewayDispatch, GatewayDispatchEvent
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
 from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
+from src.backend.app.schemas.sandbox import SandboxPolicySet
+from src.backend.app.services.sandbox_policy_service import SandboxPolicyService
 
 _VERIFICATION_SENTINEL = object()
 
@@ -121,6 +123,20 @@ class ExecutionGateway:
                 reason=reason,
             )
             raise
+        policy_set = SandboxPolicySet(
+            policies=tuple(ticket.sandbox_policies),
+            policies_hash=ticket.sandbox_policies_hash,
+        )
+        try:
+            SandboxPolicyService.verify(policy_set)
+        except SafetyError:
+            self.ticket_service.record_rejection(
+                project_id=ticket.project_id,
+                ticket_id=ticket.execution_ticket_id,
+                audit_id=ticket.audit_id,
+                reason="EXECUTION_SANDBOX_POLICY_CHANGED",
+            )
+            raise
         identity = {
             "schema_version": 1,
             "command_id": command_id,
@@ -130,6 +146,8 @@ class ExecutionGateway:
             "approval_summary_hash": approval_summary_hash,
             "execution_environment_snapshot_id": ticket.execution_environment_snapshot_id,
             "execution_environment_hash": ticket.execution_environment_hash,
+            "sandbox_policies_hash": ticket.sandbox_policies_hash,
+            "sandbox_provider": ticket.sandbox_provider,
             "plan_hash": plan_hash,
             "memory_context_hash": memory_context_hash,
             "scope_hash": scope_hash,

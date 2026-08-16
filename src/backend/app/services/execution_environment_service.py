@@ -136,7 +136,7 @@ class ExecutionEnvironmentService:
             sorted((node_id, NODE_CONTRACTS[node_id].contract_version) for node_id in node_ids)
         )
         identity = {
-            "schema_version": 1,
+            "schema_version": 2,
             "project_id": project_id,
             "provider_kind": "local",
             "platform": platform_module.platform(),
@@ -150,6 +150,14 @@ class ExecutionEnvironmentService:
             "backend_capabilities": [item.model_dump(mode="json") for item in backend_capabilities],
             "write_roots_hash": write_roots_hash or _root_hash(write_roots or ()),
             "readonly_roots_hash": readonly_roots_hash or _root_hash(readonly_roots or ()),
+            "sandbox_provider": "windows_restricted_process",
+            "sandbox_provider_version": "windows-sandbox-v1",
+            "sandbox_runtime_hash": stable_hash({
+                "provider": "windows_restricted_process",
+                "version": "windows-sandbox-v1",
+                "process_mode": "CreateRestrictedToken+JobObject",
+                "network_isolation": "not_enforced",
+            }),
         }
         environment_hash = stable_hash(identity)
         return ExecutionEnvironmentSnapshot(

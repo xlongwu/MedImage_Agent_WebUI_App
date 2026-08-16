@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.backend.app.schemas.execution_ticket import ExecutionTicket
+from src.backend.app.schemas.sandbox import SandboxPolicy
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
 
 
@@ -24,6 +25,7 @@ class ToolExecutionContext:
     allowlist_hash: str
     normalized_params_hash: str
     contract_versions: dict[str, str]
+    sandbox_policies: dict[str, SandboxPolicy]
     expires_at: datetime
     ticket: ExecutionTicket
     ticket_service: ExecutionTicketService
@@ -47,6 +49,10 @@ class ToolExecutionContext:
             allowlist_hash=ticket.allowlist_hash,
             normalized_params_hash=ticket.normalized_params_hash,
             contract_versions=dict(ticket.contract_versions),
+            sandbox_policies={
+                str(item["node_id"]): SandboxPolicy(**item)
+                for item in ticket.sandbox_policies
+            },
             expires_at=ticket.expires_at,
             ticket=ticket,
             ticket_service=ticket_service,

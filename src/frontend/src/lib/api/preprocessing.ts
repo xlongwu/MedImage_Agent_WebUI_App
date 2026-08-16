@@ -27,28 +27,6 @@ export async function createPreprocessingRun(
   );
 }
 
-export async function executeNuisanceRegressionSandbox(
-  baseUrl: string,
-  projectId: string,
-  preprocessingRunId: string,
-  body: {
-    dry_run_id: string;
-    functional_input_dir?: string;
-    confirm_sandbox_copy?: boolean;
-    confirm_no_rawdata_modification?: boolean;
-    confirm_previous_stage_readonly?: boolean;
-    confirm_nuisance_regression_only?: boolean;
-    confirm_no_full_preprocessing?: boolean;
-    confirm_research_use_only?: boolean;
-  },
-) {
-  return requestJson<import("../../types").NuisanceSandboxExecutionResponse>(
-    baseUrl,
-    `/api/projects/${encodeURIComponent(projectId)}/preprocessing/runs/${encodeURIComponent(preprocessingRunId)}/nuisance-regression/execute-sandbox`,
-    { method: "POST", body: JSON.stringify(body) },
-  );
-}
-
 export async function executePreprocessingPythonPreflight(
   baseUrl: string,
   projectId: string,
@@ -125,27 +103,6 @@ export async function getNativeFullPreprocessingReport(
   return requestJson<Record<string, unknown>>(
     baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/preprocessing/native/runs/${encodeURIComponent(runId)}/report`,
-  );
-}
-
-export async function executeSpmSandboxSliceTimingRealign(
-  baseUrl: string,
-  projectId: string,
-  preprocessingRunId: string,
-  body: {
-    dry_run_id: string;
-    preprocessing_input_dir?: string;
-    confirm_sandbox_copy?: boolean;
-    confirm_no_rawdata_modification?: boolean;
-    confirm_slice_timing_realign_only?: boolean;
-    confirm_no_full_preprocessing?: boolean;
-    confirm_research_use_only?: boolean;
-  },
-) {
-  return requestJson<import("../../types").SpmSandboxExecutionResponse>(
-    baseUrl,
-    `/api/projects/${encodeURIComponent(projectId)}/preprocessing/runs/${encodeURIComponent(preprocessingRunId)}/spm/slice-timing-realign/execute-sandbox`,
-    { method: "POST", body: JSON.stringify(body) },
   );
 }
 

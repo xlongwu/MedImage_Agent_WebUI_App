@@ -40,6 +40,7 @@ from src.backend.app.schemas.desktop import (
 from src.backend.app.schemas.execution_ticket import ExecutionTicket, ExecutionTicketEvent
 from src.backend.app.schemas.execution_environment import ExecutionEnvironmentSnapshot
 from src.backend.app.schemas.gateway_dispatch import GatewayDispatch, GatewayDispatchEvent
+from src.backend.app.schemas.sandbox import SandboxAttemptRecord
 from src.backend.app.schemas.goal_contract import GoalEvaluationRecord
 from src.backend.app.schemas.observation import ObservationRecord
 from src.backend.app.schemas.recovery import DiagnosisRecord, RecoveryProposal
@@ -224,6 +225,20 @@ class SQLiteDesktopStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_gateway_dispatch_events_dispatch_time
                     ON gateway_dispatch_events(dispatch_id, occurred_at);
+                CREATE TABLE IF NOT EXISTS sandbox_attempts (
+                    sandbox_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    dispatch_id TEXT NOT NULL,
+                    execution_ticket_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sandbox_attempts_project_run
+                    ON sandbox_attempts(project_id, run_id, updated_at);
+                CREATE INDEX IF NOT EXISTS idx_sandbox_attempts_dispatch
+                    ON sandbox_attempts(dispatch_id);
                 CREATE TABLE IF NOT EXISTS agent_lifecycles (
                     lifecycle_id TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL,
@@ -1792,6 +1807,62 @@ class SQLiteDesktopStore:
                 (dispatch_id,),
             ).fetchall()
         return [GatewayDispatchEvent(**json.loads(row["payload"])) for row in rows]
+
+    def add_sandbox_attempt(self, attempt: SandboxAttemptRecord) -> SandboxAttemptRecord:
+        with self._lock, self._connect() as conn:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO sandbox_attempts
+                        (sandbox_id, project_id, run_id, dispatch_id, execution_ticket_id, status, payload, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        attempt.sandbox_id, attempt.project_id, attempt.run_id,
+                        attempt.dispatch_id, attempt.execution_ticket_id, attempt.status,
+                        self._dump_model(attempt), utc_now_iso(),
+                    ),
+                )
+                return attempt
+            except sqlite3.IntegrityError:
+                current = self.get_sandbox_attempt(attempt.sandbox_id)
+                if current is None or current.policy_hash != attempt.policy_hash:
+                    raise
+                return current
+
+    def get_sandbox_attempt(self, sandbox_id: str) -> SandboxAttemptRecord | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM sandbox_attempts WHERE sandbox_id = ?", (sandbox_id,)
+            ).fetchone()
+        return SandboxAttemptRecord(**json.loads(row["payload"])) if row else None
+
+    def update_sandbox_attempt(
+        self, sandbox_id: str, **updates: object
+    ) -> SandboxAttemptRecord | None:
+        current = self.get_sandbox_attempt(sandbox_id)
+        if current is None:
+            return None
+        payload = current.model_dump(mode="json")
+        payload.update(updates)
+        updated = SandboxAttemptRecord(**payload)
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE sandbox_attempts SET status = ?, payload = ?, updated_at = ? WHERE sandbox_id = ?",
+                (updated.status, self._dump_model(updated), utc_now_iso(), sandbox_id),
+            )
+        return updated
+
+    def list_sandbox_attempts_for_run(
+        self, project_id: str, run_id: str
+    ) -> list[SandboxAttemptRecord]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """SELECT payload FROM sandbox_attempts WHERE project_id = ? AND run_id = ?
+                   ORDER BY rowid""",
+                (project_id, run_id),
+            ).fetchall()
+        return [SandboxAttemptRecord(**json.loads(row["payload"])) for row in rows]
 
     def create_agent_lifecycle(
         self,

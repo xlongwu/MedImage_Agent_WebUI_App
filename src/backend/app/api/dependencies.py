@@ -20,6 +20,7 @@ from src.backend.app.schemas.desktop import (
 )
 from src.backend.app.schemas.execution_ticket import ExecutionTicket, ExecutionTicketEvent
 from src.backend.app.schemas.gateway_dispatch import GatewayDispatch, GatewayDispatchEvent
+from src.backend.app.schemas.sandbox import SandboxAttemptRecord
 from src.backend.app.schemas.goal_contract import GoalEvaluationRecord
 from src.backend.app.schemas.observation import ObservationRecord
 from src.backend.app.schemas.recovery import DiagnosisRecord, RecoveryProposal
@@ -92,6 +93,12 @@ class ProjectStore(Protocol):
     def list_gateway_dispatch_events(
         self, dispatch_id: str
     ) -> list[GatewayDispatchEvent]: ...
+
+    def get_sandbox_attempt(self, sandbox_id: str) -> SandboxAttemptRecord | None: ...
+
+    def list_sandbox_attempts_for_run(
+        self, project_id: str, run_id: str
+    ) -> list[SandboxAttemptRecord]: ...
 
     def create_agent_lifecycle(
         self,

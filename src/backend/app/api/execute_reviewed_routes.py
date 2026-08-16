@@ -1347,6 +1347,9 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                 approval_summary_hash=approval_summary_hash,
                 execution_environment_snapshot_id=approval_summary.execution_environment_snapshot_id,
                 execution_environment_hash=approval_summary.execution_environment_hash,
+                sandbox_policies=approval_summary.sandbox_policies,
+                sandbox_policy_version=approval_summary.sandbox_policy_version,
+                sandbox_policies_hash=approval_summary.sandbox_policies_hash,
                 memory_context_hash=reviewed_plan.memory_context_hash,
                 approved_actor=str(
                     (request.approval or {}).get("approved_by") or request.actor or "local-user"

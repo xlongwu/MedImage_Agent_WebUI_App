@@ -73,9 +73,7 @@ export {
 
 export {
   createPreprocessingRun,
-  executeNuisanceRegressionSandbox,
   executePreprocessingPythonPreflight,
-  executeSpmSandboxSliceTimingRealign,
   generateMotionMetricsDraft,
   getNativeFullPreprocessingReport,
   getNativeFullPreprocessingRun,
@@ -90,7 +88,6 @@ export {
   getProjectNiftiQcSnapshot,
   getProjectNiftiThumbnail,
   registerConvertedPreprocessingInput,
-  registerSandboxSpmOutputs,
   runNativeFullPreprocessingDryRun,
   runFilteringDryRun,
   runSpmRealignDryRun,
