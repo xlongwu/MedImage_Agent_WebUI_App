@@ -7,17 +7,19 @@ import pytest
 from src.backend.app.schemas.agent_eval import AgentEvalManifest, AgentEvalOutcome
 from src.backend.app.services.agent_evaluation_service import AgentEvaluationService
 
-_MANIFEST = Path(__file__).parents[1] / "fixtures" / "agent_eval" / "v1" / "manifest.json"
+_MANIFEST = Path(__file__).parents[1] / "fixtures" / "agent_eval" / "v2" / "manifest.json"
 
 
-def test_versioned_eval_manifest_covers_required_categories_and_bilingual_oracles() -> None:
+def test_versioned_eval_manifest_uses_only_registered_drivers_and_bilingual_oracles() -> None:
     manifest = AgentEvalManifest.model_validate_json(_MANIFEST.read_text(encoding="utf-8"))
 
-    assert {case.category for case in manifest.cases} == {
-        "normal", "recovery", "provider", "safety", "stability"
+    assert {case.driver for case in manifest.cases} == {
+        "plan_only", "decision_required", "provider_failure", "invalid_action",
+        "duplicate_command", "restart_recovery", "approval_drift", "unsafe_path",
+        "memory_context",
     }
     assert {case.language for case in manifest.cases} == {"en", "zh-CN"}
-    assert all(case.forbidden_calls and case.key_assertions for case in manifest.cases)
+    assert all(case.goal and case.expected_final_state for case in manifest.cases)
 
 
 def test_metric_aggregation_preserves_unknown_quality_and_rejects_out_of_scope_outcomes() -> None:

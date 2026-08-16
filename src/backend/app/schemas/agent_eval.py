@@ -7,7 +7,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-AgentEvalCategory = Literal["normal", "recovery", "provider", "safety", "stability"]
+AgentEvalDriver = Literal[
+    "plan_only", "decision_required", "provider_failure", "invalid_action",
+    "duplicate_command", "restart_recovery", "approval_drift", "unsafe_path",
+    "memory_context",
+]
 
 
 class AgentEvalCase(BaseModel):
@@ -16,21 +20,19 @@ class AgentEvalCase(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     case_id: str = Field(min_length=1, max_length=128)
-    category: AgentEvalCategory
+    driver: AgentEvalDriver
     language: Literal["en", "zh-CN"]
-    input_fixture: dict[str, Any]
+    goal: str = Field(min_length=1, max_length=240)
     expected_stop_point: str = Field(min_length=1, max_length=128)
-    allowed_actions: tuple[str, ...] = ()
-    forbidden_calls: tuple[str, ...] = ()
     expected_final_state: str = Field(min_length=1, max_length=64)
-    expected_integrity_status: Literal["complete", "incomplete", "conflict"] = "complete"
-    key_assertions: dict[str, str | int | bool] = Field(default_factory=dict)
+    expect_execution: bool = False
+    required_outcomes: dict[str, bool] = Field(default_factory=dict)
 
 
 class AgentEvalManifest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     suite_version: str = Field(min_length=1, max_length=64)
     baseline_id: str = Field(min_length=1, max_length=128)
     cases: tuple[AgentEvalCase, ...] = Field(min_length=1)
@@ -54,6 +56,24 @@ class AgentEvalOutcome(BaseModel):
     model_call_count: int | None = Field(default=None, ge=0)
     latency_ms: int | None = Field(default=None, ge=0)
     user_interactions: int | None = Field(default=None, ge=0)
+    memory_relevant_included: bool | None = None
+    memory_irrelevant_excluded: bool | None = None
+    memory_stale_blocked: bool | None = None
+    memory_science_confirmation_required: bool | None = None
+    context_required_sections_complete: bool | None = None
+    context_cross_project_blocked: bool | None = None
+
+
+class AgentEvalCaseResult(BaseModel):
+    """A data-free, durable-record-derived verdict for one evaluation case."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    case_id: str
+    passed: bool
+    failure_codes: tuple[str, ...] = ()
+    lifecycle_id_hash: str = Field(min_length=64, max_length=64)
+    trace_hash: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 class AgentEvaluationReport(BaseModel):
@@ -66,6 +86,8 @@ class AgentEvaluationReport(BaseModel):
     metrics: dict[str, float | int | None]
     missing_case_ids: tuple[str, ...] = ()
     quality_comparable_case_count: int = Field(ge=0)
+    results: tuple[AgentEvalCaseResult, ...] = ()
+    gate_passed: bool = False
 
 
 # Phase 13, stage 7 deliberately describes an offline comparison only. These

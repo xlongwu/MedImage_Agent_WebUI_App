@@ -41,10 +41,16 @@ class AgentEvaluationService:
                 "mean_model_calls": self._mean(selected, "model_call_count"),
                 "mean_latency_ms": self._mean(selected, "latency_ms"),
                 "mean_user_interactions": self._mean(selected, "user_interactions"),
+                "memory_relevant_inclusion_rate": self._rate(selected, "memory_relevant_included"),
+                "memory_irrelevant_exclusion_rate": self._rate(selected, "memory_irrelevant_excluded"),
+                "memory_stale_block_rate": self._rate(selected, "memory_stale_blocked"),
+                "memory_science_confirmation_rate": self._rate(selected, "memory_science_confirmation_required"),
+                "context_required_section_complete_rate": self._rate(selected, "context_required_sections_complete"),
+                "context_cross_project_block_rate": self._rate(selected, "context_cross_project_blocked"),
             },
             missing_case_ids=tuple(case.case_id for case in manifest.cases if case.case_id not in by_id),
             quality_comparable_case_count=sum(
-                bool(case.key_assertions) for case in manifest.cases if case.case_id in by_id
+                bool(case.required_outcomes) for case in manifest.cases if case.case_id in by_id
             ),
         )
 

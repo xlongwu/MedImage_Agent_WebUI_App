@@ -30,6 +30,20 @@ jobs:
       - name: Run tests
         run: pytest --strict-markers --tb=short
 
+      - name: Run deterministic Agent evaluation
+        run: >-
+          python scripts/run_agent_evaluation.py
+          --manifest tests/fixtures/agent_eval/v2/manifest.json
+          --provider rule_based
+          --output artifacts/agent-eval/ci-report.json
+
+      - name: Upload Agent evaluation report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-evaluation-report
+          path: artifacts/agent-eval/ci-report.json
+
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 10
