@@ -8,6 +8,7 @@ from typing import Any, Callable
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.schemas.approval_summary import ApprovalSummary
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
+from src.backend.app.services.agent_invariant_checker import AgentInvariantChecker
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.reviewed_execution_service import ReviewedExecutionService
@@ -37,6 +38,10 @@ class AgentApprovalExecutionService:
         command_id: str, actor: str,
     ):
         current = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
+        AgentInvariantChecker(self.store).assert_clear(
+            project_id=project_id,
+            lifecycle_id=lifecycle_id,
+        )
         if current.state != "WAITING_FOR_APPROVAL" or not current.reviewed_plan_id:
             raise SafetyError("AGENT_APPROVAL_STATE_REQUIRED", code="AGENT_APPROVAL_STATE_REQUIRED")
         reviewed = self.store.get_reviewed_plan(current.reviewed_plan_id)

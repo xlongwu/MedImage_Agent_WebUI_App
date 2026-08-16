@@ -284,3 +284,33 @@ def test_agent_task_gets_do_not_change_sqlite_or_file_inventory(tmp_path) -> Non
         app.dependency_overrides.pop(get_project_store, None)
 
     assert snapshot() == before
+
+
+def test_agent_task_invariant_diagnostic_is_explicit_and_audited(tmp_path, monkeypatch) -> None:
+    store = SQLiteDesktopStore(tmp_path / "agent-task-invariants.sqlite")
+    store.add_project(
+        ProjectDetail(
+            id="project-1", name="Research cohort", study_id="study-1", modality="rs-fMRI",
+            created_date="2026-07-16", subjects_count=1, current_pipeline_id="pipeline-1",
+            sequences=[], scans_count=1, total_size="1 MB", current_model_id="none",
+        ),
+        health_status="Ready", rawdata_dir="",
+    )
+    lifecycle = AgentOrchestrator(store).create(
+        project_id="project-1", command_id="create-invariant-fixture", actor="test",
+    )
+    app.dependency_overrides[get_project_store] = lambda: store
+    monkeypatch.setenv("MEDIMAGE_AGENT_APPROVAL_TOKEN", "invariant-token")
+    monkeypatch.setenv("MEDIMAGE_AGENT_APPROVAL_ACTOR", "invariant-auditor")
+    try:
+        response = TestClient(app).post(
+            f"/api/projects/project-1/agent/tasks/{lifecycle.lifecycle_id}/invariant-check",
+            headers={"X-MedImage-Agent-Approval-Token": "invariant-token"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_project_store, None)
+
+    assert response.status_code == 200
+    assert response.json()["lifecycle_id"] == lifecycle.lifecycle_id
+    assert response.json()["findings"][0]["code"] == "AGENT_INV_WAKE_MISSING"
+    assert len(store.list_agent_invariant_audits(lifecycle.lifecycle_id)) == 1

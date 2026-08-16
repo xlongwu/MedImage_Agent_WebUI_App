@@ -25,10 +25,12 @@ from src.backend.app.schemas.agent_task import (
     CancelAgentTaskRequest,
     CreateAgentTaskRequest,
 )
+from src.backend.app.schemas.agent_invariant import AgentInvariantReport
 from src.backend.app.schemas.agent_trace import AgentTracePage
 from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
 from src.backend.app.services.agent_task_read_model import AgentTaskReadModel
 from src.backend.app.services.agent_trace_service import AgentTraceService
+from src.backend.app.services.agent_invariant_checker import AgentInvariantChecker
 
 router = APIRouter(prefix="/api/projects/{project_id}/agent/tasks", tags=["agent-tasks"])
 
@@ -206,6 +208,24 @@ def get_agent_task_harness(
             lifecycle_id=task_id,
             after=after,
             limit=limit,
+        )
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@router.post("/{task_id}/invariant-check", response_model=AgentInvariantReport)
+def check_agent_task_invariants(
+    project_id: str,
+    task_id: str,
+    _approver: Annotated[str, Depends(require_agent_task_approval_principal)],
+    store: ProjectStore = Depends(get_project_store),
+) -> AgentInvariantReport:
+    """Record one redacted, explicit diagnostic pass; it never repairs state."""
+    try:
+        return AgentInvariantChecker(store).check(
+            project_id=project_id,
+            lifecycle_id=task_id,
+            persist_audit=True,
         )
     except Exception as exc:
         raise_api_error(exc)

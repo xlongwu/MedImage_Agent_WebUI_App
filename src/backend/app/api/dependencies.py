@@ -5,10 +5,11 @@ from typing import Any, Protocol
 
 from fastapi import Depends
 
-from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
-from src.backend.app.schemas.agent_harness import AgentActionRecord, AgentHarnessAttempt, AgentHarnessContext, AgentHarnessStep
-from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
 from src.backend.app.schemas.agent_evidence import EvidenceSnapshot
+from src.backend.app.schemas.agent_harness import AgentActionRecord, AgentHarnessAttempt, AgentHarnessContext, AgentHarnessStep
+from src.backend.app.schemas.agent_invariant import AgentInvariantAuditRecord
+from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
+from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
 from src.backend.app.schemas.desktop import (
     DatasetSummary,
     ProjectDetail,
@@ -158,6 +159,10 @@ class ProjectStore(Protocol):
     def update_agent_harness_action(self, record: AgentActionRecord, *, expected_status: str) -> AgentActionRecord: ...
 
     def list_agent_harness_actions(self, attempt_id: str) -> list[AgentActionRecord]: ...
+
+    def add_agent_invariant_audit(self, record: AgentInvariantAuditRecord) -> AgentInvariantAuditRecord: ...
+
+    def list_agent_invariant_audits(self, lifecycle_id: str) -> list[AgentInvariantAuditRecord]: ...
 
     def enqueue_agent_task_wake(self, record: AgentTaskWakeRecord) -> AgentTaskWakeRecord: ...
 

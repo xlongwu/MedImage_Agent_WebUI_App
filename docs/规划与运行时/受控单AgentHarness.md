@@ -122,3 +122,15 @@ recovery/token 预算、状态、下一步、让出次数、actual fallback 路�
   recovery、provider、safety、stability 及中英文案例。`AgentEvaluationService` 只汇总显式
   oracle 的 routing、提问、停止点、安全拒绝、schema repair/fallback、step/call/latency 和
   交互指标；分数只用于版本比较，不自动发布策略，也不构成科学验证结论。
+
+## 运行时不变量自检
+
+`AgentInvariantChecker` 与 Trace、Replay 并列，但只比较已持久化的 lifecycle、Harness
+调用和动作、Reviewed Plan、Approval Summary、Execution Ticket、run link 和 Observation。
+它不会读取 rawdata、重放模型、修复记录、批准或分派。阻断级发现会在 Harness 模型调用和审批
+前拒绝推进；缺失 wake 仅作为可由既有调度器重新登记的警告。启动时最多检查 200 条活动任务，
+超限只记录结构化警告，不阻塞应用启动。
+
+受保护的 `POST /api/projects/{project_id}/agent/tasks/{task_id}/invariant-check` 可请求一次
+显式检查，并只保存 finding code、关联 ID、哈希和报告哈希的最小审计记录。它不返回提示词、
+原始响应、路径、凭据或研究数据；普通 GET 投影保持完全只读。

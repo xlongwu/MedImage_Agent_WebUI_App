@@ -18,6 +18,7 @@ from src.backend.app.schemas.agent_harness import (
     AgentHarnessStep,
 )
 from src.backend.app.schemas.agent_evidence import EvidenceSnapshot
+from src.backend.app.schemas.agent_invariant import AgentInvariantAuditRecord
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
 from src.backend.app.schemas.desktop import (
@@ -322,6 +323,16 @@ class SQLiteDesktopStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_harness_actions_attempt_created
                     ON agent_harness_actions(attempt_id, created_at);
+                CREATE TABLE IF NOT EXISTS agent_invariant_audits (
+                    audit_id TEXT PRIMARY KEY,
+                    lifecycle_id TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    report_hash TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_invariant_audits_lifecycle_time
+                    ON agent_invariant_audits(lifecycle_id, created_at);
                 CREATE TABLE IF NOT EXISTS observations (
                     observation_id TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL,
@@ -2692,6 +2703,40 @@ class SQLiteDesktopStore:
                 (attempt_id,),
             ).fetchall()
         return [AgentActionRecord(**json.loads(row["payload"])) for row in rows]
+
+    def add_agent_invariant_audit(
+        self, record: AgentInvariantAuditRecord
+    ) -> AgentInvariantAuditRecord:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO agent_invariant_audits
+                    (audit_id, lifecycle_id, project_id, report_hash, payload, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.audit_id,
+                    record.lifecycle_id,
+                    record.project_id,
+                    record.report_hash,
+                    self._dump_model(record),
+                    record.created_at.isoformat(),
+                ),
+            )
+        return record
+
+    def list_agent_invariant_audits(
+        self, lifecycle_id: str
+    ) -> list[AgentInvariantAuditRecord]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload FROM agent_invariant_audits
+                WHERE lifecycle_id = ? ORDER BY created_at, audit_id
+                """,
+                (lifecycle_id,),
+            ).fetchall()
+        return [AgentInvariantAuditRecord(**json.loads(row["payload"])) for row in rows]
 
     def enqueue_agent_task_wake(self, record: AgentTaskWakeRecord) -> AgentTaskWakeRecord:
         """Persist a planning wake before any in-memory notification occurs.

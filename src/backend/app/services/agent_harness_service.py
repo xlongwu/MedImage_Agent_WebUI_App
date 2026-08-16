@@ -43,6 +43,7 @@ from src.backend.app.services.agent_harness_context_service import (
     HarnessContextBuilder,
     HarnessContextSources,
 )
+from src.backend.app.services.agent_invariant_checker import AgentInvariantChecker
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_planning_action_service import (
     AgentPlanningActionService,
@@ -163,6 +164,10 @@ class AgentHarnessService:
         return self._transition_attempt(attempt, status="STOPPED", terminal_reason=reason, clear_lease=True)
 
     def run_one(self, *, lifecycle, actor: str, lease_owner: str | None = None) -> HarnessRunResult:
+        AgentInvariantChecker(self.store, now=self.now).assert_clear(
+            project_id=lifecycle.project_id,
+            lifecycle_id=lifecycle.lifecycle_id,
+        )
         attempt = self.store.get_agent_harness_attempt(lifecycle.lifecycle_id)
         if attempt is None:
             return HarnessRunResult(lifecycle=lifecycle, attempt=None)

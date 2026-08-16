@@ -459,6 +459,8 @@ def _plan_saver(store):
             project_id=kwargs["project_id"],
             project_config_path=kwargs["project_config_path"],
             plan_hash="plan-hash",
+            planning_inputs_hash="planning-inputs-hash",
+            evidence_snapshot_hash="evidence-snapshot-hash",
             created_at=NOW.isoformat(),
             updated_at=NOW.isoformat(),
             payload={

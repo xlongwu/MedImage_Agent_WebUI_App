@@ -58,6 +58,7 @@ from src.backend.app.api.tool_catalog_routes import router as tool_catalog_route
 from src.backend.app.core.config import ConfigService
 from src.backend.app.core.logging_config import setup_logging
 from src.backend.app.runtime.node_contract_consistency import assert_node_contract_consistency
+from src.backend.app.services.agent_invariant_checker import AgentInvariantChecker
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.memory_candidate_service import MemoryCandidateService
 from src.backend.app.services.memory_consolidation_service import MemoryConsolidationService
@@ -71,6 +72,35 @@ from src.backend.app.services.memory_repository import MemoryRepository
 from src.backend.app.version import API_DESCRIPTION, API_TITLE, APP_VERSION
 
 logger = logging.getLogger(__name__)
+
+
+def _run_agent_invariant_startup_check() -> None:
+    """Inspect a bounded active set without repairing or delaying startup."""
+
+    store = get_project_store()
+    checker = AgentInvariantChecker(store)
+    active_states = {
+        "CREATED", "CONTEXT_READY", "PLAN_DRAFTED", "PLAN_VALIDATED", "WAITING_FOR_APPROVAL",
+        "APPROVED", "EXECUTION_READY", "RUNNING", "OBSERVING", "EVALUATING",
+    }
+    checked = 0
+    for project in store.list_projects()[:100]:
+        for lifecycle in store.list_agent_lifecycles(project.id):
+            if checked >= 200:
+                logger.warning("agent_invariant_startup_scan_limited", extra={"error_code": "AGENT_INV_STARTUP_SCAN_LIMIT"})
+                return
+            if lifecycle.state not in active_states:
+                continue
+            checked += 1
+            try:
+                report = checker.check(project_id=project.id, lifecycle_id=lifecycle.lifecycle_id)
+                for finding in report.findings:
+                    logger.warning(
+                        "agent_invariant_startup_finding",
+                        extra={"error_code": finding.code, "lifecycle_id": lifecycle.lifecycle_id},
+                    )
+            except Exception:
+                logger.exception("agent_invariant_startup_check_failed")
 
 
 def _run_memory_startup_reconcile() -> None:
@@ -129,6 +159,7 @@ async def _lifespan(_app: FastAPI):
         AgentTaskReconciler(get_project_store()).reconcile_incomplete_on_startup()
     command_service = get_agent_task_command_service_for_store(get_project_store())
     task_scheduler = command_service.planning_service.scheduler
+    _run_agent_invariant_startup_check()
     task_scheduler.recover_once_on_startup()
     _run_memory_startup_reconcile()
     try:
