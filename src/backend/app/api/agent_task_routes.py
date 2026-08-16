@@ -10,7 +10,11 @@ from src.backend.app.api._errors import raise_api_error
 from src.backend.app.api.agent_task_authorization import (
     require_agent_task_approval_principal,
 )
-from src.backend.app.api.dependencies import ProjectStore, get_project_store
+from src.backend.app.api.dependencies import (
+    ProjectStore,
+    get_agent_task_command_service,
+    get_project_store,
+)
 from src.backend.app.schemas.agent_task import (
     AgentTaskEventPage,
     AgentTaskListResponse,
@@ -34,9 +38,10 @@ def create_agent_task(
     project_id: str,
     request: CreateAgentTaskRequest,
     store: ProjectStore = Depends(get_project_store),
+    commands: AgentTaskCommandService = Depends(get_agent_task_command_service),
 ) -> AgentTaskResponse:
     try:
-        lifecycle = AgentTaskCommandService(store).create(
+        lifecycle = commands.create(
             project_id=project_id,
             goal=request.goal,
             command_id=request.command_id,
@@ -53,9 +58,10 @@ def answer_agent_task(
     task_id: str,
     request: AnswerAgentTaskRequest,
     store: ProjectStore = Depends(get_project_store),
+    commands: AgentTaskCommandService = Depends(get_agent_task_command_service),
 ) -> AgentTaskResponse:
     try:
-        lifecycle = AgentTaskCommandService(store).answer(
+        lifecycle = commands.answer(
             project_id=project_id,
             lifecycle_id=task_id,
             batch_id=request.batch_id,
@@ -75,9 +81,10 @@ def approve_agent_task(
     request: ApproveAgentTaskRequest,
     approver: Annotated[str, Depends(require_agent_task_approval_principal)],
     store: ProjectStore = Depends(get_project_store),
+    commands: AgentTaskCommandService = Depends(get_agent_task_command_service),
 ) -> AgentTaskResponse:
     try:
-        lifecycle = AgentTaskCommandService(store).approve(
+        lifecycle = commands.approve(
             project_id=project_id,
             lifecycle_id=task_id,
             approval_summary_hash=request.approval_summary_hash,
@@ -95,9 +102,10 @@ def cancel_agent_task(
     task_id: str,
     request: CancelAgentTaskRequest,
     store: ProjectStore = Depends(get_project_store),
+    commands: AgentTaskCommandService = Depends(get_agent_task_command_service),
 ) -> AgentTaskResponse:
     try:
-        lifecycle = AgentTaskCommandService(store).cancel(
+        lifecycle = commands.cancel(
             project_id=project_id,
             lifecycle_id=task_id,
             command_id=request.command_id,
@@ -116,9 +124,10 @@ def approve_agent_task_recovery(
     request: ApproveAgentTaskRecoveryRequest,
     approver: Annotated[str, Depends(require_agent_task_approval_principal)],
     store: ProjectStore = Depends(get_project_store),
+    commands: AgentTaskCommandService = Depends(get_agent_task_command_service),
 ) -> AgentTaskResponse:
     try:
-        lifecycle = AgentTaskCommandService(store).approve_recovery(
+        lifecycle = commands.approve_recovery(
             project_id=project_id,
             lifecycle_id=task_id,
             command_id=request.command_id,

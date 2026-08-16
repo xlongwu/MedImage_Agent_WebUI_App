@@ -33,10 +33,10 @@ class AgentTaskReconciler:
     MONITOR_INTERVAL_SECONDS = 1.0
     MONITOR_WALL_SECONDS = 900.0
 
-    def __init__(self, store, *, harness_waker=None) -> None:
+    def __init__(self, store, *, planning_waker=None) -> None:
         self.store = store
         self.orchestrator = AgentOrchestrator(store)
-        self.harness_waker = harness_waker
+        self.planning_waker = planning_waker
 
     def reconcile_once(self, *, project_id: str, lifecycle_id: str, actor: str = "system-reconciler"):
         lock = self._lock(lifecycle_id)
@@ -58,7 +58,7 @@ class AgentTaskReconciler:
                     source_command="terminal_evidence_incomplete",
                     reason=f"Terminal evidence is {evidence.status.lower()} or conflicting.",
                 )
-                self._wake_harness(handed_off, reason="run_reconciled")
+                self._enqueue_planning(handed_off, reason="run_reconciled")
                 return handed_off
             try:
                 observed = self.orchestrator.observe(
@@ -81,7 +81,7 @@ class AgentTaskReconciler:
                         actor=actor,
                     )
                 if evaluated.state != "RUNNING":
-                    self._wake_harness(evaluated, reason="run_reconciled")
+                    self._enqueue_planning(evaluated, reason="run_reconciled")
                 return evaluated
             except (SafetyError, StateStoreError):
                 latest = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
@@ -208,8 +208,8 @@ class AgentTaskReconciler:
         with _LOCKS_GUARD:
             return _LOCKS.setdefault(lifecycle_id, Lock())
 
-    def _wake_harness(self, lifecycle, *, reason: str) -> bool:
-        """Wake only from the reconciler owner after terminal state persistence."""
+    def _enqueue_planning(self, lifecycle, *, reason: str) -> bool:
+        """Request a durable planning continuation after terminal persistence."""
         details = self._terminal_wake_details(lifecycle)
         recorder = getattr(self.orchestrator, "record_event", None)
         if callable(recorder):
@@ -218,20 +218,12 @@ class AgentTaskReconciler:
                 lifecycle_id=lifecycle.lifecycle_id,
                 command_id=f"reconcile:{lifecycle.lifecycle_id}:{lifecycle.run_id}:wake:{details['wake_hash']}",
                 actor="system-reconciler",
-                source_command="harness_run_reconciled",
-                details={"harness_wake_hash": details["wake_hash"], **details},
+                source_command="planning_run_reconciled",
+                details={"planning_wake_hash": details["wake_hash"], **details},
             )
-        if self.harness_waker is not None:
-            return bool(self.harness_waker(lifecycle=lifecycle, reason=reason, details=details))
-        from src.backend.app.runtime.agent_harness_scheduler import get_agent_harness_scheduler
-
-        scheduler = get_agent_harness_scheduler(self.store)
-        return scheduler.wake(
-            project_id=lifecycle.project_id,
-            lifecycle_id=lifecycle.lifecycle_id,
-            reason=reason,
-            details=details,
-        )
+        if self.planning_waker is None:
+            return False
+        return bool(self.planning_waker(lifecycle=lifecycle, reason=reason, details=details))
 
     def _terminal_wake_details(self, lifecycle) -> dict[str, str | None]:
         """Use only persisted, bound record hashes as an idempotency fingerprint."""

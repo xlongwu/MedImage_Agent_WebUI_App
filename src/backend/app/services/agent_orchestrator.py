@@ -17,6 +17,7 @@ from src.backend.app.schemas.agent_lifecycle import (
     AgentLifecycleState,
     RetryProposal,
 )
+from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
 from src.backend.app.schemas.execution_ticket import ExecutionTicket
 from src.backend.app.schemas.goal_contract import GoalEvaluationRecord
 from src.backend.app.schemas.observation import ObservationRecord
@@ -36,9 +37,11 @@ from src.backend.app.services.run_diagnosis_service import RunDiagnosisService
 class AgentLifecycleStore(Protocol):
     def get_project(self, project_id: str) -> object | None: ...
     def create_agent_lifecycle(self, record, event): ...
+    def create_agent_lifecycle_with_wake(self, record, event, wake): ...
     def get_agent_lifecycle(self, lifecycle_id: str): ...
     def list_agent_lifecycles(self, project_id: str): ...
     def transition_agent_lifecycle(self, record, event, *, expected_state: str): ...
+    def transition_agent_lifecycle_with_wake(self, record, event, wake, *, expected_state: str): ...
     def add_agent_lifecycle_event(self, event): ...
     def list_agent_lifecycle_events(self, lifecycle_id: str): ...
     def get_execution_ticket(self, execution_ticket_id: str) -> ExecutionTicket | None: ...
@@ -107,6 +110,7 @@ class AgentOrchestrator:
         actor: str,
         goal_text: str | None = None,
         goal_hash: str | None = None,
+        planning_wake_reason: str | None = None,
     ) -> AgentLifecycleRecord:
         if self.store.get_project(project_id) is None:
             raise SafetyError("LIFECYCLE_PROJECT_NOT_FOUND", code="LIFECYCLE_PROJECT_NOT_FOUND")
@@ -130,6 +134,10 @@ class AgentOrchestrator:
             to_state="CREATED",
         )
         try:
+            if planning_wake_reason and hasattr(self.store, "create_agent_lifecycle_with_wake"):
+                return self.store.create_agent_lifecycle_with_wake(
+                    record, event, self._planning_wake(record, planning_wake_reason)
+                )
             return self.store.create_agent_lifecycle(record, event)
         except sqlite3.IntegrityError as exc:
             raise SafetyError("LIFECYCLE_COMMAND_REPLAYED", code="LIFECYCLE_COMMAND_REPLAYED") from exc
@@ -253,6 +261,7 @@ class AgentOrchestrator:
         reason: str | None = None,
         updates: dict[str, Any] | None = None,
         details: dict[str, Any] | None = None,
+        planning_wake_reason: str | None = None,
     ) -> AgentLifecycleRecord:
         current = self.get(project_id=project_id, lifecycle_id=lifecycle_id)
         if to_state not in _TRANSITIONS[current.state]:
@@ -310,6 +319,11 @@ class AgentOrchestrator:
             details=details,
         )
         try:
+            if planning_wake_reason and hasattr(self.store, "transition_agent_lifecycle_with_wake"):
+                return self.store.transition_agent_lifecycle_with_wake(
+                    updated, event, self._planning_wake(updated, planning_wake_reason),
+                    expected_state=current.state,
+                )
             return self.store.transition_agent_lifecycle(
                 updated,
                 event,
@@ -319,6 +333,19 @@ class AgentOrchestrator:
             raise SafetyError("LIFECYCLE_COMMAND_REPLAYED", code="LIFECYCLE_COMMAND_REPLAYED") from exc
         except RuntimeError as exc:
             raise StateStoreError("LIFECYCLE_CONCURRENT_TRANSITION") from exc
+
+    @staticmethod
+    def _planning_wake(record: AgentLifecycleRecord, reason: str) -> AgentTaskWakeRecord:
+        return AgentTaskWakeRecord(
+            wake_id=f"agent_wake_{uuid4().hex}",
+            project_id=record.project_id,
+            lifecycle_id=record.lifecycle_id,
+            step_key=f"{record.state}:{record.updated_at.isoformat()}",
+            reason=reason[:128],
+            available_at=record.updated_at,
+            created_at=record.updated_at,
+            updated_at=record.updated_at,
+        )
 
     def prepare_reviewed_execution(
         self,

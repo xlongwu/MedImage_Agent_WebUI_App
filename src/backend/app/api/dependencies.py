@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from threading import Lock
 from typing import Any, Protocol
+
+from fastapi import Depends
 
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.agent_harness import AgentActionRecord, AgentHarnessAttempt, AgentHarnessContext, AgentHarnessStep
+from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
 from src.backend.app.schemas.agent_evidence import EvidenceSnapshot
 from src.backend.app.schemas.desktop import (
     DatasetSummary,
@@ -94,6 +98,10 @@ class ProjectStore(Protocol):
         event: AgentLifecycleEvent,
     ) -> AgentLifecycleRecord: ...
 
+    def create_agent_lifecycle_with_wake(
+        self, record: AgentLifecycleRecord, event: AgentLifecycleEvent, wake: AgentTaskWakeRecord
+    ) -> AgentLifecycleRecord: ...
+
     def get_agent_lifecycle(self, lifecycle_id: str) -> AgentLifecycleRecord | None: ...
 
     def list_agent_lifecycles(self, project_id: str) -> list[AgentLifecycleRecord]: ...
@@ -104,6 +112,10 @@ class ProjectStore(Protocol):
         event: AgentLifecycleEvent,
         *,
         expected_state: str,
+    ) -> AgentLifecycleRecord: ...
+
+    def transition_agent_lifecycle_with_wake(
+        self, record: AgentLifecycleRecord, event: AgentLifecycleEvent, wake: AgentTaskWakeRecord, *, expected_state: str
     ) -> AgentLifecycleRecord: ...
 
     def list_agent_lifecycle_events(
@@ -146,6 +158,16 @@ class ProjectStore(Protocol):
     def update_agent_harness_action(self, record: AgentActionRecord, *, expected_status: str) -> AgentActionRecord: ...
 
     def list_agent_harness_actions(self, attempt_id: str) -> list[AgentActionRecord]: ...
+
+    def enqueue_agent_task_wake(self, record: AgentTaskWakeRecord) -> AgentTaskWakeRecord: ...
+
+    def claim_next_agent_task_wake(self, *, owner: str, now, lease_expires_at) -> AgentTaskWakeRecord | None: ...
+
+    def complete_agent_task_wake(self, record: AgentTaskWakeRecord, *, owner: str, now) -> AgentTaskWakeRecord: ...
+
+    def retry_agent_task_wake(self, record: AgentTaskWakeRecord, *, owner: str, now, available_at, error_code: str) -> AgentTaskWakeRecord: ...
+
+    def list_agent_task_wakes(self, *, project_id: str, include_consumed: bool = False) -> list[AgentTaskWakeRecord]: ...
 
     def add_observation(self, record: ObservationRecord) -> ObservationRecord: ...
 
@@ -292,3 +314,134 @@ import src.backend.app.services.mock_store as _mock_store_module  # noqa: E402
 
 def get_project_store() -> ProjectStore:
     return _mock_store_module.mock_store
+
+
+_AGENT_TASK_SERVICES_GUARD = Lock()
+_AGENT_TASK_SERVICES: dict[int, object] = {}
+
+
+def _build_agent_task_command_service(store: ProjectStore):
+    """Compose the Agent Task command graph at the application boundary.
+
+    All mutable and environment-derived dependencies are created here, rather
+    than by individual domain services.  The only intentional cycle is the
+    scheduler/planner pair; it is completed explicitly after both objects are
+    constructed.
+    """
+    from src.backend.app.core.config import ConfigService
+    from src.backend.app.planner.memory_influence_guard import MemoryInfluenceGuard
+    from src.backend.app.planner.reviewed_plan_store import save_reviewed_plan
+    from src.backend.app.services.agent_approval_execution_service import AgentApprovalExecutionService
+    from src.backend.app.services.agent_evidence_service import AgentEvidenceService
+    from src.backend.app.services.agent_harness_service import AgentHarnessService
+    from src.backend.app.services.agent_planning_action_service import AgentPlanningActionService
+    from src.backend.app.services.agent_planning_service import AgentPlanningService
+    from src.backend.app.services.agent_recovery_command_service import AgentRecoveryCommandService
+    from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
+    from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
+    from src.backend.app.services.agent_task_scheduler import AgentTaskScheduler
+    from src.backend.app.services.approval_summary_service import ApprovalSummaryService
+    from src.backend.app.services.goal_planning_service import GoalPlanningService
+    from src.backend.app.services.memory_repository import MemoryRepository
+    from src.backend.app.services.memory_retrieval_service import MemoryRetrievalService
+    from src.backend.app.services.recovery_execution_service import RecoveryExecutionService
+    from src.backend.app.services.reviewed_conversion_service import ReviewedConversionService
+    from src.backend.app.services.reviewed_execution_service import ReviewedExecutionService
+
+    config = ConfigService()
+    memory_context_service = None
+    memory_initialization_error = None
+    if config.memory.enabled and config.memory.use_enabled:
+        try:
+            memory_context_service = MemoryRetrievalService(
+                repository=MemoryRepository(config.memory.store_path),
+                project_store=store,
+                config=config.memory,
+            )
+        except Exception:
+            memory_initialization_error = "MEMORY_STORE_UNHEALTHY"
+
+    executor = ReviewedExecutionService()
+    summary_service = ApprovalSummaryService()
+    reconciler = AgentTaskReconciler(store)
+
+    def dry_runner(**kwargs):
+        from src.backend.app.api.execute_reviewed_routes import ExecuteReviewedRequest
+
+        return executor.execute(ExecuteReviewedRequest(
+            plan=kwargs["plan"],
+            approval=kwargs["approval"],
+            project_id=kwargs["project_id"],
+            reviewed_plan_id=kwargs.get("reviewed_plan_id"),
+            project_config_path=kwargs["project_config_path"],
+            dry_run=True,
+            actor=kwargs["actor"],
+            lifecycle_id=kwargs.get("lifecycle_id"),
+        ))
+
+    planning = AgentPlanningService(
+        store,
+        planner=None,
+        goal_planning_service=GoalPlanningService(),
+        plan_saver=save_reviewed_plan,
+        summary_service=summary_service,
+        conversion_checker=ReviewedConversionService().check_readiness,
+        conversion_node_id=ReviewedConversionService.NODE_ID,
+        memory_context_service=memory_context_service,
+        memory_initialization_error=memory_initialization_error,
+        memory_influence_guard=MemoryInfluenceGuard(),
+        harness_config=config.harness,
+        evidence_service=AgentEvidenceService(store),
+    )
+    scheduler = AgentTaskScheduler(store, planning_service=planning)
+    planning.bind_scheduler(scheduler)
+    reconciler.planning_waker = planning.enqueue_resume
+    if config.harness.enabled:
+        action_service = AgentPlanningActionService(
+            store,
+            draft_plan=lambda **kwargs: planning.draft_plan(**kwargs),
+        )
+        harness = AgentHarnessService(
+            store,
+            config=config.harness,
+            draft_plan=lambda **kwargs: planning.draft_plan(**kwargs),
+            planning_action_service=action_service,
+        )
+        planning.bind_harness(harness)
+
+    approval = AgentApprovalExecutionService(
+        store,
+        executor=executor,
+        summary_service=summary_service,
+        dry_runner=dry_runner,
+        reconcile_once=reconciler.reconcile_once,
+        monitor_scheduler=reconciler.start_bounded_monitor,
+    )
+    recovery = AgentRecoveryCommandService(
+        store,
+        stop_planning=(planning.harness_service.stop if planning.harness_service else None),
+        recovery_execution_factory=RecoveryExecutionService,
+    )
+    return AgentTaskCommandService(
+        store,
+        planning_service=planning,
+        approval_execution_service=approval,
+        recovery_command_service=recovery,
+    )
+
+
+def get_agent_task_command_service_for_store(store: ProjectStore):
+    """Return the one dependency-assembled command service for this store."""
+    key = id(store)
+    with _AGENT_TASK_SERVICES_GUARD:
+        service = _AGENT_TASK_SERVICES.get(key)
+        if service is None or getattr(service, "store", None) is not store:
+            service = _build_agent_task_command_service(store)
+            _AGENT_TASK_SERVICES[key] = service
+        return service
+
+
+def get_agent_task_command_service(
+    store: ProjectStore = Depends(get_project_store),
+):
+    return get_agent_task_command_service_for_store(store)

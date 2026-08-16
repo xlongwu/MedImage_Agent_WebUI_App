@@ -16,16 +16,103 @@ from src.backend.app.schemas.agent_lifecycle import (
 )
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
-from src.backend.app.services.agent_task_command_service import (
-    AgentTaskCommandService,
-    execution_prerequisite_issue,
-)
+from src.backend.app.core.config import ConfigService
+from src.backend.app.planner.memory_influence_guard import MemoryInfluenceGuard
+from src.backend.app.services.agent_approval_execution_service import AgentApprovalExecutionService
+from src.backend.app.services.agent_evidence_service import AgentEvidenceService
+from src.backend.app.services.agent_execution_prerequisites import execution_prerequisite_issue
+from src.backend.app.services.agent_planning_service import AgentPlanningService
+from src.backend.app.services.agent_recovery_command_service import AgentRecoveryCommandService
+from src.backend.app.services import agent_recovery_command_service
+from src.backend.app.services.agent_task_command_service import AgentTaskCommandService as ProductionAgentTaskCommandService
+from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
+from src.backend.app.services.approval_summary_service import ApprovalSummaryService
+from src.backend.app.services.goal_planning_service import GoalPlanningService
+from src.backend.app.services.recovery_execution_service import RecoveryExecutionService
+from src.backend.app.services.reviewed_conversion_service import ReviewedConversionService
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 from src.backend.app.services.reviewed_execution_service import ReviewedExecutionService
 from tests.helpers_phase8 import build_recovery_fixture
 from tests.unit.test_agent_task_read_model import ReadOnlyStore
 
 NOW = datetime(2026, 7, 16, tzinfo=UTC)
+
+
+class _NoopScheduler:
+    def notify(self) -> None:
+        return None
+
+
+class AgentTaskCommandService:
+    """Synchronous characterization adapter for the split command graph."""
+
+    def __init__(self, store, **kwargs) -> None:
+        executor = kwargs.get("executor") or ReviewedExecutionService()
+        summary_service = kwargs.get("summary_service") or ApprovalSummaryService()
+        reconciler = AgentTaskReconciler(store)
+        planning = AgentPlanningService(
+            store,
+            planner=kwargs.get("planner"),
+            goal_planning_service=GoalPlanningService(),
+            plan_saver=kwargs.get("plan_saver") or (
+                _plan_saver(store) if hasattr(store, "plans") else __import__(
+                    "src.backend.app.planner.reviewed_plan_store", fromlist=["save_reviewed_plan"]
+                ).save_reviewed_plan
+            ),
+            summary_service=summary_service,
+            conversion_checker=kwargs.get("conversion_checker") or (lambda **_kwargs: {"ok": True, "status": "not_required"}),
+            conversion_node_id=ReviewedConversionService.NODE_ID,
+            memory_context_service=kwargs.get("memory_context_service"),
+            memory_influence_guard=MemoryInfluenceGuard(),
+            harness_config=ConfigService().harness,
+            evidence_service=AgentEvidenceService(store),
+            scheduler=_NoopScheduler(),
+        )
+        approval = AgentApprovalExecutionService(
+            store,
+            executor=executor,
+            summary_service=summary_service,
+            dry_runner=kwargs.get("dry_runner") or (lambda **_kwargs: {"ok": True, "status": "DRY_RUN_OK"}),
+            reconcile_once=kwargs.get("reconcile_once") or reconciler.reconcile_once,
+            monitor_scheduler=kwargs.get("monitor_scheduler") or reconciler.start_bounded_monitor,
+        )
+        recovery = AgentRecoveryCommandService(
+            store, recovery_execution_factory=agent_recovery_command_service.RecoveryExecutionService
+        )
+        self._planning = planning
+        self._commands = ProductionAgentTaskCommandService(
+            store, planning_service=planning, approval_execution_service=approval,
+            recovery_command_service=recovery,
+        )
+
+    def create(self, **kwargs):
+        lifecycle = self._commands.create(**kwargs)
+        return self._planning.advance_planning(
+            project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id, wake_reason="create"
+        )
+
+    def answer(self, **kwargs):
+        lifecycle = self._commands.answer(**kwargs)
+        return self._planning.advance_planning(
+            project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id, wake_reason="answer"
+        )
+
+    def approve(self, **kwargs):
+        return self._commands.approve(**kwargs)
+
+    def cancel(self, **kwargs):
+        return self._commands.cancel(**kwargs)
+
+    def approve_recovery(self, **kwargs):
+        return self._commands.approve_recovery(**kwargs)
+
+    @property
+    def monitor_scheduler(self):
+        return self._commands.approval_execution_service.monitor_scheduler
+
+    @monitor_scheduler.setter
+    def monitor_scheduler(self, value):
+        self._commands.approval_execution_service.monitor_scheduler = value
 
 
 def test_reho_approval_preflight_rejects_missing_preprocessed_input() -> None:
@@ -84,13 +171,13 @@ def test_subject_science_decision_applies_reviewed_native_subject_scope() -> Non
         },
     }
 
-    decision = AgentTaskCommandService._science_decision_items(plan, {})[0]
+    decision = AgentPlanningService._science_decision_items(plan, {})[0]
 
     assert decision is not None
     assert decision.kind == "subject_id"
     assert [option.id for option in decision.options] == ["sub-001", "sub-002"]
 
-    applied = AgentTaskCommandService._apply_science_answers(
+    applied = AgentPlanningService._apply_science_answers(
         plan,
         {"science_answers": {"subject_id": "sub-001"}},
     )
@@ -1220,7 +1307,7 @@ def test_recovery_command_uses_recommended_candidate_and_one_explicit_approval(
             )
 
     monkeypatch.setattr(
-        "src.backend.app.services.agent_task_command_service.RecoveryExecutionService",
+        "src.backend.app.services.agent_recovery_command_service.RecoveryExecutionService",
         FakeRecoveryExecutionService,
     )
     result = AgentTaskCommandService(fixture.store).approve_recovery(

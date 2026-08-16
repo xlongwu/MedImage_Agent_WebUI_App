@@ -102,7 +102,7 @@ def test_reconcile_wakes_harness_only_after_terminal_records_are_persisted() -> 
     wakes = []
     reconciler = AgentTaskReconciler(
         store,
-        harness_waker=lambda *, lifecycle, reason, details: wakes.append((lifecycle.state, reason, details)) or True,
+        planning_waker=lambda *, lifecycle, reason, details: wakes.append((lifecycle.state, reason, details)) or True,
     )
     reconciler.orchestrator = FakeOrchestrator(store)
 
@@ -134,7 +134,7 @@ def test_conflicting_terminal_evidence_hands_off_without_observation() -> None:
     wakes = []
     reconciler = AgentTaskReconciler(
         store,
-        harness_waker=lambda *, lifecycle, reason, details: wakes.append((lifecycle.state, reason, details)) or True,
+        planning_waker=lambda *, lifecycle, reason, details: wakes.append((lifecycle.state, reason, details)) or True,
     )
     reconciler.orchestrator = FakeOrchestrator(store)
 

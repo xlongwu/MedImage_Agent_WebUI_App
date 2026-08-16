@@ -17,7 +17,10 @@ from src.backend.app.api.artifact_routes import router as artifact_router
 from src.backend.app.api.audit_record_routes import router as audit_record_router
 from src.backend.app.api.conversion_routes import router as conversion_router
 from src.backend.app.api.dashboard_routes import router as dashboard_router
-from src.backend.app.api.dependencies import get_project_store
+from src.backend.app.api.dependencies import (
+    get_agent_task_command_service_for_store,
+    get_project_store,
+)
 from src.backend.app.api.desktop_routes import router as desktop_router
 from src.backend.app.api.dpabi_routes import router as dpabi_router
 from src.backend.app.api.execute_reviewed_routes import router as execute_reviewed_router
@@ -54,7 +57,6 @@ from src.backend.app.api.task_routes import router as task_router
 from src.backend.app.api.tool_catalog_routes import router as tool_catalog_router
 from src.backend.app.core.config import ConfigService
 from src.backend.app.core.logging_config import setup_logging
-from src.backend.app.runtime.agent_harness_scheduler import get_agent_harness_scheduler
 from src.backend.app.runtime.node_contract_consistency import assert_node_contract_consistency
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.memory_candidate_service import MemoryCandidateService
@@ -122,18 +124,18 @@ def _run_memory_startup_reconcile() -> None:
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     """Run one bounded recovery pass only when explicitly enabled."""
-    harness_scheduler = None
+    task_scheduler = None
     if os.getenv("MEDIMAGE_AGENT_STARTUP_RECONCILE", "0") == "1":
         AgentTaskReconciler(get_project_store()).reconcile_incomplete_on_startup()
-    if ConfigService().harness.enabled:
-        harness_scheduler = get_agent_harness_scheduler(get_project_store())
-        harness_scheduler.recover_once_on_startup()
+    command_service = get_agent_task_command_service_for_store(get_project_store())
+    task_scheduler = command_service.planning_service.scheduler
+    task_scheduler.recover_once_on_startup()
     _run_memory_startup_reconcile()
     try:
         yield
     finally:
-        if harness_scheduler is not None:
-            harness_scheduler.shutdown()
+        if task_scheduler is not None:
+            task_scheduler.shutdown()
 
 
 def create_app() -> FastAPI:
