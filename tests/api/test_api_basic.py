@@ -31,18 +31,14 @@ def test_path_traversal_rejected():
     assert response.status_code in {400, 403}
 
 
-def test_planner_draft_api():
+def test_removed_planner_draft_api_returns_not_found():
     client = TestClient(app)
     response = client.post(
         "/api/planner/draft",
         json={"downstream_task": "ALFF analysis", "disease_type": "AD"},
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["ok"] is True
-    assert payload["advice_only"] is True
-    assert payload["recommended_pipeline_path"].endswith("pipeline_rsfmri_alff_falff.yaml")
+    assert response.status_code == 404
 
 
 def test_gui_agent_api_is_removed():

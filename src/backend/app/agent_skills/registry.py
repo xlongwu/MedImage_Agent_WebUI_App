@@ -45,7 +45,7 @@ def canonical_skill_hash(manifest: SkillManifest | dict[str, object], markdown: 
 
 
 class AgentSkillRegistry:
-    """Resolve only the three code-listed resources; never discover directories."""
+    """Resolve only fixed source-registered resources; never discover directories."""
 
     def __init__(self, *, package_root: Path | None = None) -> None:
         self.package_root = (package_root or Path(__file__).resolve().parent).resolve()

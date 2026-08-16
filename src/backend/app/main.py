@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.backend.app.agent_skills.registry import AgentSkillRegistry
 from src.backend.app.api.advisor_routes import router as advisor_router
 from src.backend.app.api.agent_lifecycle_routes import router as agent_lifecycle_router
-from src.backend.app.api.agent_routes import router as agent_router
 from src.backend.app.api.agent_task_routes import router as agent_task_router
 from src.backend.app.api.approval_gate_routes import router as approval_gate_router
 from src.backend.app.api.artifact_routes import router as artifact_router
@@ -29,7 +28,6 @@ from src.backend.app.api.experiment_routes import router as experiment_router
 from src.backend.app.api.external_smoke_routes import router as external_smoke_router
 from src.backend.app.api.gpu_routes import router as gpu_router
 from src.backend.app.api.image_routes import router as image_router
-from src.backend.app.api.llm_planner_routes import router as llm_planner_router
 from src.backend.app.api.memory_routes import router as memory_router
 from src.backend.app.api.middleware import (
     APIVersionMiddleware,
@@ -40,7 +38,6 @@ from src.backend.app.api.middleware import (
 )
 from src.backend.app.api.pipeline_routes import router as pipeline_router
 from src.backend.app.api.plan_validator_routes import router as plan_validator_router
-from src.backend.app.api.planner_routes import router as planner_router
 from src.backend.app.api.preprocessing_routes import router as preprocessing_router
 from src.backend.app.api.preset_routes import router as preset_router
 from src.backend.app.api.project_history_routes import router as project_history_router
@@ -77,8 +74,12 @@ from src.backend.app.version import API_DESCRIPTION, API_TITLE, APP_VERSION
 logger = logging.getLogger(__name__)
 
 
-def _remove_legacy_sandbox_routes() -> None:
-    """Delete obsolete direct execution registrations before routers are mounted."""
+def _remove_obsolete_sandbox_routes() -> None:
+    """Keep obsolete direct-execution adapters out of the public route graph.
+
+    The adapters remain module-local until their legacy preprocessing service
+    cleanup is complete; they are never public execution paths.
+    """
     for api_router in (preprocessing_router, dashboard_router):
         api_router.routes[:] = [
             route
@@ -189,7 +190,7 @@ async def _lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     setup_logging()
     assert_node_contract_consistency()
-    _remove_legacy_sandbox_routes()
+    _remove_obsolete_sandbox_routes()
     for error in AgentSkillRegistry().validate_all():
         logger.error("agent_skill_unavailable", extra={"error_code": error.code})
     app = FastAPI(
@@ -221,7 +222,6 @@ def create_app() -> FastAPI:
     app.include_router(router)
     app.include_router(dpabi_router)
     app.include_router(rsfmri_router)
-    app.include_router(agent_router)
     app.include_router(run_router)
     app.include_router(retry_router)
     app.include_router(scheduler_router)
@@ -238,10 +238,8 @@ def create_app() -> FastAPI:
     app.include_router(task_router)
     app.include_router(image_router)
     app.include_router(dashboard_router)
-    app.include_router(planner_router)
     app.include_router(tool_catalog_router)
     app.include_router(plan_validator_router)
-    app.include_router(llm_planner_router)
     app.include_router(approval_gate_router)
     app.include_router(execute_reviewed_router)
     app.include_router(execution_ticket_router)

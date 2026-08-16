@@ -77,24 +77,6 @@ export async function fetchToolCatalog(baseUrl: string) {
   );
 }
 
-// === LLM Planner ===
-
-export async function generatePlanFromGoal(
-  baseUrl: string,
-  payload: {
-    goal: string;
-    provider?: string;
-    project_id?: string;
-    project_config_path?: string;
-    constraints?: Record<string, unknown>;
-  },
-) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/planner/plan-from-goal", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
 export async function getPipeline(baseUrl: string, pipelineName: string) {
   return requestJson<Record<string, unknown>>(
     baseUrl,

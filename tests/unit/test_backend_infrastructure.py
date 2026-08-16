@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from src.backend.app.api import planner_routes, run_routes
+from src.backend.app.api import run_routes
 from src.backend.app.core.config import ConfigService, get_backend_settings
 from src.backend.app.core.exceptions import PipelineError
 from src.backend.app.main import create_app
@@ -231,26 +231,10 @@ def test_medimage_error_handler_returns_stable_error_payload():
     }
 
 
-def test_route_catch_all_maps_to_structured_pipeline_error(monkeypatch):
-    def _raise_runtime_error(_: dict):
-        raise RuntimeError("planner failed")
-
-    monkeypatch.setattr(planner_routes, "draft_pipeline_plan", _raise_runtime_error)
-    app = create_app()
-    client = TestClient(app, raise_server_exceptions=False)
-
-    response = client.post(
-        "/api/planner/draft",
-        json={"downstream_task": "ALFF analysis", "disease_type": "AD"},
-        headers={"X-Request-ID": "req-planner-error"},
-    )
-
-    assert response.status_code == 400
-    payload = response.json()
-    assert payload["error"]["code"] == "PIPELINE_ERROR"
-    assert payload["error"]["message"] == "planner failed"
-    assert payload["error"]["details"] == {"original_error": "planner failed"}
-    assert payload["request_id"] == "req-planner-error"
+def test_legacy_planner_routes_are_not_registered():
+    registered_paths = _extract_route_paths(create_app())
+    for route in ("/api/planner/draft", "/api/planner/validate", "/api/planner/execute", "/api/planner/history", "/api/planner/plan-from-goal"):
+        assert route not in registered_paths
 
 
 def test_state_store_writes_versioned_json_atomically(tmp_path):

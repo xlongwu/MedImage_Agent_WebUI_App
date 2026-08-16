@@ -1,8 +1,9 @@
 # 受控单 Agent Harness
 
 Harness 是可选的单 Agent 控制层，默认由
-`MEDIMAGE_AGENT_HARNESS_ENABLED=false` 关闭。它只协助 Agent Task 的规划、
-澄清、解释和恢复建议；不执行计算，也不拥有审批权限。
+`MEDIMAGE_AGENT_HARNESS_ENABLED=false` 关闭。它只协助 Agent Task 的规划和
+澄清；结果解释由 `AgentTaskResultSummaryService` 生成，恢复由确定性恢复服务处理。
+Harness 不执行计算，也不拥有审批权限。
 
 Harness 和确定性模式都只从项目级 Agent Task 命令进入。它们不会创建或读取
 文件型 Agent plan/run、`plan.json`、review summary 或 `agent_runs/` 目录；规划和

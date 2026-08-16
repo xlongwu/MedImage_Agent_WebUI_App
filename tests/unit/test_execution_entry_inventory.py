@@ -9,7 +9,6 @@ from src.backend.app.main import app
 from src.backend.app.runtime.execution_entry_inventory import (
     EXECUTION_ENTRY_INVENTORY,
 )
-from src.backend.app.services.mock_store import SQLiteDesktopStore
 
 
 def test_every_inventory_entry_has_one_allowed_disposition():
@@ -39,22 +38,5 @@ def test_public_api_modules_do_not_import_pipeline_executor_directly():
     assert offenders == []
 
 
-def test_legacy_agent_execute_is_gone_and_audited(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        "src.backend.app.api.execution_contract.store_module.mock_store",
-        SQLiteDesktopStore(tmp_path / "legacy.sqlite"),
-    )
-    response = TestClient(app).post(
-        "/api/agent/execute",
-        json={
-            "agent_run_id": "legacy",
-            "project_config_path": "ignored.yaml",
-            "pipeline_path": "ignored.yaml",
-            "approved": True,
-        },
-    )
-    assert response.status_code == 410
-    detail = response.json()["detail"]
-    assert detail["error_code"] == "EXECUTION_CONTRACT_REQUIRED"
-    assert detail["replacement"] == "/api/plans/execute-reviewed"
-    assert detail["audit_event_id"].startswith("ticket_event_")
+def test_legacy_agent_execute_is_not_registered():
+    assert "/api/agent/execute" not in TestClient(app).app.openapi()["paths"]

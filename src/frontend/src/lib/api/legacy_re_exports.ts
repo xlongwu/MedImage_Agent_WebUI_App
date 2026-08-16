@@ -6,7 +6,6 @@ export {
   executeReviewedPlan,
   fetchAuditRecord,
   fetchToolCatalog,
-  generatePlanFromGoal,
   getPipeline,
   getProjectReviewedPlan,
   listPipelines,

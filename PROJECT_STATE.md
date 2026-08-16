@@ -97,9 +97,9 @@ their tag state.
   baseline is recorded in `specs/阶段记录/阶段十二/Agent改造/01_当前Agent基线与差距分析.md`;
   no Harness-specific packaged smoke or formal release evidence was located,
   so those two release surfaces remain `unknown` rather than inferred.
-- The Harness Product Skill source implementation provides exactly three
-  static packaged procedures (planning evidence review, result explanation,
-  recovery review). The strict registry verifies manifest/hash/capability and
+- The Harness Product Skill source implementation provides exactly one
+  static packaged procedure: `planning_evidence_review.v1`. The strict registry
+  verifies manifest/hash/capability and
   Context-section constraints, records only Skill references in audit state,
   and falls back to the base safety prompt when a resource is unavailable. This
   is prompt-governance only: it does not add data, approval, execution, or

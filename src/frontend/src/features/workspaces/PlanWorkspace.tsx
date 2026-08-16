@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import PlanReviewConsole from "../../components/PlanReviewConsole";
 import { TechnicalModuleSection } from "../../components/domain/TechnicalModuleSection";
 import { Badge, Button, Card, EmptyState } from "../../components/ui";
 import { getProjectReviewedPlan } from "../../lib/api/pipeline";
@@ -394,16 +393,12 @@ export function PlanWorkspace({
         title={t("plan.openTechnical")}
       >
         <>
-          {planOnly && reviewedPlanRecord ? (
+          {reviewedPlanRecord ? (
             <ReadOnlyReviewedPlan record={reviewedPlanRecord} />
           ) : (
-            <PlanReviewConsole
-              selectedProjectId={projectId}
-              selectedProject={selectedProject}
-              projectConfigPath={projectConfigPath}
-              datasetIndexPath={datasetIndexPath}
-              rawdataDir={rawdataDir}
-              initialPresetDraft={activeDraft}
+            <EmptyState
+              title={t("plan.noGoal")}
+              description={t("plan.technicalSafety")}
             />
           )}
         </>
