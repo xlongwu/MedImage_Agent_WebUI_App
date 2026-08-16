@@ -75,21 +75,6 @@ from src.backend.app.version import API_DESCRIPTION, API_TITLE, APP_VERSION
 logger = logging.getLogger(__name__)
 
 
-def _remove_obsolete_sandbox_routes() -> None:
-    """Keep obsolete direct-execution adapters out of the public route graph.
-
-    The adapters remain module-local until their legacy preprocessing service
-    cleanup is complete; they are never public execution paths.
-    """
-    for api_router in (preprocessing_router, dashboard_router):
-        api_router.routes[:] = [
-            route
-            for route in api_router.routes
-            if "execute-sandbox" not in getattr(route, "path", "")
-            and "register-sandbox-" not in getattr(route, "path", "")
-        ]
-
-
 def _run_agent_invariant_startup_check() -> None:
     """Inspect a bounded active set without repairing or delaying startup."""
 
@@ -192,7 +177,6 @@ async def _lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     setup_logging()
     assert_node_contract_consistency()
-    _remove_obsolete_sandbox_routes()
     for error in AgentSkillRegistry().validate_all():
         logger.error("agent_skill_unavailable", extra={"error_code": error.code})
     app = FastAPI(

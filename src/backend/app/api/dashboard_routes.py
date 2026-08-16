@@ -1992,10 +1992,6 @@ def post_spm_slice_timing_realign_dry_run(
     return result.model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/spm/slice-timing-realign/execute-sandbox",
-    deprecated=True,
-)
 def post_spm_sandbox_execution(
     project_id: str, preprocessing_run_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2029,10 +2025,6 @@ def post_spm_sandbox_execution(
     return result.model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/stage-outputs/register-sandbox-spm",
-    deprecated=True,
-)
 def post_register_sandbox_spm_outputs(
     project_id: str, preprocessing_run_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2091,10 +2083,6 @@ def post_coreg_norm_dry_run(
     return result.model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/spm/coreg-normalize/execute-sandbox",
-    deprecated=True,
-)
 def post_coreg_norm_sandbox_execution(
     project_id: str, preprocessing_run_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2195,10 +2183,6 @@ def post_smoothing_dry_run(
     return result.model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/spm/smoothing/execute-sandbox",
-    deprecated=True,
-)
 def post_smoothing_sandbox_execution(
     project_id: str, preprocessing_run_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2300,10 +2284,6 @@ def post_nuisance_dry_run(
     return result.model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/nuisance-regression/execute-sandbox",
-    deprecated=True,
-)
 def post_nuisance_sandbox_execution(
     project_id: str, preprocessing_run_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2396,10 +2376,6 @@ def post_filtering_dry_run(
     return result.model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/temporal-filtering/execute-sandbox",
-    deprecated=True,
-)
 def post_filtering_sandbox_execution(
     project_id: str, preprocessing_run_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2494,10 +2470,6 @@ def post_alff_reho_dry_run(
     return result.model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/alff-reho/execute-sandbox",
-    deprecated=True,
-)
 def post_alff_reho_sandbox_execution(
     project_id: str, preprocessing_run_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2593,10 +2565,6 @@ def post_fc_dry_run(
     return result.model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/fc/execute-sandbox",
-    deprecated=True,
-)
 def post_fc_sandbox_execution(
     project_id: str, preprocessing_run_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:

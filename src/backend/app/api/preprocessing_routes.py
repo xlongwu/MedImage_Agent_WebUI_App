@@ -279,10 +279,6 @@ def slice_timing_realign_dry_run(
     return _run(project_id, preprocessing_run_id, req, project_dir=str(meta.get("project_dir", ""))).model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/spm/slice-timing-realign/execute-sandbox",
-    response_model=dict[str, Any],
-)
 def slice_timing_realign_sandbox(
     project_id: str,
     preprocessing_run_id: str,
@@ -356,10 +352,6 @@ def coreg_norm_dry_run(
     return _run(project_id, preprocessing_run_id, req, project_dir=str(meta.get("project_dir", ""))).model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/spm/coreg-normalize/execute-sandbox",
-    response_model=dict[str, Any],
-)
 def coreg_norm_sandbox(
     project_id: str,
     preprocessing_run_id: str,
@@ -434,10 +426,6 @@ def smoothing_dry_run(
     return _run(project_id, preprocessing_run_id, req, project_dir=str(meta.get("project_dir", ""))).model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/spm/smoothing/execute-sandbox",
-    response_model=dict[str, Any],
-)
 def smoothing_sandbox(
     project_id: str,
     preprocessing_run_id: str,
@@ -478,10 +466,6 @@ def smoothing_sandbox(
 # Stage outputs registration helpers
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/stage-outputs/register-sandbox-spm",
-    response_model=dict[str, Any],
-)
 def register_sandbox_spm_outputs(
     project_id: str,
     preprocessing_run_id: str,
@@ -614,10 +598,6 @@ def nuisance_dry_run(
     return _run(project_id, preprocessing_run_id, req, project_dir=str(meta.get("project_dir", ""))).model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/nuisance-regression/execute-sandbox",
-    response_model=dict[str, Any],
-)
 def nuisance_sandbox(
     project_id: str,
     preprocessing_run_id: str,
@@ -720,10 +700,6 @@ def filtering_dry_run(
     return _run(project_id, preprocessing_run_id, req, project_dir=str(meta.get("project_dir", ""))).model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/temporal-filtering/execute-sandbox",
-    response_model=dict[str, Any],
-)
 def filtering_sandbox(
     project_id: str,
     preprocessing_run_id: str,
@@ -828,10 +804,6 @@ def alff_reho_dry_run(
     return _run(project_id, preprocessing_run_id, req, project_dir=str(meta.get("project_dir", ""))).model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/alff-reho/execute-sandbox",
-    response_model=dict[str, Any],
-)
 def alff_reho_sandbox(
     project_id: str,
     preprocessing_run_id: str,
@@ -937,10 +909,6 @@ def fc_dry_run(
     return _run(project_id, preprocessing_run_id, req, project_dir=str(meta.get("project_dir", ""))).model_dump()
 
 
-@router.post(
-    "/api/projects/{project_id}/preprocessing/runs/{preprocessing_run_id}/fc/execute-sandbox",
-    response_model=dict[str, Any],
-)
 def fc_sandbox(
     project_id: str,
     preprocessing_run_id: str,
