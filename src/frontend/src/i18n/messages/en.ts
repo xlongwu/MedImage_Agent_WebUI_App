@@ -70,6 +70,18 @@ export const messagesEn = {
   "agent.approvePlan": "Approve plan",
   "agent.approveRecovery": "Approve recovery",
   "agent.viewResults": "View results",
+  "agent.confirmation.decision.title": "Confirm decisions",
+  "agent.confirmation.decision.description":
+    "Confirm these answers. The agent will continue planning automatically until it reaches the next required review.",
+  "agent.confirmation.decision.confirm": "Confirm and continue",
+  "agent.confirmation.execution.title": "Approve and start execution",
+  "agent.confirmation.execution.description":
+    "Confirm the reviewed scope. The system will then execute, monitor, and validate results automatically.",
+  "agent.confirmation.execution.confirm": "Approve and continue automatically",
+  "agent.confirmation.recovery.title": "Approve recovery",
+  "agent.confirmation.recovery.description":
+    "Confirm this recovery scope. The agent will continue automatically and stop again only if another review is required.",
+  "agent.confirmation.recovery.confirm": "Approve and continue automatically",
   "agent.viewDetails": "View details",
   "agent.working": "Working…",
   "agent.cancelTask": "Cancel task",

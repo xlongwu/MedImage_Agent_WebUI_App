@@ -68,6 +68,18 @@ export const messagesZhCn = {
   "agent.approvePlan": "批准方案",
   "agent.approveRecovery": "批准恢复",
   "agent.viewResults": "查看结果",
+  "agent.confirmation.decision.title": "确认决策",
+  "agent.confirmation.decision.description":
+    "确认这些选择后，Agent 将自动继续规划，直至下一处需要你审查的节点。",
+  "agent.confirmation.decision.confirm": "确认并继续",
+  "agent.confirmation.execution.title": "批准并开始执行",
+  "agent.confirmation.execution.description":
+    "确认已审阅的范围后，系统将自动执行、监控并验证结果。",
+  "agent.confirmation.execution.confirm": "批准并自动继续",
+  "agent.confirmation.recovery.title": "批准恢复",
+  "agent.confirmation.recovery.description":
+    "确认本次恢复范围后，Agent 将自动继续；只有再次需要审查时才会停下。",
+  "agent.confirmation.recovery.confirm": "批准并自动继续",
   "agent.viewDetails": "查看详情",
   "agent.working": "处理中…",
   "agent.cancelTask": "取消任务",
