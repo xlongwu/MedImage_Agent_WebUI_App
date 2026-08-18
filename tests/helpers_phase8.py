@@ -176,6 +176,27 @@ def build_recovery_fixture(
             "normalized_plan_hash": stable_hash(plan),
             "goal_contract": goal.model_dump(mode="json"),
             "goal_contract_status": "reviewed",
+            "planning_request": {
+                "schema_version": 1,
+                "project_id": project_id,
+                "lifecycle_id": lifecycle_id,
+                "goal": goal.goal_text,
+                "project_config_path": str(config_path),
+                "evidence_snapshot_hash": "phase8-fixture-evidence",
+                "science_answers": {},
+                "memory_context_hash": None,
+                "memory_context_refs": [],
+                "parent_reviewed_plan_id": None,
+                "parent_plan_hash": None,
+                "revision_reason": "initial",
+                "recovery_proposal_hash": None,
+                "recovery_candidate_hash": None,
+                "provider_ref": "phase8_fixture",
+                "prompt_version": "phase8-fixture-v1",
+                "model_profile_hash": stable_hash(
+                    {"provider": "rule_based", "profile": "phase8-fixture"}
+                ),
+            },
         },
     )
     store.add_reviewed_plan(reviewed)

@@ -135,26 +135,16 @@ def test_mounted_once_in_preprocessing_workspace():
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def test_validation_api_wrapper_exists():
-    content = _read_legacy_api()
-    re_exports_path = "src/frontend/src/lib/api/legacy_re_exports.ts"
-    if os.path.exists(os.path.join(ROOT, re_exports_path)):
-        content += _read(re_exports_path)
-    preprocessing_path = "src/frontend/src/lib/api/preprocessing.ts"
-    if os.path.exists(os.path.join(ROOT, preprocessing_path)):
-        content += _read(preprocessing_path)
-    assert "getPreprocessingPipelineValidation" in content, "Validation API wrapper must exist"
+def test_preprocessing_api_exposes_read_only_evidence_wrapper():
+    content = _read("src/frontend/src/lib/api/preprocessing.ts")
+    assert "getLatestNativeFullPreprocessingRun" in content
+    assert "/preprocessing/native/runs/latest" in content
 
 
-def test_report_api_wrapper_exists():
-    content = _read_legacy_api()
-    re_exports_path = "src/frontend/src/lib/api/legacy_re_exports.ts"
-    if os.path.exists(os.path.join(ROOT, re_exports_path)):
-        content += _read(re_exports_path)
-    preprocessing_path = "src/frontend/src/lib/api/preprocessing.ts"
-    if os.path.exists(os.path.join(ROOT, preprocessing_path)):
-        content += _read(preprocessing_path)
-    assert "getPreprocessingPipelineReport" in content, "Report API wrapper must exist"
+def test_preprocessing_api_does_not_expose_execution_wrapper():
+    content = _read("src/frontend/src/lib/api/preprocessing.ts")
+    assert "executeReviewed" not in content
+    assert "/execute-reviewed" not in content
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -409,8 +399,8 @@ def test_no_backend_api_path_changes():
     dicom_content = _read(dicom_path)
     preprocessing_content = _read(preprocessing_path)
     assert "/api/projects" in (legacy + dicom_content + preprocessing_content)
-    assert "getPreprocessingPipelineValidation" in (legacy + preprocessing_content)
-    assert "getPreprocessingPipelineReport" in (legacy + preprocessing_content)
+    assert "getLatestNativeFullPreprocessingRun" in preprocessing_content
+    assert "/preprocessing/native/runs/latest" in preprocessing_content
 
 
 # State consistency polish tests

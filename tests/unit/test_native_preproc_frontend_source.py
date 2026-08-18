@@ -9,21 +9,14 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_native_preproc_frontend_exposes_planning_and_evidence_without_legacy_execution() -> None:
+def test_native_preproc_frontend_exposes_read_only_evidence_without_execution() -> None:
     preprocessing_api = _read("src/frontend/src/lib/api/preprocessing.ts")
     re_exports = _read("src/frontend/src/lib/api/legacy_re_exports.ts")
     combined = preprocessing_api + re_exports
 
-    for name in (
-        "runNativeFullPreprocessingDryRun",
-        "getNativeFullPreprocessingRun",
-        "getNativeFullPreprocessingValidation",
-        "getNativeFullPreprocessingReport",
-    ):
-        assert name in combined
+    assert "getLatestNativeFullPreprocessingRun" in combined
 
-    assert "/preprocessing/native/full/dry-run" in preprocessing_api
-    assert "/preprocessing/native/runs/" in preprocessing_api
+    assert "/preprocessing/native/runs/latest" in preprocessing_api
     assert "executeNativeFullPreprocessing" not in combined
     assert "submitNativeFullPreprocessing" not in combined
     assert "executeReviewedPreprocessingPipeline" not in combined

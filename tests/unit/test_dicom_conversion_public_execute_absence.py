@@ -87,17 +87,13 @@ class TestFrontendExecuteAbsence:
     """Verify no frontend execute button or API wrapper exists."""
 
     def test_no_run_project_dicom_conversion_execute_api_wrapper(self):
-        """Verify frontend api.ts has runProjectDicomConversionExecute — added in Phase 4L-4.
-
-        The API wrapper exists behind the VITE_ENABLE_DICOM_EXECUTE_UI feature flag
-        and is only called from the gated confirmation UI.
-        """
+        """The frontend has no direct wrapper for the retired endpoint."""
         import os
 
         api_path = os.path.join(os.getcwd(), "src/frontend/src/lib/api/dicom.ts")
         assert os.path.exists(api_path)
         content = open(api_path, encoding="utf-8").read()
-        assert "runProjectDicomConversionExecute" in content
+        assert "runProjectDicomConversionExecute" not in content
 
     def test_no_run_conversion_button_text(self):
         """Verify no frontend text 'Run Conversion' appears as a button label."""

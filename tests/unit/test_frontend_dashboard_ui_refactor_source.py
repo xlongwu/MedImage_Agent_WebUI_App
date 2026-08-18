@@ -61,15 +61,10 @@ def test_app_shell_workspace_structure_exists():
 
 
 def test_advanced_preprocessing_placeholder_text_exists():
-    panel = _read("src/frontend/src/components/AdvancedPreprocessingPipelinePanel.tsx")
+    panel = _read("src/frontend/src/features/workspaces/PreprocessingWorkspace.tsx")
     messages = _read_en_messages()
-    assert "technical.AdvancedPreprocessingPipeline.001" in panel
-    assert "technical.AdvancedPreprocessingPipeline.002" in panel
-    assert "Preprocessing validation" in messages
-    assert (
-        "Create a preprocessing run after conversion or BIDS registration to inspect the full pipeline."
-        in messages
-    )
+    assert 't("preprocessing.createDescription")' in panel
+    assert "Preprocessing" in messages
 
 
 def test_raw_dicom_and_bids_expected_wording_exists():
@@ -119,21 +114,21 @@ def test_app_shell_does_not_render_technical_tools_as_default_cards():
     assert "SpmRealignDryRunPanel" not in shell
     assert "SpmRealignWrapperSkeletonPanel" not in shell
     assert "EnvironmentHealthPanel" not in shell
-    assert "PlanReviewConsole" in plan_workspace
-    assert "TechnicalModuleSection" in preprocessing_workspace
+    assert "PlanReviewConsole" not in plan_workspace
+    assert "ExecutionGraphView" in plan_workspace
+    assert "PreprocessingStageOverview" in preprocessing_workspace
 
 
-def test_advanced_preprocessing_mounts_once_and_not_in_review_panel():
+def test_preprocessing_workspace_uses_current_stage_overview_only():
     workspace = _read("src/frontend/src/features/workspaces/PreprocessingWorkspace.tsx")
-    review = _read("src/frontend/src/components/DicomConversionReviewPanel.tsx")
-    assert workspace.count("<AdvancedPreprocessingPipelinePanel") == 1
-    assert "AdvancedPreprocessingPipelinePanel" not in review
+    assert "PreprocessingStageOverview" in workspace
+    assert "AdvancedPreprocessingPipelinePanel" not in workspace
 
 
 def test_no_forbidden_execution_or_classification_text():
     checked_paths = [
         "src/frontend/src/App.tsx",
-        "src/frontend/src/components/AdvancedPreprocessingPipelinePanel.tsx",
+        "src/frontend/src/features/workspaces/PreprocessingWorkspace.tsx",
         "src/frontend/src/components/dashboardUi.tsx",
         "src/frontend/src/lib/api/legacy.ts",
     ]
@@ -163,15 +158,14 @@ def test_api_paths_remain_present():
     expected_paths = [
         "/api/projects/${encodeURIComponent(projectId)}/data-readiness",
         "/api/projects/${encodeURIComponent(projectId)}/bids-validation",
-        "/api/projects/${encodeURIComponent(projectId)}/conversion/dry-run",
-        "/api/projects/${encodeURIComponent(projectId)}/conversion/preflight",
+        "/api/projects/${encodeURIComponent(projectId)}/conversion/dry-run/latest",
+        "/api/projects/${encodeURIComponent(projectId)}/preprocessing/native/runs/latest",
     ]
     for path in expected_paths:
         assert path in combined, f"{path} not found in API source files"
 
 
 def test_no_advanced_panel_auto_execution():
-    panel = _read("src/frontend/src/components/AdvancedPreprocessingPipelinePanel.tsx")
-    assert "useEffect" not in panel
-    assert "handleValidation();" not in panel
-    assert "handleReport();" not in panel
+    panel = _read("src/frontend/src/features/workspaces/PreprocessingWorkspace.tsx")
+    assert "executeReviewed" not in panel
+    assert "/execute-reviewed" not in panel

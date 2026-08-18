@@ -138,6 +138,12 @@ def build_release_readiness():
     ]
     ac = "\n".join(p.read_text(encoding="utf-8") for p in api_files if p.is_file())
     if ac:
+        agent_operations_path = Path("src/backend/app/api/agent_operations_routes.py")
+        agent_operations_text = (
+            agent_operations_path.read_text(encoding="utf-8")
+            if agent_operations_path.is_file()
+            else ""
+        )
         for ep in [
             "/api/rsfmri/group-summary",
             "/api/rsfmri/report-export",
@@ -155,7 +161,14 @@ def build_release_readiness():
             "/api/datasets/diagnostics/package/latest",
             "/api/datasets/diagnostics/package/verify",
         ]:
-            chk("api", f"endpoint:{ep}", ep in ac)
+            endpoint_present = ep in ac
+            if ep == "/api/projects/{project_id}/agent-operations/summary":
+                endpoint_present = (
+                    'prefix="/api/projects/{project_id}/agent-operations"'
+                    in agent_operations_text
+                    and '@router.get("/summary"' in agent_operations_text
+                )
+            chk("api", f"endpoint:{ep}", endpoint_present)
 
     fd = Path("src/frontend/src")
     if fd.is_dir():
@@ -168,13 +181,13 @@ def build_release_readiness():
         )
         chk(
             "frontend",
-            "external smoke panel",
-            Path("src/frontend/src/components/ExternalSmokePanel.tsx").is_file(),
+            "data conversion workspace",
+            Path("src/frontend/src/features/workspaces/DataConversionWorkspace.tsx").is_file(),
         )
         chk(
             "frontend",
-            "import diagnostics panel",
-            Path("src/frontend/src/components/ImportDiagnosticsPanel.tsx").is_file(),
+            "preprocessing workspace",
+            Path("src/frontend/src/features/workspaces/PreprocessingWorkspace.tsx").is_file(),
         )
         chk("frontend", "electron shell", Path("src/frontend/electron/main.cjs").is_file())
 

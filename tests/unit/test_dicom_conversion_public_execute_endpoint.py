@@ -86,4 +86,6 @@ def test_frontend_has_no_direct_run_conversion_handler():
 def test_frontend_legacy_wrapper_cannot_restore_backend_authority():
     api_path = Path("src/frontend/src/lib/api/dicom.ts")
     assert api_path.exists()
-    assert "runProjectDicomConversionExecute" in api_path.read_text(encoding="utf-8")
+    content = api_path.read_text(encoding="utf-8")
+    assert "runProjectDicomConversionExecute" not in content
+    assert "/conversion/execute" not in content

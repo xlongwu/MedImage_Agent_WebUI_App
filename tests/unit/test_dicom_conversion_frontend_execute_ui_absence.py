@@ -128,27 +128,18 @@ class TestFrontendApiWrapperAbsence:
     """No frontend API wrapper exists for conversion execute."""
 
     def test_no_run_project_dicom_conversion_execute_in_api_ts(self):
-        """api.ts exports runProjectDicomConversionExecute — added in Phase 4L-4.
-
-        In Phase 4L-4 the API wrapper exists behind the feature flag.
-        The safety is that it is not called automatically — verified in
-        test_no_automatic_execute_on_page_load in the execute UI tests.
-        """
+        """The canonical DICOM API keeps the retired execution surface absent."""
         api_path = os.path.join(os.getcwd(), "src/frontend/src/lib/api/dicom.ts")
         assert os.path.exists(api_path), "Canonical DICOM API module must exist"
         content = open(api_path, encoding="utf-8").read()
-        assert "runProjectDicomConversionExecute" in content, (
-            "lib/api/dicom.ts must contain runProjectDicomConversionExecute"
-        )
+        assert "runProjectDicomConversionExecute" not in content
 
     def test_api_ts_has_conversion_execute_endpoint(self):
-        """api.ts references /conversion/execute — added in Phase 4L-4."""
+        """The frontend must not expose the retired conversion execute endpoint."""
         api_path = os.path.join(os.getcwd(), "src/frontend/src/lib/api/dicom.ts")
         assert os.path.exists(api_path), "Canonical DICOM API module must exist"
         content = open(api_path, encoding="utf-8").read()
-        assert "/conversion/execute" in content, (
-            "lib/api/dicom.ts must reference /conversion/execute"
-        )
+        assert "/conversion/execute" not in content
 
     def test_types_ts_has_public_execution_types(self):
         """types.ts exports public execution types — added in Phase 4L-4."""

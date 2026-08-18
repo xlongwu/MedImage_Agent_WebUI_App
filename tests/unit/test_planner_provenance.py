@@ -46,7 +46,7 @@ def test_provider_failure_has_structured_evidence_and_no_output_hash(monkeypatch
     assert result.ok is False
     assert result.plan == {}
     assert result.planner_evidence is not None
-    assert result.planner_evidence.failure_code == "LLM_API_KEY_MISSING"
+    assert result.planner_evidence.failure_code == "AGENT_MODEL_CONFIG_INCOMPLETE"
     assert result.planner_evidence.output_hash is None
 
 

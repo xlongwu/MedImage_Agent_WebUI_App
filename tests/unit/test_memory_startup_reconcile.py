@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.backend.app.core.config_schema import MemoryConfig
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig, MemoryConfig
 from src.backend.app import main
 
 
@@ -10,7 +10,11 @@ def test_memory_startup_reconcile_is_closed_when_install_gate_is_disabled(
     tmp_path, monkeypatch
 ) -> None:
     config = MemoryConfig(enabled=False, store_path=str(tmp_path / "memory.sqlite"))
-    monkeypatch.setattr(main, "ConfigService", lambda: SimpleNamespace(memory=config))
+    monkeypatch.setattr(
+        main,
+        "ConfigService",
+        lambda: SimpleNamespace(memory=config, model=AgentModelRuntimeConfig()),
+    )
     monkeypatch.setattr(
         main,
         "MemoryRepository",
@@ -62,7 +66,11 @@ def test_memory_startup_reconcile_is_bounded_and_runs_ordered_project_work(
         def rebuild(self, *, project_id):
             calls.append(("project", project_id))
 
-    monkeypatch.setattr(main, "ConfigService", lambda: SimpleNamespace(memory=config))
+    monkeypatch.setattr(
+        main,
+        "ConfigService",
+        lambda: SimpleNamespace(memory=config, model=AgentModelRuntimeConfig()),
+    )
     monkeypatch.setattr(main, "get_project_store", lambda: SimpleNamespace(list_projects=lambda: projects))
     monkeypatch.setattr(main, "MemoryRepository", lambda _path: repository)
     monkeypatch.setattr(main, "MemoryMaintenanceService", Maintenance)
