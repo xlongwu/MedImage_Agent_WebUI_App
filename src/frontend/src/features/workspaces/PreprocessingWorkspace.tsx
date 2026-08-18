@@ -1,19 +1,6 @@
-import { useState } from "react";
-
 import { WorkspaceHeader } from "../dashboard/DashboardChrome";
-import AdvancedPreprocessingPipelinePanel from "../../components/AdvancedPreprocessingPipelinePanel";
-import { RsfmriCoregistrationQcPanel } from "../../components/RsfmriCoregistrationQcPanel";
-import { RsfmriNormalizationQcPanel } from "../../components/RsfmriNormalizationQcPanel";
-import { RsfmriSegmentationTissueQcPanel } from "../../components/RsfmriSegmentationTissueQcPanel";
-import { RsfmriSliceTimingPanel } from "../../components/RsfmriSliceTimingPanel";
-import { RsfmriSmoothingQcPanel } from "../../components/RsfmriSmoothingQcPanel";
-import { RsfmriStRealignMotionChainPanel } from "../../components/RsfmriStRealignMotionChainPanel";
-import { TechnicalModuleSection } from "../../components/domain/TechnicalModuleSection";
 import { Badge, Button, Card, EmptyState } from "../../components/ui";
-import { createPreprocessingRun } from "../../lib/api/preprocessing";
 import type { ProjectDataState, ProjectInventory } from "../../lib/projectWorkflow";
-import type { PreprocessingRunCreateResponse } from "../../types";
-import { PreprocessingReviewedFlow } from "./PreprocessingReviewedFlow";
 import styles from "./PreprocessingWorkspace.module.css";
 import layoutStyles from "./WorkspaceLayout.module.css";
 import { useI18n } from "../../i18n/useI18n";
@@ -29,63 +16,30 @@ export interface PreprocessingWorkspaceProps {
   preprocessingRunId?: string | null;
   onOpenDataConversion: () => void;
   onOpenToolsDrawer: () => void;
+  onOpenAgent?: () => void;
 }
 
 export function PreprocessingWorkspace({
-  baseUrl,
+  baseUrl: _baseUrl,
   projectId,
   dataState,
   inventory,
   hasPreprocessingRun,
   preprocessingRunId,
   onOpenDataConversion,
-  onOpenToolsDrawer,
+  onOpenToolsDrawer: _onOpenToolsDrawer,
+  onOpenAgent,
 }: PreprocessingWorkspaceProps) {
   const { t } = useI18n();
-  const [showTechnicalModules, setShowTechnicalModules] = useState(false);
-  const [showDetailedValidation, setShowDetailedValidation] = useState(false);
   const [selectedStageName, setSelectedStageName] = useState(preprocessingStages[0].id);
   const [configMode, setConfigMode] = useState<ConfigMode>("basic");
-  const [localRunId, setLocalRunId] = useState<string | null>(null);
-  const [createRunResult, setCreateRunResult] = useState<PreprocessingRunCreateResponse | null>(
-    null,
-  );
-  const [createRunError, setCreateRunError] = useState("");
-  const [creatingRun, setCreatingRun] = useState(false);
   const resolvedInventory = inventory ?? emptyProjectInventory(dataState, t);
   const isRawDicom = dataState === "raw_dicom";
   const hasRegisteredConvertedInput =
     resolvedInventory.hasConvertedData &&
     !resolvedInventory.metadataOnlyNiftiInventory &&
     (resolvedInventory.convertedSubjects > 0 || resolvedInventory.niftiFileCount > 0);
-  const effectivePreprocessingRunId = localRunId || preprocessingRunId || null;
-  const effectiveHasPreprocessingRun = hasPreprocessingRun || Boolean(effectivePreprocessingRunId);
-
-  const handleCreatePreprocessingRun = async () => {
-    if (!projectId || !hasRegisteredConvertedInput || creatingRun) return;
-    setCreatingRun(true);
-    setCreateRunError("");
-    try {
-      const response = await createPreprocessingRun(baseUrl, projectId, {
-        confirm_use_converted_input: true,
-        confirm_no_rawdata_modification: true,
-        confirm_python_only_execution: true,
-        confirm_no_spm_matlab: true,
-      });
-      setCreateRunResult(response);
-      if (response.ok && response.preprocessing_run_id) {
-        setLocalRunId(response.preprocessing_run_id);
-      } else {
-        setCreateRunError(
-          response.blocking_issues[0] || response.errors[0] || t("preprocessing.createFailed"),
-        );
-      }
-    } catch (error) {
-      setCreateRunError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setCreatingRun(false);
-    }
-  };
+  const effectiveHasPreprocessingRun = hasPreprocessingRun || Boolean(preprocessingRunId);
 
   if (isRawDicom) {
     return (
@@ -197,16 +151,6 @@ export function PreprocessingWorkspace({
           </Card>
           <InputReadinessCard inventory={resolvedInventory} />
         </section>
-        <PreprocessingTechnicalSections
-          baseUrl={baseUrl}
-          isMissingRegistration={true}
-          preprocessingRunId={null}
-          projectId={projectId}
-          showDetailedValidation={showDetailedValidation}
-          showTechnicalModules={showTechnicalModules}
-          onToggleDetailedValidation={() => setShowDetailedValidation((value) => !value)}
-          onToggleTechnicalModules={() => setShowTechnicalModules((value) => !value)}
-        />
       </div>
     );
   }
@@ -230,59 +174,14 @@ export function PreprocessingWorkspace({
           title={t("preprocessing.createTitle")}
           description={t("preprocessing.createDescription")}
           action={
-            <div className={styles.createRunActions}>
-              <Button
-                variant="primary"
-                onClick={handleCreatePreprocessingRun}
-                disabled={!projectId || !hasRegisteredConvertedInput || creatingRun}
-              >
-                {creatingRun ? t("preprocessing.creating") : t("preprocessing.createRun")}
+            onOpenAgent ? (
+              <Button variant="primary" onClick={onOpenAgent}>
+                {t("nav.agent")}
               </Button>
-              <Button variant="secondary" onClick={onOpenToolsDrawer}>
-                {t("preprocessing.openSetup")}
-              </Button>
-            </div>
+            ) : undefined
           }
         />
       )}
-      {createRunError ? <div className={styles.inlineError}>{createRunError}</div> : null}
-      {createRunResult?.ok && effectivePreprocessingRunId ? (
-        <Card className={styles.runBridgeCard}>
-          <div className={styles.sectionHeader}>
-            <div>
-              <h3>{t("preprocessing.runCreated")}</h3>
-              <p>{t("preprocessing.runReady", { runId: effectivePreprocessingRunId })}</p>
-            </div>
-            <Badge tone="success">{t("preprocessing.runAvailable")}</Badge>
-          </div>
-          <div className={styles.createRunActions}>
-            <Button
-              onClick={handleCreatePreprocessingRun}
-              disabled={!projectId || !hasRegisteredConvertedInput || creatingRun}
-              variant="primary"
-            >
-              {creatingRun ? t("preprocessing.creating") : t("preprocessing.createNewRun")}
-            </Button>
-            <Button onClick={() => setShowDetailedValidation(true)} variant="secondary">
-              {t("preprocessing.viewLogs")}
-            </Button>
-          </div>
-        </Card>
-      ) : null}
-      {effectiveHasPreprocessingRun && !createRunResult?.ok ? (
-        <div className={styles.runUtilityAction}>
-          <Button
-            onClick={handleCreatePreprocessingRun}
-            disabled={!projectId || !hasRegisteredConvertedInput || creatingRun}
-            variant="primary"
-          >
-            {creatingRun ? t("preprocessing.creating") : t("preprocessing.createNewRun")}
-          </Button>
-          <Button onClick={() => setShowDetailedValidation(true)} variant="secondary">
-            {t("preprocessing.viewDetails")}
-          </Button>
-        </div>
-      ) : null}
       <PreprocessingStageOverview
         configMode={configMode}
         hasPreprocessingRun={effectiveHasPreprocessingRun}
@@ -291,24 +190,6 @@ export function PreprocessingWorkspace({
         onConfigModeChange={setConfigMode}
         onSelectStage={setSelectedStageName}
         selectedStageName={selectedStageName}
-      />
-      <PreprocessingReviewedFlow
-        baseUrl={baseUrl}
-        hasPreprocessingRun={effectiveHasPreprocessingRun}
-        inventory={resolvedInventory}
-        preprocessingRunId={effectivePreprocessingRunId}
-        projectId={projectId}
-        onOpenDataConversion={onOpenDataConversion}
-      />
-      <PreprocessingTechnicalSections
-        baseUrl={baseUrl}
-        isMissingRegistration={false}
-        preprocessingRunId={effectivePreprocessingRunId}
-        projectId={projectId}
-        showDetailedValidation={showDetailedValidation}
-        showTechnicalModules={showTechnicalModules}
-        onToggleDetailedValidation={() => setShowDetailedValidation((value) => !value)}
-        onToggleTechnicalModules={() => setShowTechnicalModules((value) => !value)}
       />
     </div>
   );
@@ -614,101 +495,6 @@ function emptyProjectInventory(
   };
 }
 
-function PreprocessingTechnicalSections({
-  baseUrl,
-  isMissingRegistration,
-  onToggleDetailedValidation,
-  onToggleTechnicalModules,
-  preprocessingRunId,
-  projectId,
-  showDetailedValidation,
-  showTechnicalModules,
-}: {
-  baseUrl: string;
-  isMissingRegistration: boolean;
-  onToggleDetailedValidation: () => void;
-  onToggleTechnicalModules: () => void;
-  preprocessingRunId?: string | null;
-  projectId: string | null;
-  showDetailedValidation: boolean;
-  showTechnicalModules: boolean;
-}) {
-  const { t } = useI18n();
-  return (
-    <>
-      <TechnicalModuleSection
-        actionDisabled={isMissingRegistration}
-        ariaLabel={t("preprocessing.detailedChecks")}
-        description={t("preprocessing.detailedDescription")}
-        disabledReason={t("preprocessing.validationDisabled")}
-        evidenceLevel={isMissingRegistration ? "blocked" : "backend_required"}
-        hideActionLabel={t("preprocessing.hideValidation")}
-        isOpen={showDetailedValidation}
-        onToggle={onToggleDetailedValidation}
-        openLabel={t("preprocessing.openValidation")}
-        safetyNote={t("preprocessing.validationSafety")}
-        status={
-          isMissingRegistration
-            ? t("preprocessing.inputRequired")
-            : showDetailedValidation
-              ? t("preprocessing.open")
-              : t("preprocessing.onDemand")
-        }
-        statusTone={isMissingRegistration ? "warning" : "info"}
-        title={t("preprocessing.detailedValidation")}
-      >
-        <AdvancedPreprocessingPipelinePanel
-          projectId={projectId}
-          preprocessingRunId={preprocessingRunId ?? null}
-        />
-      </TechnicalModuleSection>
-
-      <TechnicalModuleSection
-        actionDisabled={isMissingRegistration}
-        ariaLabel={t("preprocessing.spmModules")}
-        description={t("preprocessing.spmDescription")}
-        disabledReason={t("preprocessing.spmDisabled")}
-        evidenceLevel={isMissingRegistration ? "blocked" : "backend_required"}
-        hideActionLabel={t("preprocessing.hideSpm")}
-        isOpen={showTechnicalModules}
-        onToggle={onToggleTechnicalModules}
-        openLabel={t("preprocessing.openSpm")}
-        safetyNote={t("preprocessing.spmSafety")}
-        status={
-          isMissingRegistration
-            ? t("preprocessing.inputRequired")
-            : showTechnicalModules
-              ? t("preprocessing.open")
-              : t("preprocessing.onDemand")
-        }
-        statusTone={isMissingRegistration ? "warning" : "info"}
-        title={t("preprocessing.spmModules")}
-      >
-        <div className={layoutStyles.panelGrid}>
-          <div id="rsfmri-slice-timing-panel">
-            <RsfmriSliceTimingPanel baseUrl={baseUrl} />
-          </div>
-          <div id="rsfmri-st-realign-motion-chain-panel">
-            <RsfmriStRealignMotionChainPanel baseUrl={baseUrl} />
-          </div>
-          <div id="rsfmri-coregistration-qc-panel">
-            <RsfmriCoregistrationQcPanel baseUrl={baseUrl} />
-          </div>
-          <div id="rsfmri-segmentation-tissue-qc-panel">
-            <RsfmriSegmentationTissueQcPanel baseUrl={baseUrl} />
-          </div>
-          <div id="rsfmri-normalization-qc-panel">
-            <RsfmriNormalizationQcPanel baseUrl={baseUrl} />
-          </div>
-          <div id="rsfmri-smoothing-qc-panel">
-            <RsfmriSmoothingQcPanel baseUrl={baseUrl} />
-          </div>
-        </div>
-      </TechnicalModuleSection>
-    </>
-  );
-}
-
 function InputReadinessCard({ inventory }: { inventory: ProjectInventory }) {
   const { t } = useI18n();
   return (
@@ -944,3 +730,4 @@ function stageStatusTone(status: StageStatus): "neutral" | "info" | "success" | 
   if (status === "locked") return "warning";
   return "neutral";
 }
+import { useState } from "react";

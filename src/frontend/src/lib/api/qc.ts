@@ -1,26 +1,5 @@
-import type {
-  QcDashboardReportResponse,
-  QcDashboardFingerprintResponse,
-  DatasetEvaluationReport,
-} from "../../types";
+import type { QcDashboardReportResponse, DatasetEvaluationReport } from "../../types";
 import { requestJson } from "./legacyCore";
-
-export async function generateQcDashboardReport(
-  baseUrl: string,
-  projectId: string,
-  options?: { cacheMode?: "off" | "prefer" | "refresh" },
-) {
-  const params = new URLSearchParams();
-  if (options?.cacheMode && options.cacheMode !== "off") {
-    params.set("cache", options.cacheMode);
-  }
-  const qs = params.toString();
-  return requestJson<QcDashboardReportResponse>(
-    baseUrl,
-    `/api/projects/${encodeURIComponent(projectId)}/qc-dashboard/report${qs ? "?" + qs : ""}`,
-    { method: "POST" },
-  );
-}
 
 export async function getDatasetEvaluationReport(baseUrl: string) {
   return requestJson<DatasetEvaluationReport>(baseUrl, "/api/reports/dataset-evaluation");
@@ -44,12 +23,5 @@ export async function getLatestQcDashboardReport(baseUrl: string, projectId: str
   return requestJson<QcDashboardReportResponse>(
     baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/qc-dashboard/report/latest`,
-  );
-}
-
-export async function getQcDashboardFingerprint(baseUrl: string, projectId: string) {
-  return requestJson<QcDashboardFingerprintResponse>(
-    baseUrl,
-    `/api/projects/${encodeURIComponent(projectId)}/qc-dashboard/fingerprint`,
   );
 }

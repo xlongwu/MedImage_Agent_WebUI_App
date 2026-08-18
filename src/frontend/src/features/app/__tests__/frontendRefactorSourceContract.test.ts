@@ -44,35 +44,29 @@ describe("frontend refactor source contract", () => {
     expect(offenders.map(({ path }) => path)).toEqual([]);
   });
 
-  it("keeps the legacy DICOM execution panel user-facing copy in the message catalogs", () => {
-    const source = readFileSync(
-      resolve(srcDir, "components/DicomConversionExecutePanel.tsx"),
-      "utf8",
-    );
-    const hardcodedCopy = [
-      "Approve and request conversion",
-      "Prepare conversion (unified workflow)",
-      "Back to readiness",
-      "Conversion partially completed",
-      "You are about to execute DICOM-to-NIfTI conversion",
-      "MedImage Agent is for research use only",
+  it("keeps ordinary workspaces off legacy direct-execution entry points", () => {
+    const ordinarySource = [
+      ...readSources(resolve(srcDir, "features", "workspaces")),
+      ...readSources(resolve(srcDir, "features", "agent")),
+      {
+        path: resolve(srcDir, "features", "app", "AppShellView.tsx"),
+        source: readFileSync(resolve(srcDir, "features", "app", "AppShellView.tsx"), "utf8"),
+      },
     ];
-    expect(hardcodedCopy.filter((copy) => source.includes(copy))).toEqual([]);
-  });
+    const forbidden = [
+      "window.confirm",
+      "approved: true",
+      "runConversionDryRun",
+      "createPreprocessingRun",
+      "runNativeFullPreprocessingDryRun",
+      "runRsfmri",
+      "runExternalSmoke",
+    ];
 
-  it("keeps the legacy DICOM review panel user-facing copy in the message catalogs", () => {
-    const source = readFileSync(
-      resolve(srcDir, "components/DicomConversionReviewPanel.tsx"),
-      "utf8",
+    const offenders = ordinarySource.filter(({ source }) =>
+      forbidden.some((token) => source.includes(token)),
     );
-    const hardcodedCopy = [
-      "Real DICOM-to-NIfTI conversion for user data",
-      "Check conversion readiness",
-      "Save review draft",
-      "Show technical details",
-      "Real conversion remains disabled in this release",
-      "No conversion smoke results have been generated",
-    ];
-    expect(hardcodedCopy.filter((copy) => source.includes(copy))).toEqual([]);
+
+    expect(offenders.map(({ path }) => path)).toEqual([]);
   });
 });

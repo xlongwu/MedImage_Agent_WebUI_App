@@ -391,6 +391,22 @@
   gap: 20px;
 }
 
+.decisionForm,
+.attentionReview {
+  display: grid;
+  gap: 20px;
+}
+
+.attentionReview > p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.attentionAction {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .approvalSummary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -1,20 +1,10 @@
-import { useState } from "react";
-
 import { WorkspaceHeader } from "../dashboard/DashboardChrome";
-import DesktopSettingsPanel from "../../components/DesktopSettingsPanel";
 import EnvironmentHealthPanel from "../../components/EnvironmentHealthPanel";
-import ExternalSmokePanel from "../../components/ExternalSmokePanel";
-import ImportDiagnosticsPanel from "../../components/ImportDiagnosticsPanel";
-import { RsfmriReleaseReadinessPanel } from "../../components/RsfmriReleaseReadinessPanel";
-import SpmRealignDryRunPanel from "../../components/SpmRealignDryRunPanel";
-import SpmRealignWrapperSkeletonPanel from "../../components/SpmRealignWrapperSkeletonPanel";
-import RsfmriPresetPanel from "../../components/RsfmriPresetPanel";
 import { EvidenceBadge } from "../../components/domain/EvidenceBadge";
 import { MemorySettingsPanel } from "../memory/MemorySettingsPanel";
-import { Badge, Button, Card, SegmentedControl, Table } from "../../components/ui";
+import { Badge, Card, SegmentedControl, Table } from "../../components/ui";
 import type { LocalePreference, ThemePreference } from "../../hooks/useAppState";
 import { useI18n } from "../../i18n/useI18n";
-import type { PresetPlanDraft } from "../../types";
 import styles from "./SettingsEnvironmentWorkspace.module.css";
 import layoutStyles from "./WorkspaceLayout.module.css";
 
@@ -26,9 +16,7 @@ export interface SettingsEnvironmentWorkspaceProps {
   onAdvancedModeChange: (enabled: boolean) => void;
   onThemePreferenceChange: (themePreference: ThemePreference) => void;
   projectId: string | null;
-  rawdataDir?: string | null;
   themePreference: ThemePreference;
-  onReviewDraft: (draft: PresetPlanDraft) => void;
   localePreference: LocalePreference;
   onLocalePreferenceChange: (localePreference: LocalePreference) => void;
 }
@@ -39,14 +27,11 @@ export function SettingsEnvironmentWorkspace({
   onAdvancedModeChange,
   onThemePreferenceChange,
   projectId,
-  rawdataDir,
   themePreference,
-  onReviewDraft,
   localePreference,
   onLocalePreferenceChange,
 }: SettingsEnvironmentWorkspaceProps) {
   const { t } = useI18n();
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const settingsDomains = buildSettingsDomains(t);
   const themeOptions = [
     { label: t("settings.themeLight"), value: "light" },
@@ -207,11 +192,6 @@ export function SettingsEnvironmentWorkspace({
               <dd>{t("settings.diagnosticsDescription")}</dd>
             </div>
           </dl>
-          {advancedMode ? (
-            <Button variant="secondary" onClick={() => setShowDiagnostics((value) => !value)}>
-              {showDiagnostics ? t("settings.hideDiagnostics") : t("settings.openDiagnostics")}
-            </Button>
-          ) : null}
         </Card>
 
         <Card className={styles.policyCard} id="settings-diagnostics">
@@ -263,52 +243,6 @@ export function SettingsEnvironmentWorkspace({
           <div className={layoutStyles.panelGrid}>
             <div id="environment-health-panel">
               <EnvironmentHealthPanel baseUrl={baseUrl} />
-            </div>
-            <div id="spm-realign-dry-run-panel">
-              <SpmRealignDryRunPanel baseUrl={baseUrl} projectId={projectId} />
-            </div>
-            <div id="spm-realign-wrapper-skeleton-panel">
-              <SpmRealignWrapperSkeletonPanel baseUrl={baseUrl} projectId={projectId} />
-            </div>
-            <div id="rsfmri-preset-panel">
-              <RsfmriPresetPanel
-                baseUrl={baseUrl}
-                projectId={projectId}
-                onReviewDraft={onReviewDraft}
-              />
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {advancedMode && showDiagnostics ? (
-        <section
-          className={styles.sectionStack}
-          aria-label={t("settings.systemDiagnosticsModules")}
-        >
-          <div className={styles.sectionHeader}>
-            <div>
-              <h3>{t("settings.systemDiagnostics")}</h3>
-              <p>{t("settings.systemDiagnosticsDescription")}</p>
-            </div>
-            <EvidenceBadge level="backend_required">{t("settings.onDemand")}</EvidenceBadge>
-          </div>
-          <div className={layoutStyles.panelGrid}>
-            <div id="desktop-settings-panel">
-              <DesktopSettingsPanel baseUrl={baseUrl} />
-            </div>
-            <div id="import-diagnostics-panel">
-              <ImportDiagnosticsPanel
-                baseUrl={baseUrl}
-                projectId={projectId}
-                rawdataDir={rawdataDir}
-              />
-            </div>
-            <div id="external-smoke-panel">
-              <ExternalSmokePanel baseUrl={baseUrl} />
-            </div>
-            <div id="release-readiness-panel">
-              <RsfmriReleaseReadinessPanel baseUrl={baseUrl} />
             </div>
           </div>
         </section>

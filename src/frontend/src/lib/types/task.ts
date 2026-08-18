@@ -65,19 +65,6 @@ export interface ApprovalRecord {
   safety_flags: Record<string, boolean>;
 }
 
-export interface TaskApprovalRequest {
-  approved: boolean;
-  approved_by: string;
-  approval_scope?: string;
-  safety_flags?: Record<string, boolean>;
-}
-
-export interface TaskApprovalResponse {
-  ok: boolean;
-  approval: ApprovalRecord | null;
-  message: string;
-}
-
 export interface TaskDiagnostics {
   ok: boolean;
   task_id: string;
@@ -97,17 +84,5 @@ export interface TaskArtifacts {
   result_path?: string | null;
   artifacts: Record<string, unknown>;
   approval: ApprovalRecord | null;
-  errors: string[];
-}
-
-export interface TaskAuditPackage {
-  ok: boolean;
-  task_id: string;
-  generated_at: string;
-  package_dir: string;
-  report_path: string;
-  json_path: string;
-  report_text: string;
-  artifacts: Record<string, unknown>;
   errors: string[];
 }

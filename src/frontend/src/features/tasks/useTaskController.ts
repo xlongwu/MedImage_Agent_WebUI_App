@@ -1,7 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
-  TaskAuditPackage,
   TaskDiagnostics,
   TaskEvent,
   TaskLogEntry,
@@ -11,7 +10,6 @@ import { useTaskStream } from "../../hooks/useTaskStream";
 import { useTasks } from "../../hooks/useTasks";
 import { useTaskEvents } from "../../hooks/useTaskEvents";
 import { useTaskDiagnostics } from "../../hooks/useTaskDiagnostics";
-import { approveTask, generateTaskAuditPackage } from "../../lib/api";
 
 const noopTaskSelection = () => {};
 
@@ -35,14 +33,7 @@ export interface TaskController {
   reloadTaskDiagnostics: () => Promise<TaskDiagnostics | void>;
   taskStreamConnected: boolean;
   taskStreamError: string | null;
-  approvalName: string;
-  setApprovalName: (name: string) => void;
-  auditPackage: TaskAuditPackage | null;
-  auditLoading: boolean;
-  handleApproveSelectedTask: () => Promise<void>;
-  handleGenerateAuditPackage: () => Promise<void>;
   handleReconnectTaskStream: () => void;
-  setAuditPackage: (pkg: TaskAuditPackage | null) => void;
   taskEventsSetData: (updater: (current: TaskEvent[]) => TaskEvent[]) => void;
 }
 
@@ -60,20 +51,6 @@ export function useTaskController(
   const setTaskEventsData = taskEvents.setData;
   const reloadTaskEvents = taskEvents.reload;
   const reloadTaskDiagnostics = taskDiagnostics.reload;
-
-  const [approvalName, setApprovalName] = useState("");
-  const [auditState, setAuditState] = useState<{
-    taskId: string;
-    package: TaskAuditPackage;
-  } | null>(null);
-  const [auditLoading, setAuditLoading] = useState(false);
-  const auditPackage = auditState?.taskId === selectedTaskId ? auditState.package : null;
-  const setAuditPackage = useCallback(
-    (pkg: TaskAuditPackage | null) => {
-      setAuditState(pkg && selectedTaskId ? { taskId: selectedTaskId, package: pkg } : null);
-    },
-    [selectedTaskId],
-  );
 
   const handleTaskMessage = useCallback(
     (message: TaskStreamMessage) => {
@@ -153,51 +130,6 @@ export function useTaskController(
     return null;
   }, [tasks.data]);
 
-  const handleApproveSelectedTask = useCallback(async () => {
-    if (!selectedTaskId) return;
-    if (!approvalName.trim()) {
-      // Approval requires a name; callers should surface this via notice.
-      return;
-    }
-    try {
-      await approveTask(selectedTaskId, {
-        approved: true,
-        approved_by: approvalName.trim(),
-        safety_flags: {
-          rawdata_read_only: true,
-          no_dparsf_blackbox: true,
-          matlab_external_execution: true,
-        },
-      });
-      await tasks.reload();
-      await reloadTaskEvents();
-      await reloadTaskDiagnostics();
-      setActiveTaskIdSafe(selectedTaskId);
-    } catch {
-      // Errors are surfaced via reload; the parent can read taskError if needed.
-    }
-  }, [
-    selectedTaskId,
-    approvalName,
-    tasks,
-    reloadTaskEvents,
-    reloadTaskDiagnostics,
-    setActiveTaskIdSafe,
-  ]);
-
-  const handleGenerateAuditPackage = useCallback(async () => {
-    if (!selectedTaskId) return;
-    setAuditLoading(true);
-    try {
-      const response = await generateTaskAuditPackage(selectedTaskId);
-      setAuditPackage(response);
-    } catch {
-      // Errors are surfaced by the parent via the auditPackage state.
-    } finally {
-      setAuditLoading(false);
-    }
-  }, [selectedTaskId, setAuditPackage]);
-
   const handleReconnectTaskStream = useCallback(() => {
     const nextTaskId = selectedTaskId;
     if (!nextTaskId) return;
@@ -225,14 +157,7 @@ export function useTaskController(
     reloadTaskDiagnostics,
     taskStreamConnected: taskStream.connected,
     taskStreamError: taskStream.error,
-    approvalName,
-    setApprovalName,
-    auditPackage,
-    auditLoading,
-    handleApproveSelectedTask,
-    handleGenerateAuditPackage,
     handleReconnectTaskStream,
-    setAuditPackage,
     taskEventsSetData: setTaskEventsData,
   };
 }

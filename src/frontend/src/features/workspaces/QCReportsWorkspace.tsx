@@ -1,19 +1,7 @@
-import { useState } from "react";
-
 import { WorkspaceHeader } from "../dashboard/DashboardChrome";
-import QcDashboardSummaryPanel from "../../components/QcDashboardSummaryPanel";
 import NiftiQcSnapshotPanel from "../../components/NiftiQcSnapshotPanel";
 import BoldReferenceReadinessPanel from "../../components/BoldReferenceReadinessPanel";
 import MotionQcReadinessPanel from "../../components/MotionQcReadinessPanel";
-import MotionMetricsDraftPanel from "../../components/MotionMetricsDraftPanel";
-import RsfmriQcPlanningReportPanel from "../../components/RsfmriQcPlanningReportPanel";
-import { RsfmriAlffFalffPanel } from "../../components/RsfmriAlffFalffPanel";
-import { RsfmriFunctionalConnectivityPanel } from "../../components/RsfmriFunctionalConnectivityPanel";
-import { RsfmriMotionQcPanel } from "../../components/RsfmriMotionQcPanel";
-import { RsfmriNuisanceRegressionPanel } from "../../components/RsfmriNuisanceRegressionPanel";
-import { RsfmriRehoPanel } from "../../components/RsfmriRehoPanel";
-import { RsfmriTemporalFilteringPanel } from "../../components/RsfmriTemporalFilteringPanel";
-import { TechnicalModuleSection } from "../../components/domain/TechnicalModuleSection";
 import { EvidenceBadge } from "../../components/domain/EvidenceBadge";
 import { Badge, Button, Card, EmptyState, Table, TableEmpty } from "../../components/ui";
 import { useQcEvidence, type QcOverviewEvidence } from "./useQcEvidence";
@@ -32,7 +20,6 @@ export interface QCReportsWorkspaceProps {
 export function QCReportsWorkspace({ baseUrl, projectId }: QCReportsWorkspaceProps) {
   const { t } = useI18n();
   const hasProject = Boolean(projectId);
-  const [showDerivedModules, setShowDerivedModules] = useState(false);
 
   return (
     <div className={layoutStyles.stack}>
@@ -48,85 +35,19 @@ export function QCReportsWorkspace({ baseUrl, projectId }: QCReportsWorkspacePro
         <QcDashboardOverview baseUrl={baseUrl} projectId={projectId!} />
       )}
 
-      <TechnicalModuleSection
-        ariaLabel={t("qc.detailedModules")}
-        bodyVisible={hasProject}
-        description={t("qc.detailedDescription")}
-        evidenceLevel={hasProject ? "backend_required" : "blocked"}
-        fallback={
-          <Card tone="muted">
-            <EmptyState
-              title={t("qc.modulesWaiting")}
-              description={t("qc.modulesWaitingDescription")}
-            />
-          </Card>
-        }
-        helperText={hasProject ? t("qc.detailedProjectHelp") : t("qc.detailedSelectHelp")}
-        safetyNote={t("qc.detailedSafety")}
-        status={hasProject ? t("qc.projectScoped") : t("qc.selectProject")}
-        statusTone={hasProject ? "info" : "warning"}
-        title={t("qc.detailedModules")}
-      >
-        {hasProject ? (
-          <div className={layoutStyles.panelGrid}>
-            <div id="qc-dashboard-summary-panel">
-              <QcDashboardSummaryPanel baseUrl={baseUrl} projectId={projectId} />
-            </div>
-            <div id="nifti-qc-snapshot-panel">
-              <NiftiQcSnapshotPanel baseUrl={baseUrl} projectId={projectId} />
-            </div>
-            <div id="bold-reference-readiness-panel">
-              <BoldReferenceReadinessPanel baseUrl={baseUrl} projectId={projectId} />
-            </div>
-            <div id="motion-qc-readiness-panel">
-              <MotionQcReadinessPanel baseUrl={baseUrl} projectId={projectId} />
-            </div>
-            <div id="motion-metrics-draft-panel">
-              <MotionMetricsDraftPanel baseUrl={baseUrl} projectId={projectId} />
-            </div>
-            <div id="rsfmri-qc-planning-report-panel">
-              <RsfmriQcPlanningReportPanel baseUrl={baseUrl} projectId={projectId} />
-            </div>
+      {hasProject ? (
+        <section className={layoutStyles.panelGrid} aria-label={t("qc.detailedModules")}>
+          <div id="nifti-qc-snapshot-panel">
+            <NiftiQcSnapshotPanel baseUrl={baseUrl} projectId={projectId} />
           </div>
-        ) : null}
-      </TechnicalModuleSection>
-
-      <TechnicalModuleSection
-        actionDisabled
-        ariaLabel={t("qc.derivedModules")}
-        description={t("qc.derivedDescription")}
-        disabledReason={t("qc.derivedDisabled")}
-        evidenceLevel={hasProject ? "unavailable" : "blocked"}
-        hideActionLabel={t("qc.hideDerived")}
-        isOpen={showDerivedModules}
-        onToggle={() => setShowDerivedModules((value) => !value)}
-        openLabel={t("qc.openDerived")}
-        safetyNote={t("qc.derivedSafety")}
-        status={hasProject ? t("common.unavailable") : t("qc.selectProject")}
-        statusTone={hasProject ? "info" : "warning"}
-        title={t("qc.derivedModules")}
-      >
-        <div className={layoutStyles.panelGrid}>
-          <div id="rsfmri-nuisance-regression-panel">
-            <RsfmriNuisanceRegressionPanel baseUrl={baseUrl} />
+          <div id="bold-reference-readiness-panel">
+            <BoldReferenceReadinessPanel baseUrl={baseUrl} projectId={projectId} />
           </div>
-          <div id="rsfmri-temporal-filtering-panel">
-            <RsfmriTemporalFilteringPanel baseUrl={baseUrl} />
+          <div id="motion-qc-readiness-panel">
+            <MotionQcReadinessPanel baseUrl={baseUrl} projectId={projectId} />
           </div>
-          <div id="rsfmri-motion-qc-panel">
-            <RsfmriMotionQcPanel baseUrl={baseUrl} />
-          </div>
-          <div id="rsfmri-alff-falff-panel">
-            <RsfmriAlffFalffPanel baseUrl={baseUrl} />
-          </div>
-          <div id="rsfmri-reho-panel">
-            <RsfmriRehoPanel baseUrl={baseUrl} />
-          </div>
-          <div id="rsfmri-functional-connectivity-panel">
-            <RsfmriFunctionalConnectivityPanel baseUrl={baseUrl} />
-          </div>
-        </div>
-      </TechnicalModuleSection>
+        </section>
+      ) : null}
     </div>
   );
 }

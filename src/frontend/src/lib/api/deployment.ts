@@ -28,16 +28,6 @@ export async function getReleaseReadinessV1(baseUrl: string) {
   return requestJson<Record<string, unknown>>(baseUrl, "/api/release/readiness");
 }
 
-export async function runReleaseReadiness(
-  baseUrl: string,
-  payload: { project_config_path: string; pipeline_path: string },
-) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/release-readiness/run", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
 export async function saveDesktopConfig(baseUrl: string, payload: Record<string, unknown>) {
   return requestJson<Record<string, unknown>>(baseUrl, "/api/desktop/config", {
     method: "POST",

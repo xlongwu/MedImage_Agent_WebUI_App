@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button, Card, Table, TableEmpty } from "../../components/ui";
+import { Badge, Card, Table, TableEmpty } from "../../components/ui";
 import type {
   ConversionDryRunResponse,
   ConversionMappingPreview,
@@ -48,7 +48,6 @@ export interface DicomSeriesTableProps {
   error: string;
   inventory: ProjectInventory;
   loading: boolean;
-  onGenerateDryRun: () => void;
   onReviewSelectionChange?: (selection: DataSeriesSelection | null) => void;
   projectId: string | null;
   restoreMessage?: string;
@@ -60,7 +59,6 @@ export function DicomSeriesTable({
   error,
   inventory,
   loading,
-  onGenerateDryRun,
   onReviewSelectionChange,
   projectId,
   restoreMessage = "",
@@ -192,20 +190,6 @@ export function DicomSeriesTable({
           <h3>{t("data.dicom.title")}</h3>
           <p>{t("data.dicom.description")}</p>
         </div>
-        <Button
-          disabled={!projectId || loading || !inventory.hasRawDicom}
-          onClick={onGenerateDryRun}
-        >
-          {loading
-            ? restoreState === "loading"
-              ? t("data.dicom.loadingPreview")
-              : t("data.dicom.generating")
-            : dryRun
-              ? t("data.dicom.refreshDryRun")
-              : restoreState === "refresh_required" || restoreState === "error"
-                ? t("data.dicom.refreshPreview")
-                : t("data.dicom.generatePreview")}
-        </Button>
       </div>
 
       <div className={styles.summaryStrip} aria-label={t("data.dicom.inventorySummary")}>

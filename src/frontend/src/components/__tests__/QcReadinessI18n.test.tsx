@@ -10,19 +10,12 @@ import {
 import BoldReferenceReadinessPanel from "../BoldReferenceReadinessPanel";
 import MotionQcReadinessPanel from "../MotionQcReadinessPanel";
 import NiftiQcSnapshotPanel from "../NiftiQcSnapshotPanel";
-import QcDashboardSummaryPanel from "../QcDashboardSummaryPanel";
 
 vi.mock("../../lib/api/preprocessing", () => ({
   getProjectBoldReferenceReadiness: vi.fn(),
   getProjectMotionQcReadiness: vi.fn(),
   getProjectNiftiQcSnapshot: vi.fn(),
   getProjectNiftiThumbnail: vi.fn(),
-}));
-
-vi.mock("../../lib/api/qc", () => ({
-  generateQcDashboardReport: vi.fn(),
-  getLatestQcDashboardReport: vi.fn(),
-  getQcDashboardFingerprint: vi.fn(),
 }));
 
 describe("QC readiness i18n", () => {
@@ -110,18 +103,6 @@ describe("QC readiness i18n", () => {
     expect(screen.getByText(/2 个 BOLD 候选文件.*2 名受试者/)).toBeInTheDocument();
     expect(screen.getByText(/BOLD 候选文件已可用于参考图像规划/)).toBeInTheDocument();
     expect(screen.queryByText(/Motion QC computation can proceed/)).not.toBeInTheDocument();
-  });
-
-  it("renders QC dashboard controls in Chinese", () => {
-    render(
-      <I18nProvider locale="zh-CN">
-        <QcDashboardSummaryPanel projectId="project-1" />
-      </I18nProvider>,
-    );
-
-    expect(screen.getByRole("button", { name: "加载最新报告" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "检查指纹" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Load Latest" })).not.toBeInTheDocument();
   });
 
   it("renders NIfTI QC status, metrics, and detail controls in Chinese", async () => {

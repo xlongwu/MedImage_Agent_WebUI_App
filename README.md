@@ -116,6 +116,22 @@ continuing with an empty context. Operational lag is reported as partial. See th
 See [Architecture](docs/架构与决策/系统架构.md) for current router, service, schema,
 node registry, frontend API, storage, and desktop boundaries.
 
+The optional controlled Harness accepts only `request_decision` and
+`draft_plan` actions and ships one Product Skill,
+`planning_evidence_review.v1`. Result summaries and recovery decisions remain
+deterministic services. A 24-case, bilingual, data-free evaluation v2 runs the
+real isolated lifecycle/Harness stack with scripted providers; its strict
+safety gates are CI evidence only and never grant production authority. Run it
+with `python scripts/run_agent_evaluation.py --manifest
+tests/fixtures/agent_eval/v2/manifest.json --provider rule_based --output
+artifacts/agent-eval/report.json`.
+
+The Agent workspace also exposes a read-only seven-day operational projection
+for bounded lifecycle, latency, retry/dead-letter, invariant and Memory-health
+signals. These operational signals are not scientific validation. Structured
+Agent logs retain identifiers and error codes only, not goals, prompts, paths,
+credentials, Memory text, or model responses.
+
 ## Current Source Workflow
 
 ```text
@@ -129,6 +145,26 @@ Select BIDS/rawdata or converted BIDS
 -> Follow bounded progress and inspect the result
 -> Open Runs or technical details for validation, logs, artifacts, and provenance
 ```
+
+When an active Agent Task needs a decision, plan approval, or separately scoped
+recovery approval, the project shell presents one project-bound confirmation
+dialog from Agent, Runs, Settings, and read-only detail views. Closing it makes
+no request and merely leaves a local reopen indicator. Submitting the existing
+structured command lets the persisted scheduler, approval service, ticket,
+Gateway, monitor, observation, and evaluation chain advance to the next real
+blocking point; it does not grant an automatic approval or create a second
+execution path. Legacy single-stage preprocessing and derived-metric mutation
+panels are not part of the ordinary UI path.
+
+When an active Agent Task needs a decision, plan approval, or separately scoped
+recovery approval, the project shell presents one project-bound confirmation
+dialog from Agent, Runs, Settings, and read-only detail views. Closing it makes
+no request and merely leaves a local reopen indicator. Submitting the existing
+structured command lets the persisted scheduler, approval service, ticket,
+Gateway, monitor, observation, and evaluation chain advance to the next real
+blocking point; it does not grant an automatic approval or create a second
+execution path. Legacy single-stage preprocessing and derived-metric mutation
+panels are not part of the ordinary UI path.
 
 The Agent Task API and source UI are a projection and command surface over the
 existing lifecycle, Reviewed Plan, Approval Gate, Execution Ticket, sole
@@ -146,8 +182,8 @@ details and project Runs are the only supported planning and run projections.
 
 DICOM/FunRaw/T1Raw datasets support read-only detection and conversion dry-run
 preview. Native conversion can enter the reviewed gateway path only when its
-release-readiness evidence is present. The legacy public conversion endpoint
-remains fail-closed; conversion is never inferred from rawdata alone.
+release-readiness evidence is present. Conversion is never inferred from
+rawdata alone.
 
 Reviewed preprocessing operates on converted/sandboxed inputs and remains
 explicit, confirmable, and environment gated. The current stage catalog tracks
@@ -206,7 +242,7 @@ tests/
 | Approval required | Tool Catalog + Approval Gate + explicit confirmations |
 | Path traversal blocked | `path_safety.py` and project/run artifact IDs |
 | Frontend isolated | HTTP API modules and approved Electron bridge |
-| Execution contained in project | registered Python runners, approval/readiness checks, audit records |
+| Execution contained in project | registered Python runners, approval/readiness checks, audit records; future external processes must use the Windows restricted-process provider without a normal-process fallback |
 | Memory is advisory and project-scoped | install/project consent, provenance, confirmation, plan hash binding, tombstone forgetting |
 | Research use only | UI and documentation warnings |
 

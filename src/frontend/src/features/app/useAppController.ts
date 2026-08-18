@@ -1,14 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import type { PresetPlanDraft } from "../../types";
-import {
-  DEFAULT_API_BASE,
-  getApiBaseUrl,
-  getHealth,
-  approveTask,
-  generateTaskAuditPackage,
-  sendAssistantMessage,
-} from "../../lib/api";
+import { DEFAULT_API_BASE, getApiBaseUrl, getHealth, sendAssistantMessage } from "../../lib/api";
 import { useTasks } from "../../hooks/useTasks";
 import packageMetadata from "../../../package.json";
 
@@ -28,8 +21,6 @@ export interface AppController {
   setDrawerOpen: (open: boolean) => void;
   checkHealth: () => Promise<void>;
   handleScrollToPanel: (panelId: string) => void;
-  handleApproveTask: (taskId: string, approvalName: string) => Promise<string>;
-  handleGenerateAuditPackage: (taskId: string) => Promise<{ report_path: string } | null>;
   handleReconnectTaskStream: (
     taskId: string | null,
     setActiveTaskId: (id: string | null) => void,
@@ -106,28 +97,6 @@ export function useAppController(): AppController {
     document.getElementById(panelId)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
-  const handleApproveTask = useCallback(
-    async (taskId: string, approvalName: string) => {
-      const response = await approveTask(taskId, {
-        approved: true,
-        approved_by: approvalName.trim(),
-        safety_flags: {
-          rawdata_read_only: true,
-          no_dparsf_blackbox: true,
-          matlab_external_execution: true,
-        },
-      });
-      await tasks.reload();
-      return response.message;
-    },
-    [tasks],
-  );
-
-  const handleGenerateAuditPackage = useCallback(async (taskId: string) => {
-    const response = await generateTaskAuditPackage(taskId);
-    return response;
-  }, []);
-
   const handleReconnectTaskStream = useCallback(
     (taskId: string | null, setActiveTaskId: (id: string | null) => void) => {
       const nextTaskId = taskId;
@@ -175,8 +144,6 @@ export function useAppController(): AppController {
     setDrawerOpen,
     checkHealth,
     handleScrollToPanel,
-    handleApproveTask,
-    handleGenerateAuditPackage,
     handleReconnectTaskStream,
     handleAssistantSubmit,
   };

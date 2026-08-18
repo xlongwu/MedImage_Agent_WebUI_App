@@ -109,6 +109,18 @@ artifact。运行时状态写入使用原子文件写入。Pipeline Runtime 是�
 当前 router、service、schema、node registry、前端 API、存储和桌面边界见
 [架构文档](docs/架构与决策/系统架构.md)。
 
+可选受控 Harness 只接受 `request_decision` 与 `draft_plan` 两种动作，并且只打包
+一个 Product Skill：`planning_evidence_review.v1`。结果摘要与恢复判断仍由确定性
+服务负责。无研究数据的双语评估 v2 包含 24 个固定案例，通过 scripted provider
+运行真实隔离 lifecycle/Harness 栈；严格安全门槛只作为 CI 证据，绝不授予生产权限。
+可运行 `python scripts/run_agent_evaluation.py --manifest
+tests/fixtures/agent_eval/v2/manifest.json --provider rule_based --output
+artifacts/agent-eval/report.json`。
+
+Agent 工作区还提供只读的七天运营投影，有界汇总 lifecycle、延迟、重试/
+dead-letter、不变量与 Memory 健康信号；这些指标不代表科学验证。Agent 结构化日志
+只保留标识符和错误码，不记录目标、Prompt、路径、凭据、Memory 正文或模型响应。
+
 ## 当前源码工作流
 
 ```text
@@ -123,6 +135,13 @@ artifact。运行时状态写入使用原子文件写入。Pipeline Runtime 是�
 -> 通过 Runs 或技术详情查看 validation、logs、artifacts 和 provenance
 ```
 
+当活跃 Agent Task 需要决策、计划审批或独立范围的恢复审批时，项目壳层会在
+Agent、Runs、Settings 与只读详情页展示同一份项目绑定确认弹窗。关闭弹窗不会发送
+请求，只留下本地可重新打开的提示。提交既有结构化命令后，持久化 scheduler、审批服务、
+ticket、Gateway、monitor、Observation 与评估链会自动推进到下一个真实阻塞点；这不表示
+自动批准，也不会建立第二条执行路径。旧的单阶段预处理与派生指标 mutation 面板不再属于
+普通 UI 路径。
+
 Agent Task API 和源码界面只是既有 lifecycle、Reviewed Plan、Approval Gate、
 Execution Ticket、唯一 Execution Gateway、Pipeline Runtime 和 artifact 证据之上的
 投影与命令入口，不建立第二条执行路径。该源码能力尚不代表已经打包或发布
@@ -135,8 +154,7 @@ Execution Ticket、唯一 Execution Gateway、Pipeline Runtime 和 artifact 证�
 `agent_runs/` 计划文件已经移除；任务详情和项目 Runs 是唯一受支持的规划与运行投影。
 
 DICOM/FunRaw/T1Raw 数据支持只读检测和转换 dry-run 预览。只有存在有效的 release
-readiness 证据时，原生转换才能进入受审网关路径；旧公共转换端点继续 fail-closed，
-系统不会仅凭发现 rawdata 就自动转换。
+readiness 证据时，原生转换才能进入受审网关路径；系统不会仅凭发现 rawdata 就自动转换。
 
 Reviewed preprocessing 工作流运行在 converted/sandboxed 输入上，仍然需要显式确认和
 环境变量门控。当前 stage catalog 会区分 metadata-only、planned、blocked、computed、
@@ -193,7 +211,7 @@ tests/
 | 必须审批 | Tool Catalog + Approval Gate + 显式确认 |
 | 防目录穿越 | `path_safety.py` 和 project/run artifact ID |
 | 前端隔离 | HTTP API modules 和受控 Electron bridge |
-| 执行限定在项目内 | 注册 Python runner、approval/readiness、audit records |
+| 执行限定在项目内 | 注册 Python runner、approval/readiness、audit records；未来外部进程必须使用 Windows 受限进程 provider，且不得回退普通进程 |
 | 记忆仅作项目级建议 | 安装/项目授权、来源追溯、科学二次确认、计划哈希绑定、墓碑遗忘 |
 | 仅研究用途 | UI 和文档警示 |
 

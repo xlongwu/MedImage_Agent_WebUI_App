@@ -50,6 +50,10 @@ import { buildLifecycleItems } from "../navigation/workspaceModel";
 import { workspaceChromePresetForLocation } from "../../lib/workspaceChromeModel";
 import { AgentWorkspace } from "../agent/AgentWorkspace";
 import type { AgentTaskController } from "../agent/useAgentTaskController";
+import {
+  AgentAttentionDialog,
+  useAgentAttentionDialog,
+} from "../agent/components/AgentAttentionDialog";
 import { useI18n } from "../../i18n/useI18n";
 import styles from "./AppShellView.module.css";
 
@@ -119,8 +123,6 @@ export type AppShellViewProps = {
     | "checkHealth"
     | "handleScrollToPanel"
     | "setDrawerOpen"
-    | "handleApproveTask"
-    | "handleGenerateAuditPackage"
     | "handleReconnectTaskStream"
     | "handleAssistantSubmit"
     | "presetPlanDraft"
@@ -163,22 +165,12 @@ export type AppShellViewProps = {
     messages: ChatMessage[];
     setMessages: (messages: ChatMessage[]) => void;
   };
-  approval: {
-    taskApprovalName: string;
-    setTaskApprovalName: (name: string) => void;
-    auditPackage: { report_path: string } | null;
-    setAuditPackage: (pkg: { report_path: string } | null) => void;
-    auditLoading: boolean;
-    setAuditLoading: (loading: boolean) => void;
-  };
   executionMode: ExecutionMode;
   externalSmokeApprovedRun: boolean;
   externalSmokeApprovedBy: string;
   model: ModelStatus | null;
   dataset: DatasetSummary | null;
   onToggleDrawer: () => void;
-  handleApproveSelectedTask: () => Promise<void>;
-  handleGenerateAuditPackage: () => Promise<void>;
   handleReconnectTaskStream: () => void;
   handleAssistantSubmit: (event: React.FormEvent) => Promise<void>;
   onNewChat: () => void;
@@ -208,15 +200,12 @@ export function AppShellView({
   navigation,
   image,
   assistant,
-  approval: _approval,
   executionMode,
   externalSmokeApprovedRun,
   externalSmokeApprovedBy,
   model,
   dataset,
   onToggleDrawer,
-  handleApproveSelectedTask: _handleApproveSelectedTask,
-  handleGenerateAuditPackage: _handleGenerateAuditPackage,
   handleReconnectTaskStream,
   handleAssistantSubmit,
   onNewChat,
@@ -228,6 +217,7 @@ export function AppShellView({
   onSelectedPlanNodeChange,
 }: AppShellViewProps) {
   const { t } = useI18n();
+  const attention = useAgentAttentionDialog(agentTaskController, selectedProjectId);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [wideWorkspace, setWideWorkspace] = useState(
     () =>
@@ -398,6 +388,8 @@ export function AppShellView({
           projectName={topBarProjectName}
           activePageLabel={activePageLabel}
           onOpenAssistant={() => setAssistantOpen(true)}
+          attentionPending={attention.hasAttention}
+          onOpenAttention={attention.reopen}
           onOpenInspector={() => app.setDrawerOpen(true)}
           onBackToProjects={navigation.openProjects}
           locale={appState.localePreference}
@@ -506,6 +498,8 @@ export function AppShellView({
         open={projectCreateOpen}
       />
 
+      <AgentAttentionDialog attention={attention} controller={agentTaskController} />
+
       {navigation.location.kind === "projects" ? (
         <ProjectsPage
           deletingProjectId={null}
@@ -543,6 +537,7 @@ export function AppShellView({
                 onOpenRuns={() => {
                   if (selectedProjectId) navigation.openWorkspace(selectedProjectId, "runs");
                 }}
+                onReopenAttention={attention.reopen}
                 projectName={projectInventory?.projectName ?? project.data.name}
               />
             ) : activeWorkspace === "overview" ? (
@@ -571,9 +566,9 @@ export function AppShellView({
                 inventory={projectInventory}
                 bidsValidation={bidsValidation}
                 onSelectedDataSeriesChange={onSelectedDataSeriesChange}
-                onConversionRegistered={async () => {
-                  await Promise.all([project.reload(), bidsValidation.reload()]);
-                }}
+                onOpenAgent={() =>
+                  selectedProjectId && navigation.openWorkspace(selectedProjectId, "agent")
+                }
               />
             ) : activeWorkspace === "plan" ? (
               <PlanWorkspace
@@ -602,6 +597,9 @@ export function AppShellView({
                 inventory={projectInventory}
                 hasPreprocessingRun={hasPreprocessingRun}
                 preprocessingRunId={latestPreprocessingRunId}
+                onOpenAgent={() =>
+                  selectedProjectId && navigation.openWorkspace(selectedProjectId, "agent")
+                }
                 onOpenDataConversion={() =>
                   selectedProjectId && navigation.openLegacyWorkspace(selectedProjectId, "data")
                 }
@@ -657,19 +655,12 @@ export function AppShellView({
               <SettingsEnvironmentWorkspace
                 baseUrl={baseUrl}
                 projectId={selectedProjectId}
-                rawdataDir={selectedProject?.data.metadata?.rawdata_dir}
                 themePreference={appState.themePreference}
                 onThemePreferenceChange={appState.setThemePreference}
                 localePreference={appState.localePreference}
                 onLocalePreferenceChange={appState.setLocalePreference}
                 advancedMode={appState.advancedMode}
                 onAdvancedModeChange={appState.setAdvancedMode}
-                onReviewDraft={() => {
-                  if (selectedProjectId) navigation.openLegacyWorkspace(selectedProjectId, "plan");
-                  app.setNotice(
-                    "Preset draft loaded into the Plan workspace. Review and save before dry-run.",
-                  );
-                }}
               />
             )}
           </Suspense>

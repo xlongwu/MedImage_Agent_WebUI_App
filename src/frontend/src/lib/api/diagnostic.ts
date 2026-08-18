@@ -1,14 +1,6 @@
 import type { RunInspection } from "../../types";
 import { requestJson } from "./legacyCore";
 
-export async function createImportDiagnosticsPackage(baseUrl: string, projectId: string) {
-  return requestJson<Record<string, unknown>>(
-    baseUrl,
-    `/api/datasets/diagnostics/package?project_id=${encodeURIComponent(projectId)}`,
-    { method: "POST" },
-  );
-}
-
 export async function diagnoseRun(baseUrl: string, runId: string) {
   return requestJson<Record<string, unknown>>(
     baseUrl,
@@ -20,13 +12,6 @@ export async function getDatasetImportHistory(baseUrl: string, projectId: string
   return requestJson<Record<string, unknown>>(
     baseUrl,
     `/api/datasets/imports?project_id=${encodeURIComponent(projectId)}`,
-  );
-}
-
-export async function getLatestImportDiagnosticsPackage(baseUrl: string, projectId: string) {
-  return requestJson<Record<string, unknown>>(
-    baseUrl,
-    `/api/datasets/diagnostics/package/latest?project_id=${encodeURIComponent(projectId)}`,
   );
 }
 
@@ -78,12 +63,4 @@ export async function retryExecute(
       approved,
     }),
   });
-}
-
-export async function verifyImportDiagnosticsPackage(baseUrl: string, projectId: string) {
-  return requestJson<Record<string, unknown>>(
-    baseUrl,
-    `/api/datasets/diagnostics/package/verify?project_id=${encodeURIComponent(projectId)}`,
-    { method: "POST" },
-  );
 }

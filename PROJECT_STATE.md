@@ -1,6 +1,6 @@
 # Project State
 
-Current as of 2026-08-09.
+Current as of 2026-08-16.
 
 ## Version and Branch
 
@@ -52,10 +52,10 @@ their tag state.
 - Reviewed rs-fMRI preprocessing workflow for converted inputs, including a
   unified stage catalog, artifact registry and lineage, Minimal FC backend
   chain, optional DPARSFA-like stage semantics, reviewed orchestrator endpoint,
-  stage output registration, validation, report export, and a frontend
-  reviewed flow that can create a preprocessing run from registered converted
-  input, submit the reviewed gate, show stage status, and expose FC artifact
-  metadata handoff links.
+  stage output registration, validation, report export, and read-only artifact
+  metadata handoff links. Ordinary preprocessing/QC views no longer create
+  runs, run dry-runs, or expose legacy per-stage mutation panels; the project
+  Agent Task lifecycle is the sole ordinary execution command surface.
 - Native full preprocessing supports a conservative subject scheduler: serial
   remains the default, while reviewed `process`/`auto` policies bound worker and
   thread counts by the request, CPU capacity, and available-memory estimates.
@@ -85,7 +85,8 @@ their tag state.
   proposals, and controlled retry/resume/local-replan services are implemented
   and covered by source-level regression tests.
 - The optional controlled single-Agent Harness is default-disabled and bounded
-  to six schema-validated advisory actions. It persists redacted context and
+  to the two schema-validated advisory actions `request_decision` and
+  `draft_plan`. It persists redacted context and
   ordered steps, processes one leased step at a time, and has no approval,
   ticket, gateway, runner, shell, or file/database-write capability. A
   lifespan-owned scheduler now advances up to three persisted safe steps per
@@ -110,10 +111,19 @@ their tag state.
   result/lifecycle/evidence references and report missing or conflicting
   bindings through an integrity hash; replay validates those bundles without a
   provider, handler, planner, approval, Gateway, runner, filesystem write, or
-  scientific recomputation. A versioned, data-free offline evaluation manifest
-  covers normal, recovery, provider, safety, stability and bilingual cases;
-  its metrics are comparison-only and do not change production policy or prove
-  scientific validation.
+  scientific recomputation. Evaluation schema v2 drives 24 fixed bilingual,
+  data-free cases through isolated SQLite projects and the real lifecycle,
+  scheduler, Context, Harness and persistence services. Scripted provider
+  outcomes cover normal, recovery, repair, timeout, configuration, safety,
+  stability and crash/outcome-unknown behavior. Exact safety gates fail the
+  CLI and CI; reports are comparison-only, redacted and never change
+  production policy or prove scientific validation.
+- The Agent operational summary is a side-effect-free, project-isolated
+  seven-day read projection capped at 500 newest tasks. It reports truncation,
+  p50/p95 planning latency and the seven defined lifecycle/invariant/Memory
+  alert classes. Structured Agent logging uses a fixed identifier allowlist;
+  prompts, goals, paths, credentials, Memory text and model responses are not
+  log fields.
 - The Phase 10 source tree adds an Agent-first project workspace backed by a
   project-scoped Agent Task read projection. Goal commands stop for unresolved
   science decisions, produce one hashed Approval Summary, and reuse the
@@ -200,6 +210,12 @@ their tag state.
   and current approval before dry-run.
 - Reviewed preprocessing uses in-project Python kernels. MATLAB, SPM, and
   DPABI executables are outside the supported execution path.
+- Application-runtime child-process starts outside the reviewed Gateway fail
+  closed. The Windows sandbox provider creates a restricted token and Job
+  Object without a normal-process fallback, limits its environment and ACLs,
+  and terminates the owned process tree on timeout. Its fixed self-test reports
+  network isolation as `not_enforced`; no external scientific node is enabled
+  by this infrastructure.
 - Run artifact discovery accepts managed evidence under project `data/` in
   addition to `work`, `logs`, `reports`, and `derivatives`; rawdata and paths
   outside the project output boundary remain rejected.
@@ -227,11 +243,10 @@ their tag state.
 - Expected optional skips commonly include missing `cupy` and missing
   `MEDIMAGE_EXTERNAL_BIDS_SMOKE_DIR`. `pydicom` is now a core dependency
   because the packaged desktop exposes the reviewed native DICOM workflow.
-- The current RC2 working tree was validated on Windows with Python 3.11.15:
-  backend `4108 passed, 16 skipped`; frontend format check, typecheck, `238`
-  tests, and production build passed. The only backend skip caused by Windows
-  privilege rather than an intentionally disabled optional/external path was
-  the symlink-escape case.
+- A previous RC2 working-tree baseline was validated on Windows with the
+  project test matrix. Current task-specific commands and results belong in
+  the Completion Report; stable project state does not carry rolling test
+  counts.
 - Exact packaging candidate `6a392c15079f51c16a8e3c2a035915972aabd9ff`
   completed GitHub Actions run `29469529639` successfully. Its `backend`,
   `frontend`, and `desktop` jobs all passed. This closes the remote-CI evidence

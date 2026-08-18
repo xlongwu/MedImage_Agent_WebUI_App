@@ -32,6 +32,10 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   的 wake 请求。它在应用 lifespan 内保持单一后台 owner；`GET`/list/read projection
   不会登记 wake、claim lease 或调用模型。startup 只恢复 `READY` 或 lease 已过期的
   `RUNNING` attempt；shutdown 拒绝新 claim，并只等待 scheduler 自己当前的有限 step。
+- App Shell 的项目绑定确认弹窗不是 Harness step 或 scheduler owner。它只把用户当前的
+  `answer` 提交给既有 Agent Task 命令；该事务持久化 wake 后，scheduler 才在后台推进一次
+  有界 planning checkpoint。`approve` 与 `approve-recovery` 同样只调用既有服务，后续
+  dry-run、Ticket、Gateway、monitor 和 Observation 仍在后端顺序中运行。
 - 唯一模型协议是 schema version 2 的判别联合 `ActionEnvelope`。允许 kind 仅为
   `request_decision` 和 `draft_plan`；两者使用固定不可变字段，前者直接嵌入正式
   `DecisionItem`，不存在通用 `payload`。所有其他 kind 及额外字段默认拒绝。
@@ -119,10 +123,15 @@ recovery/token 预算、状态、下一步、让出次数、actual fallback 路�
   capability/state、lifecycle reducer 与 budget ledger 校验。它没有 store、provider、
   Evidence Service、Planner、Approval、Gateway、runner 或 filesystem 依赖，因此 replay
   不能触发任何生产副作用。
-- `tests/fixtures/agent_eval/v1/manifest.json` 是版本化、无研究数据的离线评测集，覆盖正常、
-  recovery、provider、safety、stability 及中英文案例。`AgentEvaluationService` 只汇总显式
-  oracle 的 routing、提问、停止点、安全拒绝、schema repair/fallback、step/call/latency 和
-  交互指标；分数只用于版本比较，不自动发布策略，也不构成科学验证结论。
+- `tests/fixtures/agent_eval/v2/manifest.json` 是唯一当前格式的版本化、无研究数据离线
+  评测集。24 个中英文案例在隔离 SQLite 项目中驱动真实 lifecycle、scheduler、Context、
+  Harness 和持久化服务，scripted provider 覆盖正常、recovery、repair、timeout、配置、
+  safety、stability 与 outcome-unknown。runner 只从持久记录和证据哈希生成结果，不接受
+  调用方伪造汇总。`AgentEvaluationService` 按精确 oracle 计算 routing、提问、停止点、
+  安全拒绝、schema repair/fallback、step/call/latency、Memory/Context 和交互指标；所有
+  安全指标必须为 100%，不合格报告使 CLI 返回非零。分数只用于版本比较，不进入生产
+  store、不自动发布策略，也不构成科学验证结论。网络 provider 必须同时显式选择 provider
+  并传 `--allow-network`；普通 CI 固定使用无网络 scripted/rule-based 路径。
 
 ## 运行时不变量自检
 

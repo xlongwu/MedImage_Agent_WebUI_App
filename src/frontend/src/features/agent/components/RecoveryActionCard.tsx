@@ -6,14 +6,14 @@ import styles from "../AgentWorkspace.module.css";
 export function RecoveryActionCard({
   mutating,
   onAbandon,
-  onApprove,
   onOpenDetails,
+  onReopenAttention,
   recovery,
 }: {
   mutating: boolean;
   onAbandon: () => Promise<void>;
-  onApprove: () => Promise<void>;
   onOpenDetails: () => void;
+  onReopenAttention: () => void;
   recovery: AgentTaskRecoverySummary;
 }) {
   const { t } = useI18n();
@@ -65,7 +65,7 @@ export function RecoveryActionCard({
           <Button
             data-primary-action="true"
             disabled={mutating}
-            onClick={() => void onApprove().catch((): void => {})}
+            onClick={onReopenAttention}
             variant="primary"
           >
             {mutating ? t("agent.working") : t("agent.approveRecovery")}

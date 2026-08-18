@@ -8,8 +8,6 @@ vi.mock("../../../lib/api", () => ({
   DEFAULT_API_BASE: "http://localhost",
   getApiBaseUrl: vi.fn(),
   getHealth: vi.fn(),
-  approveTask: vi.fn(),
-  generateTaskAuditPackage: vi.fn(),
   sendAssistantMessage: vi.fn(),
 }));
 

@@ -4,26 +4,17 @@ import type { AgentTaskResponse } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
 import { getAgentApprovalMessage } from "./agentTaskMessages";
 
-export function isDecisionAction(task: AgentTaskResponse): boolean {
-  return (
-    task.decision_batch !== null &&
-    (task.next_action.type === "answer_science_decision" ||
-      task.next_action.type === "provide_input" ||
-      task.next_action.type === "revise_goal")
-  );
-}
-
 export function NextActionCard({
   mutating,
-  onApprove,
   onCancel,
   onOpenRuns,
+  onReopenAttention,
   task,
 }: {
   mutating: boolean;
-  onApprove: () => Promise<void>;
   onCancel: (reason?: string) => Promise<void>;
   onOpenRuns: () => void;
+  onReopenAttention: () => void;
   task: AgentTaskResponse;
 }) {
   const { t } = useI18n();
@@ -155,10 +146,7 @@ export function NextActionCard({
             <Button
               data-primary-action="true"
               disabled={mutating || Boolean(task.next_action.disabled_reason)}
-              onClick={() => {
-                if (isApproval) void onApprove().catch((): void => {});
-                else onOpenRuns();
-              }}
+              onClick={isApproval ? onReopenAttention : onOpenRuns}
               variant="primary"
             >
               {mutating

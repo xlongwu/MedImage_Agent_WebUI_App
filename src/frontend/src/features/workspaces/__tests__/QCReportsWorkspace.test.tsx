@@ -29,10 +29,6 @@ vi.mock("../../../lib/api/preprocessing", () => ({
   getLatestNativeFullPreprocessingRun: vi.fn(),
 }));
 
-vi.mock("../../../components/QcDashboardSummaryPanel", () => ({
-  default: () => <div data-testid="qc-dashboard-summary-panel">QC dashboard summary panel</div>,
-}));
-
 vi.mock("../../../components/NiftiQcSnapshotPanel", () => ({
   default: () => <div data-testid="nifti-qc-snapshot-panel">NIfTI QC snapshot panel</div>,
 }));
@@ -45,46 +41,6 @@ vi.mock("../../../components/BoldReferenceReadinessPanel", () => ({
 
 vi.mock("../../../components/MotionQcReadinessPanel", () => ({
   default: () => <div data-testid="motion-qc-readiness-panel">Motion QC readiness panel</div>,
-}));
-
-vi.mock("../../../components/MotionMetricsDraftPanel", () => ({
-  default: () => <div data-testid="motion-metrics-draft-panel">Motion metrics draft panel</div>,
-}));
-
-vi.mock("../../../components/RsfmriQcPlanningReportPanel", () => ({
-  default: () => (
-    <div data-testid="rsfmri-qc-planning-report-panel">rs-fMRI QC planning report panel</div>
-  ),
-}));
-
-vi.mock("../../../components/RsfmriNuisanceRegressionPanel", () => ({
-  RsfmriNuisanceRegressionPanel: () => (
-    <div data-testid="nuisance-regression-panel">Nuisance regression panel</div>
-  ),
-}));
-
-vi.mock("../../../components/RsfmriTemporalFilteringPanel", () => ({
-  RsfmriTemporalFilteringPanel: () => (
-    <div data-testid="temporal-filtering-panel">Temporal filtering panel</div>
-  ),
-}));
-
-vi.mock("../../../components/RsfmriMotionQcPanel", () => ({
-  RsfmriMotionQcPanel: () => <div data-testid="motion-qc-panel">Motion QC panel</div>,
-}));
-
-vi.mock("../../../components/RsfmriAlffFalffPanel", () => ({
-  RsfmriAlffFalffPanel: () => <div data-testid="alff-falff-panel">ALFF fALFF panel</div>,
-}));
-
-vi.mock("../../../components/RsfmriRehoPanel", () => ({
-  RsfmriRehoPanel: () => <div data-testid="reho-panel">ReHo panel</div>,
-}));
-
-vi.mock("../../../components/RsfmriFunctionalConnectivityPanel", () => ({
-  RsfmriFunctionalConnectivityPanel: () => (
-    <div data-testid="functional-connectivity-panel">Functional connectivity panel</div>
-  ),
 }));
 
 function renderWorkspace(projectId: string | null = "project-1") {
@@ -284,10 +240,7 @@ describe("QCReportsWorkspace", () => {
     );
 
     expect(screen.getByText("质量控制复核前请选择项目")).toBeInTheDocument();
-    expect(screen.getByLabelText("详细质量控制模块")).toHaveTextContent(
-      "质量控制模块正在等待项目上下文",
-    );
-    expect(screen.getByLabelText("派生指标模块")).toHaveTextContent("旧指标执行面板不可用");
+    expect(screen.queryByLabelText("详细质量控制模块")).not.toBeInTheDocument();
   });
 
   it("renders conservative QC evidence states in simplified Chinese", async () => {
@@ -338,8 +291,6 @@ describe("QCReportsWorkspace", () => {
     expect(screen.getByLabelText("QC visualization requirements")).toHaveTextContent("Data range");
     expect(screen.getByLabelText("QC visualization requirements")).toHaveTextContent("Drill-down");
     expect(screen.getByLabelText("Detailed QC modules")).toBeInTheDocument();
-    expect(screen.getByLabelText("Derived metric modules")).toHaveTextContent("Unavailable");
-    expect(screen.queryByTestId("alff-falff-panel")).not.toBeInTheDocument();
   });
 
   it("summarizes loaded native and QC evidence instead of leaving the overview empty", async () => {
@@ -662,37 +613,31 @@ describe("QCReportsWorkspace", () => {
     expect(screen.getByText("FC computed")).toBeInTheDocument();
   });
 
-  it("keeps the existing detailed QC panels available for selected projects", () => {
+  it("keeps only read-only QC evidence panels available for selected projects", () => {
     renderWorkspace();
 
-    expect(screen.getByTestId("qc-dashboard-summary-panel")).toBeInTheDocument();
     expect(screen.getByTestId("nifti-qc-snapshot-panel")).toBeInTheDocument();
     expect(screen.getByTestId("bold-reference-readiness-panel")).toBeInTheDocument();
     expect(screen.getByTestId("motion-qc-readiness-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("motion-metrics-draft-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("rsfmri-qc-planning-report-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("motion-metrics-draft-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("rsfmri-qc-planning-report-panel")).not.toBeInTheDocument();
   });
 
   it("does not render detailed QC modules until a project is selected", () => {
     renderWorkspace(null);
 
     expect(screen.getByText("Select a project before QC review")).toBeInTheDocument();
-    expect(screen.getByText("QC modules are waiting for project context")).toBeInTheDocument();
-    expect(screen.queryByTestId("qc-dashboard-summary-panel")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Detailed QC modules")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("table", { name: "Subject-level QC status" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open derived modules" })).toBeDisabled();
   });
 
-  it("keeps legacy derived metric execution panels explicitly unavailable", () => {
+  it("removes legacy derived metric execution panels from ordinary QC", () => {
     renderWorkspace();
 
     expect(screen.queryByTestId("nuisance-regression-panel")).not.toBeInTheDocument();
 
-    expect(screen.getByRole("button", { name: "Open derived modules" })).toBeDisabled();
-    expect(screen.getByLabelText("Derived metric modules")).toHaveTextContent(
-      "Legacy metric execution panels are unavailable",
-    );
+    expect(screen.queryByRole("button", { name: "Open derived modules" })).not.toBeInTheDocument();
   });
 });

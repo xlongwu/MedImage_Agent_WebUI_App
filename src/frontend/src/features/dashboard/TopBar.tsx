@@ -12,6 +12,8 @@ export const TopBar = memo(function TopBar({
   projectName,
   activePageLabel,
   onOpenAssistant,
+  attentionPending = false,
+  onOpenAttention,
   onOpenInspector,
   onBackToProjects,
   locale,
@@ -25,6 +27,8 @@ export const TopBar = memo(function TopBar({
   projectName: string;
   activePageLabel: string;
   onOpenAssistant: () => void;
+  attentionPending?: boolean;
+  onOpenAttention?: () => void;
   onOpenInspector: () => void;
   onBackToProjects: () => void;
   locale: LocalePreference;
@@ -112,6 +116,16 @@ export const TopBar = memo(function TopBar({
           >
             {t("nav.assistant")}
           </Button>
+          {attentionPending ? (
+            <Button
+              aria-label={t("agent.attentionItems")}
+              className={styles.attentionButton}
+              onClick={onOpenAttention}
+              variant="secondary"
+            >
+              {t("agent.attentionItems")}
+            </Button>
+          ) : null}
           <Tooltip label={t("nav.inspector")}>
             <IconButton label={t("nav.inspector")} onClick={onOpenInspector} variant="ghost">
               <Icon height={16} name="inspector" width={16} />

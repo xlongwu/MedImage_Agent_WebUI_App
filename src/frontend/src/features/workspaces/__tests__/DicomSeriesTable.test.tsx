@@ -83,7 +83,6 @@ describe("DicomSeriesTable", () => {
         error=""
         inventory={inventory()}
         loading={false}
-        onGenerateDryRun={vi.fn()}
         onReviewSelectionChange={onReviewSelectionChange}
         projectId="project-1"
       />,
@@ -131,7 +130,6 @@ describe("DicomSeriesTable", () => {
         error=""
         inventory={inventory()}
         loading={false}
-        onGenerateDryRun={vi.fn()}
         projectId="project-1"
       />,
     );
@@ -157,7 +155,6 @@ describe("DicomSeriesTable", () => {
         error=""
         inventory={inventory()}
         loading={false}
-        onGenerateDryRun={vi.fn()}
         projectId="project-1"
       />,
     );

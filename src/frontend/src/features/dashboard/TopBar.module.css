@@ -188,6 +188,11 @@
   color: var(--color-text-secondary);
 }
 
+.attentionButton {
+  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-divider));
+  color: var(--color-text-primary);
+}
+
 .assistantIcon {
   color: var(--color-accent);
 }

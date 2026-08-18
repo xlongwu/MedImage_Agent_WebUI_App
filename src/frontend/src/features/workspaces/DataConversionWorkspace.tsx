@@ -3,14 +3,12 @@ import { WorkspaceHeader } from "../dashboard/DashboardChrome";
 import BidsValidationPanel from "../../components/BidsValidationPanel";
 import type { BidsValidationViewState } from "../../components/BidsValidationPanel";
 import DataReadinessPanel from "../../components/DataReadinessPanel";
-import ConversionDryRunPanel from "../../components/ConversionDryRunPanel";
-import DicomConversionReviewPanel from "../../components/DicomConversionReviewPanel";
 import type { ProjectInventory } from "../../lib/projectWorkflow";
 import type { DataSeriesSelection } from "../../lib/workspaceSelection";
-import { getLatestConversionDryRun, runConversionDryRun } from "../../lib/api/dicom";
+import { getLatestConversionDryRun } from "../../lib/api/dicom";
 import type { ConversionDryRunResponse } from "../../types";
 import { EvidenceBadge } from "../../components/domain/EvidenceBadge";
-import { Badge, Card, EmptyState, Table } from "../../components/ui";
+import { Badge, Button, Card, EmptyState, Table } from "../../components/ui";
 import { TechnicalModuleSection } from "../../components/domain/TechnicalModuleSection";
 import { ConversionStepper } from "./ConversionStepper";
 import { DicomSeriesTable } from "./DicomSeriesTable";
@@ -25,7 +23,7 @@ export interface DataConversionWorkspaceProps {
   projectId: string | null;
   inventory: ProjectInventory;
   onSelectedDataSeriesChange?: (selection: DataSeriesSelection | null) => void;
-  onConversionRegistered?: () => void | Promise<void>;
+  onOpenAgent?: () => void;
   bidsValidation?: BidsValidationViewState;
 }
 
@@ -34,12 +32,11 @@ export function DataConversionWorkspace({
   projectId,
   inventory,
   onSelectedDataSeriesChange,
-  onConversionRegistered,
+  onOpenAgent,
   bidsValidation,
 }: DataConversionWorkspaceProps) {
   const { t } = useI18n();
   const [dryRun, setDryRun] = useState<ConversionDryRunResponse | null>(null);
-  const [dryRunLoading, setDryRunLoading] = useState(false);
   const [dryRunError, setDryRunError] = useState("");
   const [dryRunRestoreState, setDryRunRestoreState] = useState<DryRunRestoreState>("idle");
   const [dryRunRestoreMessage, setDryRunRestoreMessage] = useState("");
@@ -102,30 +99,6 @@ export function DataConversionWorkspace({
     });
   }, [baseUrl, isRawConversionState, projectId, t]);
 
-  const handleGenerateDryRun = async () => {
-    if (!projectId || dryRunLoading || dryRunRestoreState === "loading") return;
-    const requestId = dryRunRequestRef.current + 1;
-    dryRunRequestRef.current = requestId;
-    setDryRunLoading(true);
-    setDryRunError("");
-    setDryRunRestoreState("idle");
-    setDryRunRestoreMessage("");
-    try {
-      const response = await runConversionDryRun(baseUrl, projectId);
-      if (dryRunRequestRef.current === requestId) {
-        setDryRun(response);
-      }
-    } catch (error) {
-      if (dryRunRequestRef.current === requestId) {
-        setDryRunError(error instanceof Error ? error.message : String(error));
-      }
-    } finally {
-      if (dryRunRequestRef.current === requestId) {
-        setDryRunLoading(false);
-      }
-    }
-  };
-
   if (isConverted) {
     return (
       <div className={layoutStyles.stack}>
@@ -169,7 +142,6 @@ export function DataConversionWorkspace({
           inventory={inventory}
           isOpen={detailedChecksOpen}
           onToggle={() => setDetailedChecksOpen((open) => !open)}
-          onConversionRegistered={onConversionRegistered}
           projectId={projectId}
           bidsValidation={bidsValidation}
         />
@@ -198,12 +170,16 @@ export function DataConversionWorkspace({
       {isRawConversionState ? (
         <div className={styles.rawWorkspace}>
           <div className={styles.rawMain}>
+            {onOpenAgent ? (
+              <Button onClick={onOpenAgent} variant="primary">
+                {t("agent.title")}
+              </Button>
+            ) : null}
             <DicomSeriesTable
               dryRun={dryRun}
               error={dryRunError}
               inventory={inventory}
-              loading={dryRunLoading || dryRunRestoreState === "loading"}
-              onGenerateDryRun={handleGenerateDryRun}
+              loading={dryRunRestoreState === "loading"}
               onReviewSelectionChange={onSelectedDataSeriesChange}
               projectId={projectId}
               restoreMessage={dryRunRestoreMessage}
@@ -224,7 +200,6 @@ export function DataConversionWorkspace({
         inventory={inventory}
         isOpen={detailedChecksOpen}
         onToggle={() => setDetailedChecksOpen((open) => !open)}
-        onConversionRegistered={onConversionRegistered}
         projectId={projectId}
         bidsValidation={bidsValidation}
       />
@@ -239,7 +214,6 @@ function DetailedDataChecks({
   inventory,
   isOpen,
   onToggle,
-  onConversionRegistered,
   projectId,
   bidsValidation,
 }: {
@@ -249,7 +223,6 @@ function DetailedDataChecks({
   inventory: ProjectInventory;
   isOpen: boolean;
   onToggle: () => void;
-  onConversionRegistered?: () => void | Promise<void>;
   projectId: string | null;
   bidsValidation?: BidsValidationViewState;
 }) {
@@ -294,20 +267,6 @@ function DetailedDataChecks({
             validation={bidsValidation}
           />
         </div>
-      ) : null}
-      {includeConversionReview ? (
-        <>
-          <div id="conversion-dry-run-panel">
-            <ConversionDryRunPanel baseUrl={baseUrl} projectId={projectId} />
-          </div>
-          <div id="dicom-conversion-review-panel">
-            <DicomConversionReviewPanel
-              baseUrl={baseUrl}
-              projectId={projectId}
-              onConversionRegistered={onConversionRegistered}
-            />
-          </div>
-        </>
       ) : null}
     </TechnicalModuleSection>
   );

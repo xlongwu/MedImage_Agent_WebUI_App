@@ -12,7 +12,8 @@ import { HarnessStatusCard } from "./components/HarnessStatusCard";
 import { AgentOperationalHealthCard } from "./components/AgentOperationalHealthCard";
 import { GoalComposer } from "./components/GoalComposer";
 import { MacroProgress } from "./components/MacroProgress";
-import { isDecisionAction, NextActionCard } from "./components/NextActionCard";
+import { isDecisionAction } from "./agentTaskActions";
+import { NextActionCard } from "./components/NextActionCard";
 import { ProjectSummaryCard } from "./components/ProjectSummaryCard";
 import { ResultSummaryCard } from "./components/ResultSummaryCard";
 import { RecoveryActionCard } from "./components/RecoveryActionCard";
@@ -197,6 +198,7 @@ export function AgentWorkspace({
   onOpenLegacyWorkspace,
   onOpenReviewedPlan,
   onOpenRuns,
+  onReopenAttention,
   projectName,
 }: {
   advancedMode: boolean;
@@ -205,6 +207,7 @@ export function AgentWorkspace({
   onOpenLegacyWorkspace: (workspace: LegacyWorkspace) => void;
   onOpenReviewedPlan?: (reviewedPlanId: string) => void;
   onOpenRuns: () => void;
+  onReopenAttention?: () => void;
   projectName: string;
 }) {
   return (
@@ -215,6 +218,7 @@ export function AgentWorkspace({
       onOpenLegacyWorkspace={onOpenLegacyWorkspace}
       onOpenReviewedPlan={onOpenReviewedPlan}
       onOpenRuns={onOpenRuns}
+      onReopenAttention={onReopenAttention}
       projectName={projectName}
     />
   );
@@ -227,6 +231,7 @@ export function AgentWorkspaceView({
   onOpenLegacyWorkspace,
   onOpenReviewedPlan,
   onOpenRuns,
+  onReopenAttention = () => {},
   projectName,
 }: {
   advancedMode: boolean;
@@ -235,6 +240,7 @@ export function AgentWorkspaceView({
   onOpenLegacyWorkspace: (workspace: LegacyWorkspace) => void;
   onOpenReviewedPlan?: (reviewedPlanId: string) => void;
   onOpenRuns: () => void;
+  onReopenAttention?: () => void;
   projectName: string;
 }) {
   const { t } = useI18n();
@@ -337,24 +343,19 @@ export function AgentWorkspaceView({
             <RecoveryActionCard
               mutating={controller.mutating}
               onAbandon={() => controller.cancel(t("agent.recovery.abandonReason"))}
-              onApprove={controller.approveRecovery}
               onOpenDetails={onOpenRuns}
+              onReopenAttention={onReopenAttention}
               recovery={task.recovery}
             />
           ) : task.state === "completed" && planOnlyResult ? null : isDecisionAction(task) ? (
-            <DecisionBatchCard
-              batch={task.decision_batch!}
-              errorDetails={controller.errorDetails}
-              mutating={controller.mutating}
-              onAnswer={controller.answer}
-            />
+            <DecisionBatchCard batch={task.decision_batch!} onReopenAttention={onReopenAttention} />
           ) : (
             <NextActionCard
               key={task.next_action.decision_batch_id ?? task.next_action.type}
               mutating={controller.mutating}
-              onApprove={controller.approve}
               onCancel={controller.cancel}
               onOpenRuns={onOpenRuns}
+              onReopenAttention={onReopenAttention}
               task={task}
             />
           )}

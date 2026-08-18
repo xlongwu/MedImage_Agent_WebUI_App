@@ -16,13 +16,11 @@ const packageJson = JSON.parse(read("package.json"));
 const mainPath = path.join(root, packageJson.main || "");
 const preloadPath = path.join(root, "electron", "preload.cjs");
 const distIndex = path.join(root, "dist", "index.html");
-const importDiagnosticsPath = path.join(root, "src", "components", "ImportDiagnosticsPanel.tsx");
 
 check("package main points to Electron entry", packageJson.main === "electron/main.cjs", packageJson.main || "");
 check("Electron main exists", fs.existsSync(mainPath), mainPath);
 check("Electron preload exists", fs.existsSync(preloadPath), preloadPath);
 check("Vite dist index exists", fs.existsSync(distIndex), distIndex);
-check("Import diagnostics panel exists", fs.existsSync(importDiagnosticsPath), importDiagnosticsPath);
 
 if (fs.existsSync(mainPath)) {
   const main = fs.readFileSync(mainPath, "utf8");
@@ -43,18 +41,6 @@ if (fs.existsSync(preloadPath)) {
   check("preload exposes desktop runtime", preload.includes("MEDIMAGE_DESKTOP_RUNTIME") && preload.includes("medimageDesktop"));
   check("preload exposes medimage bridge", preload.includes("contextBridge.exposeInMainWorld(\"medimage\"") && !preload.includes("exposeInMainWorld(\"ipcRenderer\""));
   check("preload exposes artifact opener", preload.includes("openExternalPath") && preload.includes("medimage:open-external-path"));
-}
-
-if (fs.existsSync(importDiagnosticsPath)) {
-  const panel = fs.readFileSync(importDiagnosticsPath, "utf8");
-  check("import diagnostics can open artifacts", panel.includes("openExternalPath") && panel.includes("Open report") && panel.includes("Open manifest"));
-  check("import diagnostics can generate handoff package", panel.includes("createImportDiagnosticsPackage") && panel.includes("Generate handoff package"));
-  check("import diagnostics can open handoff ZIP", panel.includes("zip_path") && panel.includes("Open ZIP") && panel.includes("Open folder"));
-  check("import diagnostics loads latest handoff package", panel.includes("getLatestImportDiagnosticsPackage") && panel.includes("latestPackage"));
-  check("import diagnostics exposes checksums", panel.includes("checksum_path") && panel.includes("Open checksums"));
-  check("import diagnostics shows safety flags", panel.includes("safety_flags") && panel.includes("safetyFlags"));
-  check("import diagnostics verifies handoff package", panel.includes("verifyImportDiagnosticsPackage") && panel.includes("Verify package"));
-  check("import diagnostics exposes DICOM preflight", panel.includes("getDicomPreflight") && panel.includes("Run DICOM preflight"));
 }
 
 const ok = checks.every((item) => item.ok);

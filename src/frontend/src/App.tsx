@@ -39,9 +39,6 @@ export default function App() {
   const executionMode: ExecutionMode = "simulated";
   const externalSmokeApprovedRun = false;
   const externalSmokeApprovedBy = "";
-  const [taskApprovalName, setTaskApprovalName] = useState("");
-  const [auditPackage, setAuditPackage] = useState<{ report_path: string } | null>(null);
-  const [auditLoading, setAuditLoading] = useState(false);
   const [selectedDataSeries, setSelectedDataSeries] = useState<DataSeriesSelection | null>(null);
   const [selectedPlanNode, setSelectedPlanNode] = useState<PlanNodeSelection | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<ArtifactSelection | null>(null);
@@ -138,10 +135,6 @@ export default function App() {
   const model = useModelStatus(activeProjectId);
   const image = useImageWorkspaceController(activeProjectId, effectiveProject);
 
-  useEffect(() => {
-    taskController.setAuditPackage?.(null);
-  }, [selectedTaskId, taskController]);
-
   const handleTaskMessage = useCallback(
     (message: TaskStreamMessage) => {
       taskController.updateTaskFromStream(message);
@@ -174,44 +167,6 @@ export default function App() {
   );
 
   const taskStream = useTaskStream(activeTaskId, handleTaskMessage);
-
-  const handleApproveSelectedTask = useCallback(async () => {
-    if (!selectedTaskId) {
-      app.setNotice("Select an External Smoke task before approving a real smoke run.");
-      return;
-    }
-    if (!taskApprovalName.trim()) {
-      app.setNotice("Approval requires an approved-by name.");
-      return;
-    }
-    try {
-      const message = await app.handleApproveTask(selectedTaskId, taskApprovalName);
-      await taskController.reloadTasks();
-      await taskController.reloadTaskEvents();
-      await taskController.reloadTaskDiagnostics();
-      setActiveTaskId(selectedTaskId);
-      app.setNotice(message);
-    } catch (err) {
-      app.setNotice(err instanceof Error ? err.message : String(err));
-    }
-  }, [selectedTaskId, taskApprovalName, taskController, app, setActiveTaskId]);
-
-  const handleGenerateAuditPackage = useCallback(async () => {
-    if (!selectedTaskId) {
-      app.setNotice("Select a task before generating an audit package.");
-      return;
-    }
-    setAuditLoading(true);
-    try {
-      const response = await app.handleGenerateAuditPackage(selectedTaskId);
-      setAuditPackage(response);
-      app.setNotice(`Audit package generated: ${response?.report_path}`);
-    } catch (err) {
-      app.setNotice(err instanceof Error ? err.message : String(err));
-    } finally {
-      setAuditLoading(false);
-    }
-  }, [selectedTaskId, app]);
 
   const handleReconnectTaskStream = useCallback(() => {
     app.handleReconnectTaskStream(activeTaskId || selectedTaskId, setActiveTaskId);
@@ -268,7 +223,6 @@ export default function App() {
       selectedArtifact,
       selectedDataSeries,
       selectedPlanNode,
-      selectedTaskId,
       selectedRunId,
       agentTaskController.task,
       taskController.selectedTask?.pipeline,
@@ -304,22 +258,12 @@ export default function App() {
           messages: chatMessages,
           setMessages: setChatMessages,
         }}
-        approval={{
-          taskApprovalName,
-          setTaskApprovalName,
-          auditPackage,
-          setAuditPackage,
-          auditLoading,
-          setAuditLoading,
-        }}
         executionMode={executionMode}
         externalSmokeApprovedRun={externalSmokeApprovedRun}
         externalSmokeApprovedBy={externalSmokeApprovedBy}
         model={model.data}
         dataset={dataset.data}
         onToggleDrawer={() => app.setDrawerOpen(!app.drawerOpen)}
-        handleApproveSelectedTask={handleApproveSelectedTask}
-        handleGenerateAuditPackage={handleGenerateAuditPackage}
         handleReconnectTaskStream={handleReconnectTaskStream}
         handleAssistantSubmit={handleAssistantSubmit}
         onNewChat={() => setChatMessages(fallbackChat)}

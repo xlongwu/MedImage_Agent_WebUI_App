@@ -696,7 +696,7 @@ describe("AgentWorkspace", () => {
     );
 
     expect(screen.getByRole("heading", { name: "审查所需决策" })).toBeInTheDocument();
-    expect(screen.getByLabelText("新的研究目标")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认决策" })).toBeInTheDocument();
     expect(screen.queryByText("Waiting for one reviewed decision.")).not.toBeInTheDocument();
 
     const canceledTask: AgentTaskResponse = {
@@ -735,8 +735,8 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
-  it("submits one complete decision batch with option, boolean, number, and text values", () => {
-    const onAnswer = vi.fn().mockResolvedValue(undefined);
+  it("reopens the global decision request without submitting a command", () => {
+    const onReopenAttention = vi.fn();
     const task: AgentTaskResponse = {
       ...approvalTask(),
       next_action: {
@@ -813,25 +813,84 @@ describe("AgentWorkspace", () => {
       <I18nProvider locale="en">
         <AgentWorkspaceView
           advancedMode={false}
-          controller={{ ...controller(task), answer: onAnswer }}
+          controller={controller(task)}
           dataStateLabel="Converted BIDS/NIfTI"
           onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
+          onReopenAttention={onReopenAttention}
           projectName="Demo Project"
         />
       </I18nProvider>,
     );
 
-    fireEvent.click(screen.getByLabelText("Yes"));
-    fireEvent.change(screen.getByLabelText("TR seconds"), { target: { value: "2" } });
-    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "All subjects" } });
-    fireEvent.click(screen.getByRole("button", { name: "Submit decisions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm decisions" }));
 
-    expect(onAnswer).toHaveBeenCalledWith("batch-choices", [
-      { item_id: "atlas", value: "aal" },
-      { item_id: "gsr", value: "true" },
-      { item_id: "tr", value: "2" },
-      { item_id: "other", value: "All subjects" },
-    ]);
+    expect(onReopenAttention).toHaveBeenCalledTimes(1);
+  });
+
+  it("reopens the global execution approval without dispatching from the card", () => {
+    const onApprove = vi.fn().mockResolvedValue(undefined);
+    const onReopenAttention = vi.fn();
+    render(
+      <I18nProvider locale="en">
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={{ ...controller(approvalTask()), approve: onApprove }}
+          dataStateLabel="Converted BIDS/NIfTI"
+          onOpenLegacyWorkspace={vi.fn()}
+          onOpenRuns={vi.fn()}
+          onReopenAttention={onReopenAttention}
+          projectName="Demo Project"
+        />
+      </I18nProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve plan" }));
+
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(onReopenAttention).toHaveBeenCalledTimes(1);
+  });
+
+  it("reopens the global recovery approval without accepting it from the card", () => {
+    const onApproveRecovery = vi.fn().mockResolvedValue(undefined);
+    const onReopenAttention = vi.fn();
+    const task: AgentTaskResponse = {
+      ...approvalTask(),
+      next_action: {
+        type: "approve_recovery",
+        title: "Approve recovery",
+        description: "A bounded recovery is ready.",
+        requires_user: true,
+        decision_batch_id: null,
+        disabled_reason: null,
+      },
+      recovery: {
+        proposal_id: "recovery-1",
+        diagnosis: "One subject needs a retry.",
+        affected_subjects: ["sub-03"],
+        recommended_action: "Rerun the failed subject only.",
+        untouched_scope: ["sub-01", "sub-02"],
+        requires_new_plan: false,
+        approval_summary_hash: "sha256:recovery",
+      },
+    };
+    render(
+      <I18nProvider locale="en">
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={{ ...controller(task), approveRecovery: onApproveRecovery }}
+          dataStateLabel="Converted BIDS/NIfTI"
+          onOpenLegacyWorkspace={vi.fn()}
+          onOpenRuns={vi.fn()}
+          onReopenAttention={onReopenAttention}
+          projectName="Demo Project"
+        />
+      </I18nProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve recovery" }));
+
+    expect(onApproveRecovery).not.toHaveBeenCalled();
+    expect(onReopenAttention).toHaveBeenCalledTimes(1);
   });
 });
