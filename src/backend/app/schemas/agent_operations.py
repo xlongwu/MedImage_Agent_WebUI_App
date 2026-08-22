@@ -12,18 +12,26 @@ class AgentOperationalAttention(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     code: str = Field(min_length=1, max_length=128)
-    severity: Literal["warning", "blocking"]
+    severity: Literal["info", "warning", "blocking"]
     count: int = Field(ge=1)
+    related_ids: tuple[str, ...] = Field(default_factory=tuple, max_length=20)
 
 
 class AgentOperationalSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    schema_version: Literal[1] = 1
     project_id: str
-    window_hours: int = Field(ge=1, le=720)
+    window_started_at: datetime
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    lifecycle_state_counts: dict[str, int]
-    model_call_counts: dict[str, int]
-    approval_waiting_count: int = Field(ge=0)
-    attentions: tuple[AgentOperationalAttention, ...] = ()
     truncated: bool = False
+    task_counts: dict[str, int]
+    model_call_counts: dict[str, int]
+    provider_failure_counts: dict[str, int]
+    scheduler_counts: dict[str, int]
+    approval_counts: dict[str, int]
+    gateway_counts: dict[str, int]
+    sandbox_counts: dict[str, int]
+    memory_status: str
+    latency_ms: dict[str, int | float | None]
+    attention: tuple[AgentOperationalAttention, ...] = ()

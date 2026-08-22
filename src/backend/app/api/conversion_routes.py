@@ -4,9 +4,8 @@ All conversion endpoints are preserved with identical URL paths and response
 contracts.  The new router uses ``Depends(get_project_store)`` so route
 handlers do not reach for the global ``mock_store`` directly.
 
-The original definitions in ``dashboard_routes.py`` are kept with a
-``@deprecated`` marker (see that file) and will be removed once downstream
-callers are migrated.
+The canonical conversion routes live here. ``dashboard_routes.py`` only
+retains helper functions still used by characterization tests.
 """
 from __future__ import annotations
 
@@ -41,8 +40,7 @@ router = APIRouter()
 @router.post(
     "/api/projects/{project_id}/conversion/dry-run",
     response_model=ConversionDryRunResponse,
-    deprecated=True,
-    summary="[deprecated] use the same path on this router",
+    summary="Build a deterministic DICOM conversion dry-run plan",
 )
 def post_conversion_dry_run(
     project_id: str,
@@ -74,8 +72,7 @@ def get_latest_conversion_dry_run(
 
 @router.post(
     "/api/projects/{project_id}/conversion/preflight",
-    deprecated=True,
-    summary="[deprecated] use the same path on this router",
+    summary="Check DICOM conversion prerequisites",
 )
 def post_conversion_preflight(
     project_id: str,
@@ -121,8 +118,7 @@ def post_dicom_conversion_prepare(
 
 @router.post(
     "/api/projects/{project_id}/conversion/approval/persist-plan",
-    deprecated=True,
-    summary="[deprecated] use the same path on this router",
+    summary="Persist a reviewed DICOM conversion plan",
 )
 def post_conversion_persist_plan(
     project_id: str,
@@ -180,8 +176,7 @@ def post_dicom_conversion_register_result(
 
 @router.get(
     "/api/projects/{project_id}/conversion/approval/packages/{conversion_run_id}",
-    deprecated=True,
-    summary="[deprecated] use the same path on this router",
+    summary="Read a DICOM conversion review package",
 )
 def get_conversion_review_package(
     project_id: str,
@@ -196,8 +191,7 @@ def get_conversion_review_package(
 
 @router.post(
     "/api/projects/{project_id}/conversion/approval/packages/{conversion_run_id}/export",
-    deprecated=True,
-    summary="[deprecated] use the same path on this router",
+    summary="Export a DICOM conversion review package",
 )
 def post_conversion_review_package_export(
     project_id: str,
@@ -214,8 +208,7 @@ def post_conversion_review_package_export(
 
 @router.get(
     "/api/projects/{project_id}/conversion/release-readiness/{conversion_run_id}",
-    deprecated=True,
-    summary="[deprecated] use the same path on this router",
+    summary="Read DICOM conversion release readiness",
 )
 def get_conversion_release_readiness(
     project_id: str,
@@ -232,8 +225,7 @@ def get_conversion_release_readiness(
 
 @router.post(
     "/api/projects/{project_id}/conversion/execute",
-    deprecated=True,
-    summary="[deprecated] use the same path on this router",
+    summary="Execute an approved DICOM conversion",
 )
 def post_conversion_execute(
     project_id: str,

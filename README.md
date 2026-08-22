@@ -46,6 +46,10 @@ start.bat
 ./start.sh
 ```
 
+The one-click scripts refuse to start when ports `8000` or `5173` are already
+occupied. They never terminate an existing process; stop the owning service
+explicitly before retrying.
+
 ### Run Tests
 
 Use the active project Python environment. On Windows, activate `.venv` or pass
@@ -145,16 +149,6 @@ Select BIDS/rawdata or converted BIDS
 -> Follow bounded progress and inspect the result
 -> Open Runs or technical details for validation, logs, artifacts, and provenance
 ```
-
-When an active Agent Task needs a decision, plan approval, or separately scoped
-recovery approval, the project shell presents one project-bound confirmation
-dialog from Agent, Runs, Settings, and read-only detail views. Closing it makes
-no request and merely leaves a local reopen indicator. Submitting the existing
-structured command lets the persisted scheduler, approval service, ticket,
-Gateway, monitor, observation, and evaluation chain advance to the next real
-blocking point; it does not grant an automatic approval or create a second
-execution path. Legacy single-stage preprocessing and derived-metric mutation
-panels are not part of the ordinary UI path.
 
 When an active Agent Task needs a decision, plan approval, or separately scoped
 recovery approval, the project shell presents one project-bound confirmation

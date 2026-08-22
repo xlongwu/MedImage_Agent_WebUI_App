@@ -10,8 +10,6 @@ from fastapi.testclient import TestClient
 from src.backend.app.api import (
     dashboard_routes,
     execute_reviewed_routes,
-    preset_routes,
-    project_history_routes,
     project_routes,
 )
 from src.backend.app.main import app
@@ -29,9 +27,7 @@ def _isolated_store(tmp_path: Path, monkeypatch) -> SQLiteDesktopStore:
         dashboard_routes,
         project_context,
         reviewed_plan_store,
-        project_history_routes,
         execute_reviewed_routes,
-        preset_routes,
     ):
         monkeypatch.setattr(module, "mock_store", store)
     desktop_config.DESKTOP_CONFIG_PATH.write_text(

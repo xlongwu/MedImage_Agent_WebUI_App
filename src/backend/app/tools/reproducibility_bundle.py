@@ -15,6 +15,7 @@ from src.backend.app.tools.artifact_utils import (
     sha256_file,
     write_json_artifact,
 )
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
 
 EXCLUDED_PARTS = {
     "third_party",
@@ -53,7 +54,7 @@ def _bundle_id_now() -> str:
 
 def _run_cmd(cmd: list[str], timeout: int = 10) -> dict[str, Any]:
     try:
-        completed = subprocess.run(
+        completed = reject_unreviewed_process_start(
             cmd,
             capture_output=True,
             text=True,

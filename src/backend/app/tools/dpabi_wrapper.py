@@ -13,6 +13,7 @@ from src.backend.app.runtime.external_tool_result import (
     from_subprocess_result,
     standard_external_safety,
 )
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
 from src.backend.app.tools.dpabi_function_contracts import get_dpabi_single_function_contract
 from src.backend.app.tools.dpabi_safety import check_dpabi_call
 
@@ -145,7 +146,9 @@ def run_dpabi_single_function(
         cmd = [matlab_command, "-nodisplay", "-nosplash", "-r", matlab_code]
 
     with stdout_log.open("w", encoding="utf-8") as out, stderr_log.open("w", encoding="utf-8") as err:
-        completed = subprocess.run(cmd, stdout=out, stderr=err, check=False)
+        completed = reject_unreviewed_process_start(
+            cmd, stdout=out, stderr=err, check=False
+        )
 
     result = {
         "ok": completed.returncode == 0,
@@ -466,7 +469,9 @@ def run_dpabi_smoke_test(
     stderr_log = log_out / "dpabi_smoke_stderr.log"
 
     with stdout_log.open("w", encoding="utf-8") as out, stderr_log.open("w", encoding="utf-8") as err:
-        completed = subprocess.run(cmd, stdout=out, stderr=err, check=False)
+        completed = reject_unreviewed_process_start(
+            cmd, stdout=out, stderr=err, check=False
+        )
 
     result = {
         "ok": completed.returncode == 0,

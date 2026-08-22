@@ -16,7 +16,6 @@ import src.backend.app.services.mock_store as mock_store_module
 from src.backend.app.api import (
     dashboard_routes,
     execute_reviewed_routes,
-    project_history_routes,
     project_routes,
 )
 from src.backend.app.main import app
@@ -41,7 +40,6 @@ def _isolated_store(tmp_path: Path, monkeypatch) -> SQLiteDesktopStore:
         dashboard_routes,
         project_context,
         reviewed_plan_store,
-        project_history_routes,
         execute_reviewed_routes,
         bold_reference_readiness,
         motion_qc_readiness,

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import logging
 from typing import Any, Callable
 
+from src.backend.app.core.agent_logging import agent_log_context
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.schemas.approval_summary import ApprovalSummary
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
@@ -12,6 +14,9 @@ from src.backend.app.services.agent_invariant_checker import AgentInvariantCheck
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.reviewed_execution_service import ReviewedExecutionService
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentApprovalExecutionService:
@@ -34,6 +39,41 @@ class AgentApprovalExecutionService:
         self.monitor_scheduler = monitor_scheduler or reconciler.start_bounded_monitor
 
     def approve(
+        self, *, project_id: str, lifecycle_id: str, approval_summary_hash: str,
+        command_id: str, actor: str,
+    ):
+        try:
+            result = self._approve(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                approval_summary_hash=approval_summary_hash,
+                command_id=command_id,
+                actor=actor,
+            )
+        except Exception:
+            logger.warning(
+                "agent_approval_rejected",
+                extra={"medimage": agent_log_context(
+                    project_id=project_id,
+                    lifecycle_id=lifecycle_id,
+                    event_code="AGENT_APPROVAL_REJECTED",
+                )},
+            )
+            raise
+        logger.info(
+            "agent_approval_accepted",
+            extra={"medimage": agent_log_context(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                reviewed_plan_id=getattr(result, "reviewed_plan_id", None),
+                execution_ticket_id=getattr(result, "execution_ticket_id", None),
+                run_id=getattr(result, "run_id", None),
+                event_code="AGENT_APPROVAL_ACCEPTED",
+            )},
+        )
+        return result
+
+    def _approve(
         self, *, project_id: str, lifecycle_id: str, approval_summary_hash: str,
         command_id: str, actor: str,
     ):

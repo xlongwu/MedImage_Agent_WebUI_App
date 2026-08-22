@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+import logging
 import math
 from typing import Any
 from uuid import uuid4
 
 from src.backend.app.core.exceptions import SafetyError
+from src.backend.app.core.agent_logging import agent_log_context
 from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.planner.agent_model_adapter import REQUEST_BUILDER_VERSION, action_schema
 from src.backend.app.schemas.agent_model import build_agent_model_profile
@@ -30,6 +32,9 @@ from src.backend.app.services.goal_planning_service import GoalPlanningService
 from src.backend.app.schemas.planning import PlanningRequest
 from src.backend.app.services.memory_repository import MemoryRepositoryError
 from src.backend.app.services.memory_retrieval_service import MemoryRetrievalService
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentPlanningService:
@@ -208,17 +213,46 @@ class AgentPlanningService:
         lifecycle = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
         if lifecycle.state not in {"CREATED", "CONTEXT_READY", "PLAN_DRAFTED", "PLAN_VALIDATED", "WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"}:
             return lifecycle
-        recovered = self._resume_persisted_plan(lifecycle=lifecycle, actor="system-agent-task-scheduler")
-        if recovered is not None:
-            return recovered
-        resume = wake_reason != "create"
-        return self._harness_or_plan(
-            lifecycle=lifecycle,
-            command_id=f"planning-wake:{lifecycle.lifecycle_id}:{lifecycle.updated_at.isoformat()}",
-            actor="system-agent-task-scheduler",
-            resume=resume,
-            wake_reason=wake_reason,
+        logger.info(
+            "agent_planning_started",
+            extra={"medimage": agent_log_context(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                event_code="AGENT_PLANNING_STARTED",
+            )},
         )
+        try:
+            recovered = self._resume_persisted_plan(
+                lifecycle=lifecycle, actor="system-agent-task-scheduler"
+            )
+            result = recovered or self._harness_or_plan(
+                lifecycle=lifecycle,
+                command_id=f"planning-wake:{lifecycle.lifecycle_id}:{lifecycle.updated_at.isoformat()}",
+                actor="system-agent-task-scheduler",
+                resume=wake_reason != "create",
+                wake_reason=wake_reason,
+            )
+        except Exception:
+            logger.warning(
+                "agent_planning_blocked",
+                extra={"medimage": agent_log_context(
+                    project_id=project_id,
+                    lifecycle_id=lifecycle_id,
+                    reviewed_plan_id=lifecycle.reviewed_plan_id,
+                    event_code="AGENT_PLANNING_BLOCKED",
+                )},
+            )
+            raise
+        logger.info(
+            "agent_planning_completed",
+            extra={"medimage": agent_log_context(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                reviewed_plan_id=getattr(result, "reviewed_plan_id", None),
+                event_code="AGENT_PLANNING_COMPLETED",
+            )},
+        )
+        return result
 
     def draft_plan(self, *, lifecycle, command_id: str, actor: str):
         """Typed deterministic callback used by the planning-action service."""

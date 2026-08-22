@@ -68,6 +68,8 @@ export function MemorySettingsPanel({ baseUrl, projectId }: MemorySettingsPanelP
   }, [baseUrl, errorMessage, projectId]);
 
   useEffect(() => {
+    // The loader owns request state and the project-scoped asynchronous fetch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void reload();
   }, [reload]);
 

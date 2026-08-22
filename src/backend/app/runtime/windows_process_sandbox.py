@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,13 +22,16 @@ _CREATE_UNICODE_ENVIRONMENT = 0x00000400
 _STARTF_USESTDHANDLES = 0x00000100
 _HANDLE_FLAG_INHERIT = 1
 _WAIT_OBJECT_0, _WAIT_TIMEOUT, _INFINITE = 0, 258, 0xFFFFFFFF
-_TOKEN_ASSIGN_PRIMARY, _TOKEN_DUPLICATE, _TOKEN_QUERY, _TOKEN_ADJUST_DEFAULT = 1, 2, 8, 0x80
+_TOKEN_ASSIGN_PRIMARY, _TOKEN_DUPLICATE, _TOKEN_QUERY = 1, 2, 8
 _DISABLE_MAX_PRIVILEGE, _WRITE_RESTRICTED = 1, 8
 _KILL_ON_JOB_CLOSE, _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 0x00002000, 9
 _JOB_OBJECT_LIMIT_PROCESS_MEMORY, _JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x100, 8
-_DACL_SECURITY_INFORMATION, _SE_FILE_OBJECT = 4, 1
+_OWNER_SECURITY_INFORMATION, _DACL_SECURITY_INFORMATION, _SE_FILE_OBJECT = 1, 4, 1
 _GRANT_ACCESS, _TRUSTEE_IS_SID, _TRUSTEE_IS_UNKNOWN = 1, 0, 0
-_SUB_CONTAINERS_AND_OBJECTS_INHERIT, _GENERIC_ALL, _WIN_RESTRICTED_CODE_SID = 3, 0x10000000, 33
+_NO_INHERITANCE, _SUB_CONTAINERS_AND_OBJECTS_INHERIT = 0, 3
+_GENERIC_ALL, _GENERIC_READ, _GENERIC_EXECUTE = 0x10000000, 0x80000000, 0x20000000
+_WIN_WORLD_SID, _WIN_AUTHENTICATED_USER_SID = 1, 17
+_WIN_RESTRICTED_CODE_SID, _WIN_WRITE_RESTRICTED_CODE_SID = 18, 70
 
 
 class _LargeInteger(ctypes.Structure):
@@ -67,12 +71,84 @@ class _ExplicitAccess(ctypes.Structure):
     _fields_ = [("grfAccessPermissions", ctypes.c_uint32), ("grfAccessMode", ctypes.c_uint32), ("grfInheritance", ctypes.c_uint32), ("Trustee", _Trustee)]
 
 
+class _SidAndAttributes(ctypes.Structure):
+    _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", ctypes.c_uint32)]
+
+
 class WindowsProcessSandbox:
     def __init__(self) -> None:
         if os.name != "nt":
             raise SafetyError("SANDBOX_PROVIDER_UNAVAILABLE", code="SANDBOX_PROVIDER_UNAVAILABLE")
         self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self.advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        self.kernel32.CreateJobObjectW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p)
+        self.kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+        self.kernel32.SetInformationJobObject.argtypes = (
+            ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32,
+        )
+        self.kernel32.SetInformationJobObject.restype = ctypes.c_int
+        self.kernel32.AssignProcessToJobObject.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
+        self.kernel32.AssignProcessToJobObject.restype = ctypes.c_int
+        self.kernel32.ResumeThread.argtypes = (ctypes.c_void_p,)
+        self.kernel32.ResumeThread.restype = ctypes.c_uint32
+        self.kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+        self.kernel32.CloseHandle.restype = ctypes.c_int
+        self.kernel32.TerminateJobObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+        self.kernel32.TerminateJobObject.restype = ctypes.c_int
+        self.kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+        self.kernel32.WaitForSingleObject.restype = ctypes.c_uint32
+        self.kernel32.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
+        self.kernel32.GetExitCodeProcess.restype = ctypes.c_int
+        self.advapi32.GetNamedSecurityInfoW.argtypes = (
+            ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        )
+        self.advapi32.GetNamedSecurityInfoW.restype = ctypes.c_uint32
+        self.advapi32.CreateWellKnownSid.argtypes = (
+            ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_uint32),
+        )
+        self.advapi32.CreateWellKnownSid.restype = ctypes.c_int
+        self.advapi32.SetEntriesInAclW.argtypes = (
+            ctypes.c_uint32, ctypes.POINTER(_ExplicitAccess), ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        )
+        self.advapi32.SetEntriesInAclW.restype = ctypes.c_uint32
+        self.advapi32.SetNamedSecurityInfoW.argtypes = (
+            ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+        )
+        self.advapi32.SetNamedSecurityInfoW.restype = ctypes.c_uint32
+        self.advapi32.CreateProcessWithTokenW.argtypes = (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.POINTER(_StartupInfo),
+            ctypes.POINTER(_ProcessInformation),
+        )
+        self.advapi32.CreateProcessWithTokenW.restype = ctypes.c_int
+        self.advapi32.OpenProcessToken.argtypes = (
+            ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p),
+        )
+        self.advapi32.OpenProcessToken.restype = ctypes.c_int
+        self.advapi32.CreateRestrictedToken.argtypes = (
+            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+            ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        )
+        self.advapi32.CreateRestrictedToken.restype = ctypes.c_int
+        self.advapi32.CreateProcessAsUserW.argtypes = (
+            ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_void_p,
+            ctypes.c_void_p, ctypes.c_int, ctypes.c_uint32, ctypes.c_void_p,
+            ctypes.c_wchar_p, ctypes.POINTER(_StartupInfo), ctypes.POINTER(_ProcessInformation),
+        )
+        self.advapi32.CreateProcessAsUserW.restype = ctypes.c_int
 
     def run(self, request: SandboxProcessRequest, *, timeout_seconds: int, cancel_requested: Callable[[], bool] | None = None) -> SandboxProcessResult:
         self._validate(request, timeout_seconds)
@@ -115,42 +191,188 @@ class WindowsProcessSandbox:
     def _create_job(self, request: SandboxProcessRequest) -> ctypes.c_void_p:
         job = self.kernel32.CreateJobObjectW(None, None)
         if not job:
-            raise self._failed_start()
+            raise self._failed_start("SANDBOX_JOB_SETUP_FAILED")
         limits = _ExtendedLimitInformation()
         limits.BasicLimitInformation.LimitFlags = _KILL_ON_JOB_CLOSE | _JOB_OBJECT_LIMIT_ACTIVE_PROCESS | _JOB_OBJECT_LIMIT_PROCESS_MEMORY
         limits.BasicLimitInformation.ActiveProcessLimit = request.max_processes
         limits.ProcessMemoryLimit = request.memory_limit_bytes
         if not self.kernel32.SetInformationJobObject(job, _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ctypes.byref(limits), ctypes.sizeof(limits)):
             self.kernel32.CloseHandle(job)
-            raise self._failed_start()
+            raise self._failed_start("SANDBOX_JOB_SETUP_FAILED")
         return job
 
     def _create_restricted_token(self) -> ctypes.c_void_p:
         current, restricted = ctypes.c_void_p(), ctypes.c_void_p()
-        mask = _TOKEN_ASSIGN_PRIMARY | _TOKEN_DUPLICATE | _TOKEN_QUERY | _TOKEN_ADJUST_DEFAULT
+        # CreateRestrictedToken itself needs TOKEN_DUPLICATE, while the
+        # resulting primary token is passed to CreateProcessAsUserW and must
+        # retain TOKEN_ASSIGN_PRIMARY and TOKEN_QUERY as well.
+        mask = _TOKEN_ASSIGN_PRIMARY | _TOKEN_DUPLICATE | _TOKEN_QUERY
         if not self.advapi32.OpenProcessToken(self.kernel32.GetCurrentProcess(), mask, ctypes.byref(current)):
-            raise self._failed_start()
+            raise self._failed_start(
+                "SANDBOX_TOKEN_SETUP_FAILED", stage="open_process_token"
+            )
         try:
-            if not self.advapi32.CreateRestrictedToken(current, _DISABLE_MAX_PRIVILEGE | _WRITE_RESTRICTED, 0, None, 0, None, 0, None, ctypes.byref(restricted)):
-                raise self._failed_start()
+            # Restricted tokens perform a second access check. Keep common
+            # read identities in that check so installed executables and DLLs
+            # remain readable; WRITE_RESTRICTED uses the dedicated write-
+            # restricted identity for writes, granted only to the workspace.
+            sid_buffers = []
+            restricted_sids = (_SidAndAttributes * 4)()
+            for index, sid_type in enumerate((
+                _WIN_WORLD_SID,
+                _WIN_AUTHENTICATED_USER_SID,
+                _WIN_RESTRICTED_CODE_SID,
+                _WIN_WRITE_RESTRICTED_CODE_SID,
+            )):
+                sid = (ctypes.c_byte * 128)()
+                size = ctypes.c_uint32(ctypes.sizeof(sid))
+                if not self.advapi32.CreateWellKnownSid(
+                    sid_type, None, sid, ctypes.byref(size)
+                ):
+                    raise self._failed_start(
+                        "SANDBOX_TOKEN_SETUP_FAILED",
+                        stage="create_well_known_sid",
+                    )
+                sid_buffers.append(sid)
+                restricted_sids[index] = _SidAndAttributes(
+                    Sid=ctypes.cast(sid, ctypes.c_void_p),
+                    Attributes=0,
+                )
+            if not self.advapi32.CreateRestrictedToken(
+                current,
+                _DISABLE_MAX_PRIVILEGE | _WRITE_RESTRICTED,
+                0,
+                None,
+                0,
+                None,
+                len(restricted_sids),
+                restricted_sids,
+                ctypes.byref(restricted),
+            ):
+                raise self._failed_start(
+                    "SANDBOX_TOKEN_SETUP_FAILED", stage="create_restricted_token"
+                )
             return restricted
         finally:
             self.kernel32.CloseHandle(current)
 
     def _grant_restricted_workspace_access(self, cwd: Path) -> None:
-        """Write-restricted token may write only where its SID is granted access."""
-        dacl = descriptor = new_dacl = ctypes.c_void_p()
+        """Grant writes only to the pre-created mutable attempt directories."""
+        for sid_type in (
+            _WIN_RESTRICTED_CODE_SID,
+            _WIN_WRITE_RESTRICTED_CODE_SID,
+        ):
+            self._grant_restricted_path_access(
+                cwd,
+                sid_type=sid_type,
+                access_mask=_GENERIC_READ | _GENERIC_EXECUTE,
+                inheritance=_NO_INHERITANCE,
+            )
+        staged_input = (cwd / "staged_input").resolve()
+        if staged_input.parent != cwd or not staged_input.is_dir():
+            raise SafetyError(
+                "SANDBOX_ACL_SETUP_FAILED", code="SANDBOX_ACL_SETUP_FAILED"
+            )
+        read_targets = (staged_input, *sorted(staged_input.rglob("*")))
+        for target in read_targets:
+            resolved = target.resolve()
+            if target.is_symlink() or not resolved.is_relative_to(staged_input):
+                raise SafetyError(
+                    "SANDBOX_ACL_SETUP_FAILED", code="SANDBOX_ACL_SETUP_FAILED"
+                )
+            for sid_type in (
+                None,
+                _WIN_RESTRICTED_CODE_SID,
+                _WIN_WRITE_RESTRICTED_CODE_SID,
+            ):
+                self._grant_restricted_path_access(
+                    resolved,
+                    sid_type=sid_type,
+                    access_mask=_GENERIC_READ | _GENERIC_EXECUTE,
+                    inheritance=(
+                        _SUB_CONTAINERS_AND_OBJECTS_INHERIT
+                        if resolved.is_dir()
+                        else _NO_INHERITANCE
+                    ),
+                )
+        for name in ("output", "logs", "tmp"):
+            target = (cwd / name).resolve()
+            if target.parent != cwd or not target.is_dir():
+                raise SafetyError(
+                    "SANDBOX_ACL_SETUP_FAILED", code="SANDBOX_ACL_SETUP_FAILED"
+                )
+            for sid_type in (
+                None,
+                _WIN_RESTRICTED_CODE_SID,
+                _WIN_WRITE_RESTRICTED_CODE_SID,
+            ):
+                self._grant_restricted_path_access(
+                    target,
+                    sid_type=sid_type,
+                    access_mask=_GENERIC_ALL,
+                    inheritance=_SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+                )
+
+    def _grant_restricted_path_access(
+        self,
+        target: Path,
+        *,
+        sid_type: int | None,
+        access_mask: int,
+        inheritance: int,
+    ) -> None:
+        """Grant the write-restricted SID access to one approved directory."""
+        # These are independent out-pointers. Chaining the assignment aliases
+        # one ctypes object, which can overwrite the descriptor pointer and
+        # free the same allocation twice when the restricted ACL is released.
+        dacl = ctypes.c_void_p()
+        owner = ctypes.c_void_p()
+        descriptor = ctypes.c_void_p()
+        new_dacl = ctypes.c_void_p()
         sid = (ctypes.c_byte * 128)()
         size = ctypes.c_uint32(ctypes.sizeof(sid))
         try:
-            if self.advapi32.GetNamedSecurityInfoW(str(cwd), _SE_FILE_OBJECT, _DACL_SECURITY_INFORMATION, None, None, ctypes.byref(dacl), None, ctypes.byref(descriptor)) != 0:
+            security_information = _DACL_SECURITY_INFORMATION
+            owner_pointer = None
+            if sid_type is None:
+                security_information |= _OWNER_SECURITY_INFORMATION
+                owner_pointer = ctypes.byref(owner)
+            if self.advapi32.GetNamedSecurityInfoW(
+                str(target),
+                _SE_FILE_OBJECT,
+                security_information,
+                owner_pointer,
+                None,
+                ctypes.byref(dacl),
+                None,
+                ctypes.byref(descriptor),
+            ) != 0:
                 raise SafetyError("SANDBOX_ACL_SETUP_FAILED", code="SANDBOX_ACL_SETUP_FAILED")
-            if not self.advapi32.CreateWellKnownSid(_WIN_RESTRICTED_CODE_SID, None, ctypes.byref(sid), ctypes.byref(size)):
-                raise SafetyError("SANDBOX_ACL_SETUP_FAILED", code="SANDBOX_ACL_SETUP_FAILED")
-            entry = _ExplicitAccess(_GENERIC_ALL, _GRANT_ACCESS, _SUB_CONTAINERS_AND_OBJECTS_INHERIT, _Trustee(None, 0, _TRUSTEE_IS_SID, _TRUSTEE_IS_UNKNOWN, ctypes.cast(sid, ctypes.c_void_p)))
+            sid_pointer = owner
+            if sid_type is not None:
+                if not self.advapi32.CreateWellKnownSid(
+                    sid_type,
+                    None,
+                    ctypes.byref(sid),
+                    ctypes.byref(size),
+                ):
+                    raise SafetyError("SANDBOX_ACL_SETUP_FAILED", code="SANDBOX_ACL_SETUP_FAILED")
+                sid_pointer = ctypes.cast(sid, ctypes.c_void_p)
+            entry = _ExplicitAccess(
+                access_mask,
+                _GRANT_ACCESS,
+                inheritance,
+                _Trustee(
+                    None,
+                    0,
+                    _TRUSTEE_IS_SID,
+                    _TRUSTEE_IS_UNKNOWN,
+                    sid_pointer,
+                ),
+            )
             if self.advapi32.SetEntriesInAclW(1, ctypes.byref(entry), dacl, ctypes.byref(new_dacl)) != 0:
                 raise SafetyError("SANDBOX_ACL_SETUP_FAILED", code="SANDBOX_ACL_SETUP_FAILED")
-            if self.advapi32.SetNamedSecurityInfoW(str(cwd), _SE_FILE_OBJECT, _DACL_SECURITY_INFORMATION, None, None, new_dacl, None) != 0:
+            if self.advapi32.SetNamedSecurityInfoW(str(target), _SE_FILE_OBJECT, _DACL_SECURITY_INFORMATION, None, None, new_dacl, None) != 0:
                 raise SafetyError("SANDBOX_ACL_SETUP_FAILED", code="SANDBOX_ACL_SETUP_FAILED")
         finally:
             for pointer in (new_dacl, descriptor):
@@ -173,7 +395,21 @@ class WindowsProcessSandbox:
         command = ctypes.create_unicode_buffer(self._command_line(request.argv))
         env = ctypes.create_unicode_buffer("\0".join(f"{key}={value}" for key, value in sorted(request.environment.items(), key=lambda item: item[0].casefold())) + "\0\0")
         if not self.advapi32.CreateProcessAsUserW(token, request.executable_path, command, None, None, True, _CREATE_SUSPENDED | _CREATE_UNICODE_ENVIRONMENT, env, request.cwd, ctypes.byref(startup), ctypes.byref(info)):
-            raise self._failed_start()
+            # Desktop users can be denied either primary-token or quota
+            # privileges. The alternative always uses the *same restricted
+            # token*; it is not and must never become a normal-process fallback.
+            if not self.advapi32.CreateProcessWithTokenW(
+                token,
+                0,
+                request.executable_path,
+                command,
+                _CREATE_SUSPENDED | _CREATE_UNICODE_ENVIRONMENT,
+                ctypes.cast(env, ctypes.c_void_p),
+                request.cwd,
+                ctypes.byref(startup),
+                ctypes.byref(info),
+            ):
+                raise self._failed_start()
         return info.hProcess, info.hThread
 
     def _wait(self, job: ctypes.c_void_p, process: ctypes.c_void_p, timeout_seconds: int, cancel_requested: Callable[[], bool] | None) -> tuple[str, int | None, str | None]:
@@ -198,11 +434,9 @@ class WindowsProcessSandbox:
 
     @staticmethod
     def _command_line(argv: tuple[str, ...]) -> str:
-        def quote(value: str) -> str:
-            if value and not any(char in value for char in ' \t"'):
-                return value
-            return '"' + value.replace("\\", "\\\\").replace('"', '\\\"') + '"'
-        return " ".join(quote(value) for value in argv)
+        # list2cmdline implements the quoting rules used by the Microsoft C
+        # runtime and keeps fixed PowerShell probe scripts as one argv item.
+        return subprocess.list2cmdline(list(argv))
 
     @staticmethod
     def _validate(request: SandboxProcessRequest, timeout_seconds: int) -> None:
@@ -215,5 +449,22 @@ class WindowsProcessSandbox:
             raise SafetyError("SANDBOX_PROCESS_START_FAILED", code="SANDBOX_PROCESS_START_FAILED")
 
     @staticmethod
-    def _failed_start() -> SafetyError:
-        return SafetyError("SANDBOX_PROCESS_START_FAILED", code="SANDBOX_PROCESS_START_FAILED")
+    def _failed_start(
+        code: str = "SANDBOX_PROCESS_START_FAILED",
+        *,
+        stage: str = "process_start",
+        winerror: int | None = None,
+    ) -> SafetyError:
+        """Return a fail-closed error with redacted Windows diagnostics.
+
+        The stage and numeric Win32 error are safe operational metadata. They
+        deliberately exclude paths, command arguments, environment values,
+        token contents, and security descriptors.
+        """
+
+        error_value = ctypes.get_last_error() if winerror is None else winerror
+        return SafetyError(
+            code,
+            code=code,
+            details={"stage": stage, "winerror": int(error_value)},
+        )

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from src.backend.app.runtime.desktop_config import get_desktop_config
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
 
 
 def _matlab_command(config: dict[str, Any]) -> str:
@@ -44,7 +45,7 @@ def _try_matlab_version(
     warnings: list[str] = []
     errors: list[str] = []
     try:
-        result = subprocess.run(
+        result = reject_unreviewed_process_start(
             [command, "-batch", "disp(version); exit"],
             capture_output=True,
             text=True,

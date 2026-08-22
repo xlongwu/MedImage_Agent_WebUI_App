@@ -121,6 +121,7 @@ def build_release_readiness():
 
     api_files = [
         Path("src/backend/app/api/dashboard_routes.py"),
+        Path("src/backend/app/api/image_routes.py"),
         Path("src/backend/app/api/routes.py"),
         Path("src/backend/app/api/dpabi_routes.py"),
         Path("src/backend/app/api/rsfmri_routes.py"),

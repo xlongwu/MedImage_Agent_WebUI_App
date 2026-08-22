@@ -57,6 +57,26 @@ def test_concurrent_repository_initialization_is_serialized(tmp_path: Path) -> N
     assert all(repository.health_check()["ok"] is True for repository in repositories)
 
 
+def test_read_only_repository_never_creates_or_migrates_the_store(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.sqlite"
+    readonly_missing = MemoryRepository(missing, read_only=True)
+    assert readonly_missing.health_check()["ok"] is False
+    assert not missing.exists()
+
+    path = tmp_path / "memory.sqlite"
+    writable = MemoryRepository(path)
+    _remember(writable)
+    before = path.read_bytes()
+    readonly = MemoryRepository(path, read_only=True)
+    assert readonly.health_check()["ok"] is True
+    assert len(readonly.list_items(project_id="project-a")) == 1
+    assert path.read_bytes() == before
+    with pytest.raises(MemoryRepositoryError) as error:
+        with readonly.connect(immediate=True):
+            pass
+    assert error.value.code == "MEMORY_STORE_READ_ONLY"
+
+
 def test_command_replay_is_idempotent_and_payload_change_conflicts(tmp_path: Path) -> None:
     repository = MemoryRepository(tmp_path / "memory.sqlite")
     first = _remember(repository)

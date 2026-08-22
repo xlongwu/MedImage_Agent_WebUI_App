@@ -23,16 +23,14 @@ export function useExecutionGraph(request: ExecutionGraphRequest) {
   const [reload, setReload] = useState(0);
   const active = useRef<AbortController | null>(null);
   const retryDelay = useRef(3000);
+  const enabled = Boolean(
+    request.projectId && (request.runId || request.reviewedPlanId || request.previewPlan),
+  );
 
   const refresh = useCallback(() => setReload((value) => value + 1), []);
   useEffect(() => {
     active.current?.abort();
-    if (!request.projectId || (!request.runId && !request.reviewedPlanId && !request.previewPlan)) {
-      setGraph(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
+    if (!enabled) return;
     const controller = new AbortController();
     active.current = controller;
     let timer: number | undefined;
@@ -63,7 +61,8 @@ export function useExecutionGraph(request: ExecutionGraphRequest) {
         if (
           disposed ||
           response.project_id !== request.projectId ||
-          (request.runId && response.run_id !== request.runId)
+          (request.runId && response.run_id !== request.runId) ||
+          (request.reviewedPlanId && response.reviewed_plan_id !== request.reviewedPlanId)
         )
           return;
         setGraph(response);
@@ -98,7 +97,13 @@ export function useExecutionGraph(request: ExecutionGraphRequest) {
     request.reviewedPlanId,
     request.runId,
     request.autoRefresh,
+    enabled,
     reload,
   ]);
-  return { graph, error, loading, refresh };
+  return {
+    graph: enabled ? graph : null,
+    error: enabled ? error : null,
+    loading: enabled ? loading : false,
+    refresh,
+  };
 }

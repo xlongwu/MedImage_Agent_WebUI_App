@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import logging
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from src.backend.app.core.exceptions import SafetyError, StateStoreError
+from src.backend.app.core.agent_logging import agent_log_context
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.runtime.node_contract_registry import executable_contract_versions
 from src.backend.app.schemas.execution_ticket import ExecutionTicket
@@ -21,6 +23,7 @@ from src.backend.app.services.sandbox_policy_service import SandboxPolicyService
 from src.backend.app.services.sandbox_workspace_service import SandboxWorkspaceService
 
 _VERIFICATION_SENTINEL = object()
+logger = logging.getLogger(__name__)
 
 
 def _default_pipeline_executor(**kwargs: Any) -> dict[str, Any]:
@@ -273,6 +276,16 @@ class ExecutionGateway:
                     code="GATEWAY_DISPATCH_OUTCOME_UNKNOWN",
                 ) from exc
             raise StateStoreError("GATEWAY_DISPATCH_EVENT_WRITE_FAILED") from exc
+        logger.info(
+            "gateway_dispatch_started",
+            extra={"medimage": agent_log_context(
+                project_id=dispatch.project_id,
+                reviewed_plan_id=dispatch.reviewed_plan_id,
+                execution_ticket_id=dispatch.execution_ticket_id,
+                run_id=dispatch.run_id,
+                event_code="GATEWAY_DISPATCH_STARTED",
+            )},
+        )
         context = VerifiedExecutionContext(
             ticket=consumed,
             ticket_service=self.ticket_service,
@@ -310,6 +323,16 @@ class ExecutionGateway:
                 result=result,
             )
             self.ticket_service.store.add_gateway_dispatch_event(event)
+            logger.info(
+                "gateway_dispatch_succeeded",
+                extra={"medimage": agent_log_context(
+                    project_id=dispatch.project_id,
+                    reviewed_plan_id=dispatch.reviewed_plan_id,
+                    execution_ticket_id=dispatch.execution_ticket_id,
+                    run_id=dispatch.run_id,
+                    event_code="GATEWAY_DISPATCH_SUCCEEDED",
+                )},
+            )
             return result, consumed
         except Exception as exc:
             code = (
@@ -330,4 +353,14 @@ class ExecutionGateway:
                 self.ticket_service.store.add_gateway_dispatch_event(event)
             except Exception as event_exc:
                 raise StateStoreError("GATEWAY_DISPATCH_OUTCOME_WRITE_FAILED") from event_exc
+            logger.warning(
+                "gateway_dispatch_failed",
+                extra={"medimage": agent_log_context(
+                    project_id=dispatch.project_id,
+                    reviewed_plan_id=dispatch.reviewed_plan_id,
+                    execution_ticket_id=dispatch.execution_ticket_id,
+                    run_id=dispatch.run_id,
+                    event_code="GATEWAY_DISPATCH_FAILED",
+                )},
+            )
             raise

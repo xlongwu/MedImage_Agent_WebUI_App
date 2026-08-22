@@ -2,7 +2,8 @@
 
 All endpoints mirror the original behavior; the only change is store access
 via ``Depends(get_project_store)`` instead of the module-level ``mock_store``.
-Old routes remain registered in ``dashboard_routes.py`` with ``deprecated=True``.
+The canonical routes live here; ``dashboard_routes.py`` only retains helper
+functions still used by characterization tests.
 """
 
 from __future__ import annotations

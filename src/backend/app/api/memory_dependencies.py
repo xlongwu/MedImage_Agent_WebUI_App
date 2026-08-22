@@ -50,3 +50,9 @@ def get_memory_store() -> MemoryStore:
     """Create a short-lived repository facade; connections are transaction-scoped."""
 
     return MemoryRepository(get_memory_config().store_path)
+
+
+def get_readonly_memory_store() -> MemoryStore:
+    """Open the existing Memory store without creating or migrating it."""
+
+    return MemoryRepository(get_memory_config().store_path, read_only=True)

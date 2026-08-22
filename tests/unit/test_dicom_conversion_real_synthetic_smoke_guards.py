@@ -120,7 +120,7 @@ def test_no_shell_true_in_source():
     assert "shell=True" not in code
 
 
-def test_argv_list_not_shell_string():
+def test_retired_smoke_never_starts_a_process_directly():
     import inspect
 
     from src.backend.app.services.dicom_conversion_execution import (
@@ -128,9 +128,9 @@ def test_argv_list_not_shell_string():
     )
 
     source = inspect.getsource(run_real_dcm2niix_synthetic_smoke)
-    assert "subprocess.run" in source  # It should call subprocess.run
-    # Check it passes argv as a list, not a string
-    assert '", "' in source or '"-z"' in source  # List elements
+    assert "subprocess.run" not in source
+    assert "reject_unreviewed_process_start" in source
+    assert "argv" in source
 
 
 # ═══════════════════════════════════════════════════════════════════════

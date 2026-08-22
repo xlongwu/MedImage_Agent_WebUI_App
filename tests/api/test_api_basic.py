@@ -41,15 +41,6 @@ def test_removed_planner_draft_api_returns_not_found():
     assert response.status_code == 404
 
 
-def test_gui_agent_api_is_removed():
-    client = TestClient(app)
-    response = client.post(
-        "/api/gui-agent/sessions",
-        json={"target_app": "spm", "objective": "obsolete"},
-    )
-    assert response.status_code == 404
-
-
 def test_desktop_health_api():
     client = TestClient(app)
     response = client.get("/api/desktop/health")

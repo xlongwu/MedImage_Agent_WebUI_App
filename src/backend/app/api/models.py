@@ -85,7 +85,6 @@ class DesktopConfigSaveRequest(BaseModel):
     spm_dir: str | None = Field(default=None)
     dpabi_dir: str | None = Field(default=None)
     gpu_mode: str | None = Field(default=None)
-    llm: dict = Field(default_factory=dict)
 
 
 class ExternalSmokeRunRequest(BaseModel):

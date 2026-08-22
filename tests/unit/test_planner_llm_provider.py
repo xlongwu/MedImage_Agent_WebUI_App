@@ -12,7 +12,7 @@ def test_template_planner_uses_explicit_rule_policy():
 
 
 def test_template_planner_does_not_select_a_remote_provider_from_environment(monkeypatch):
-    monkeypatch.setenv("MEDIMAGE_LLM_API_KEY", "not-used")
+    monkeypatch.setenv("MEDIMAGE_AGENT_MODEL_API_KEY", "not-used")
     monkeypatch.setattr(
         "urllib.request.urlopen",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected HTTP call")),

@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import logging
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
 from src.backend.app.core.exceptions import SafetyError, StateStoreError
+from src.backend.app.core.agent_logging import agent_log_context
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.execution_ticket import (
     ExecutionRetryPolicy,
     ExecutionTicket,
     ExecutionTicketEvent,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionTicketStore(Protocol):
@@ -174,7 +179,7 @@ class ExecutionTicketService:
         audit_id: str | None = None,
         details: dict[str, object] | None = None,
     ) -> ExecutionTicketEvent:
-        return self._event(
+        event = self._event(
             ticket_id=ticket_id or f"missing_ticket_{uuid4().hex}",
             project_id=project_id,
             event_type="rejected",
@@ -182,6 +187,15 @@ class ExecutionTicketService:
             reason=reason,
             details=details,
         )
+        logger.warning(
+            "execution_ticket_rejected",
+            extra={"medimage": agent_log_context(
+                project_id=project_id,
+                execution_ticket_id=ticket_id,
+                event_code="EXECUTION_TICKET_REJECTED",
+            )},
+        )
+        return event
 
     def issue(
         self,
@@ -306,6 +320,15 @@ class ExecutionTicketService:
             project_id=stored.project_id,
             event_type="issued",
             audit_id=stored.audit_id,
+        )
+        logger.info(
+            "execution_ticket_issued",
+            extra={"medimage": agent_log_context(
+                project_id=stored.project_id,
+                reviewed_plan_id=stored.reviewed_plan_id,
+                execution_ticket_id=stored.execution_ticket_id,
+                event_code="EXECUTION_TICKET_ISSUED",
+            )},
         )
         return stored
 
@@ -574,6 +597,16 @@ class ExecutionTicketService:
                 "recovery_proposal_id": proposal.recovery_proposal_id,
             },
         )
+        logger.info(
+            "recovery_execution_ticket_issued",
+            extra={"medimage": agent_log_context(
+                project_id=stored.project_id,
+                reviewed_plan_id=stored.reviewed_plan_id,
+                execution_ticket_id=stored.execution_ticket_id,
+                run_id=stored.recovery_run_id,
+                event_code="RECOVERY_EXECUTION_TICKET_ISSUED",
+            )},
+        )
         return stored
 
     def _validate_recovery_child(self, ticket: ExecutionTicket) -> None:
@@ -743,6 +776,15 @@ class ExecutionTicketService:
                 audit_id=ticket.audit_id,
                 details={"idempotency_key": idempotency_key},
             )
+            logger.info(
+                "execution_ticket_consumed",
+                extra={"medimage": agent_log_context(
+                    project_id=ticket.project_id,
+                    reviewed_plan_id=ticket.reviewed_plan_id,
+                    execution_ticket_id=ticket.execution_ticket_id,
+                    event_code="EXECUTION_TICKET_CONSUMED",
+                )},
+            )
         return updated
 
     def revoke(self, execution_ticket_id: str, *, reason: str) -> ExecutionTicket:
@@ -763,5 +805,14 @@ class ExecutionTicketService:
             event_type="revoked",
             audit_id=ticket.audit_id,
             reason=reason,
+        )
+        logger.warning(
+            "execution_ticket_revoked",
+            extra={"medimage": agent_log_context(
+                project_id=ticket.project_id,
+                reviewed_plan_id=ticket.reviewed_plan_id,
+                execution_ticket_id=ticket.execution_ticket_id,
+                event_code="EXECUTION_TICKET_REVOKED",
+            )},
         )
         return revoked

@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -56,7 +56,7 @@ DEFAULT_STORE_PATH = Path("outputs/work/desktop/desktop_state.sqlite")
 
 
 def utc_now_iso() -> str:
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def get_desktop_store_path() -> Path:
@@ -1826,7 +1826,19 @@ class SQLiteDesktopStore:
                 return attempt
             except sqlite3.IntegrityError:
                 current = self.get_sandbox_attempt(attempt.sandbox_id)
-                if current is None or current.policy_hash != attempt.policy_hash:
+                if current is None or any(
+                    getattr(current, field) != getattr(attempt, field)
+                    for field in (
+                        "project_id",
+                        "run_id",
+                        "node_id",
+                        "subject_id",
+                        "attempt_id",
+                        "execution_ticket_id",
+                        "dispatch_id",
+                        "policy_hash",
+                    )
+                ):
                     raise
                 return current
 

@@ -205,7 +205,7 @@ def generate_task_audit_package(
     store: ProjectStore,
 ) -> dict[str, object]:
     import json
-    from datetime import datetime
+    from datetime import UTC, datetime
     from pathlib import Path
 
     from fastapi import HTTPException
@@ -219,7 +219,9 @@ def generate_task_audit_package(
     diagnostics = get_task_diagnostics(task_id, store)
     artifact_response = get_task_artifacts(task_id, store)
 
-    generated_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    generated_at = (
+        datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    )
     package_dir = Path("outputs/reports/task_audits") / _safe_path_part(task.id)
     package_dir.mkdir(parents=True, exist_ok=True)
     events = _get_task_events(task_id)

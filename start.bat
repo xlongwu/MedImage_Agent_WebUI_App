@@ -11,17 +11,18 @@ echo.
 :: ── Navigate to project root ──
 cd /d "%~dp0"
 
-:: ── Kill any process on ports 8000 / 5173 ──
-echo [1/4] Cleaning ports 8000 and 5173...
+:: ── Refuse occupied ports; never terminate an unowned process ──
+echo [1/4] Checking ports 8000 and 5173...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000.*LISTENING" 2^>nul') do (
-    taskkill /F /PID %%a >nul 2>&1
-    echo   Freed port 8000 (PID %%a)
+    echo   ERROR: Port 8000 is already in use by PID %%a.
+    echo   Stop the owning process explicitly or choose another port.
+    exit /b 1
 )
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":5173.*LISTENING" 2^>nul') do (
-    taskkill /F /PID %%a >nul 2>&1
-    echo   Freed port 5173 (PID %%a)
+    echo   ERROR: Port 5173 is already in use by PID %%a.
+    echo   Stop the owning process explicitly or choose another port.
+    exit /b 1
 )
-timeout /t 2 /nobreak >nul
 
 :: ── Start Backend (uvicorn on 8000) ──
 echo [2/4] Starting backend (uvicorn :8000)...
@@ -33,7 +34,7 @@ set /a count=0
 :wait_backend
 timeout /t 1 /nobreak >nul
 set /a count+=1
-curl -s http://127.0.0.1:8000/health >nul 2>&1
+curl -s http://127.0.0.1:8000/api/health >nul 2>&1
 if not errorlevel 1 goto backend_ready
 if !count! lss 30 goto wait_backend
 echo   WARNING: Backend may not have started. Continuing...
@@ -70,7 +71,7 @@ echo ============================================
 echo   All services should be running:
 echo     Frontend : http://127.0.0.1:5173
 echo     Backend  : http://127.0.0.1:8000
-echo     Health   : http://127.0.0.1:8000/health
+echo     Health   : http://127.0.0.1:8000/api/health
 echo ============================================
 echo.
 echo Close this window or press Ctrl+C to stop.

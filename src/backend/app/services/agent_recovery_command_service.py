@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Callable
 
+from src.backend.app.core.agent_logging import agent_log_context
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.recovery_execution_service import RecoveryExecutionService
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentRecoveryCommandService:
@@ -48,5 +53,16 @@ class AgentRecoveryCommandService:
             project_id=project_id, lifecycle_id=lifecycle_id,
             proposal_id=proposal.recovery_proposal_id, candidate_id=candidate.candidate_id,
             command_id=command_id, actor=actor,
+        )
+        logger.info(
+            "agent_recovery_approved",
+            extra={"medimage": agent_log_context(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                reviewed_plan_id=lifecycle.reviewed_plan_id,
+                execution_ticket_id=lifecycle.execution_ticket_id,
+                run_id=lifecycle.run_id,
+                event_code="AGENT_RECOVERY_APPROVED",
+            )},
         )
         return lifecycle

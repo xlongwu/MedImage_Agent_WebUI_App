@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from threading import Lock, Thread
 from typing import Callable, Protocol
 from uuid import uuid4
 
 from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
+from src.backend.app.core.agent_logging import agent_log_context
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentPlanningAdvancer(Protocol):
@@ -61,9 +66,23 @@ class AgentTaskScheduler:
 
     def claim_next(self, *, owner: str) -> AgentTaskWakeRecord | None:
         now = self.now()
-        return self.store.claim_next_agent_task_wake(
+        wake = self.store.claim_next_agent_task_wake(
             owner=owner, now=now, lease_expires_at=now + timedelta(seconds=self.LEASE_SECONDS)
         )
+        if wake is not None:
+            logger.info(
+                "agent_wake_claimed",
+                extra={"medimage": agent_log_context(
+                    project_id=wake.project_id,
+                    lifecycle_id=wake.lifecycle_id,
+                    event_code=(
+                        "AGENT_WAKE_EXPIRED_RECLAIMED"
+                        if wake.attempts > 1
+                        else "AGENT_WAKE_CLAIMED"
+                    ),
+                )},
+            )
+        return wake
 
     def run_once(self, *, owner: str | None = None) -> str | None:
         """Claim and advance exactly one persisted planning checkpoint."""
@@ -91,8 +110,24 @@ class AgentTaskScheduler:
                 available_at=now + timedelta(seconds=delay),
                 error_code=getattr(exc, "code", None) or type(exc).__name__,
             )
+            logger.warning(
+                "agent_wake_retry_scheduled",
+                extra={"medimage": agent_log_context(
+                    project_id=wake.project_id,
+                    lifecycle_id=wake.lifecycle_id,
+                    event_code="AGENT_WAKE_RETRY_SCHEDULED",
+                )},
+            )
             return wake.lifecycle_id
         self.store.complete_agent_task_wake(wake, owner=owner, now=self.now())
+        logger.info(
+            "agent_wake_completed",
+            extra={"medimage": agent_log_context(
+                project_id=wake.project_id,
+                lifecycle_id=wake.lifecycle_id,
+                event_code="AGENT_WAKE_COMPLETED",
+            )},
+        )
         return wake.lifecycle_id
 
     def rescan(self) -> tuple[str, ...]:

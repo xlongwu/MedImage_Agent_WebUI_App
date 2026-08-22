@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
+from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +15,7 @@ from src.backend.app.desktop_backend_entry import (
     DESKTOP_PARENT_PID_ENV,
     DesktopBackendConfig,
     _desktop_parent_pid,
+    _sandbox_self_test_argv,
     _watch_parent_process,
     ensure_packaged_windows_runtime_dirs,
     main,
@@ -19,6 +23,7 @@ from src.backend.app.desktop_backend_entry import (
     run_backend,
     validate_host,
 )
+from src.backend.app.schemas.sandbox import SandboxProcessResult
 from src.backend.app.main import app
 
 
@@ -65,6 +70,72 @@ def test_sandbox_self_test_rejects_unknown_case_without_starting_backend(monkeyp
     monkeypatch.setattr("src.backend.app.desktop_backend_entry._is_windows_runtime", lambda: False)
     assert main(["--sandbox-self-test", "unknown"]) == 2
     assert "SANDBOX_PROVIDER_UNAVAILABLE" in capsys.readouterr().out
+
+
+def test_sandbox_self_test_uses_fixed_windows_helper_argv(tmp_path: Path) -> None:
+    memory_input = tmp_path / "memory-input.txt"
+    argv = _sandbox_self_test_argv("write_allowed_output", memory_input)
+
+    assert argv[0].endswith("System32\\cmd.exe")
+    assert argv[1:4] == ("/d", "/q", "/c")
+    assert "output\\proof.txt" in argv[-1]
+
+    timeout_argv = _sandbox_self_test_argv("timeout", memory_input)
+    assert timeout_argv[0].lower().endswith("system32\\ping.exe")
+
+    memory_argv = _sandbox_self_test_argv("memory_limit", memory_input)
+    assert memory_argv[0].lower().endswith("system32\\sort.exe")
+    assert memory_argv[-1] == str(memory_input)
+
+
+def test_sandbox_self_test_cleans_its_fixed_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+    now = datetime.now(UTC)
+    captured: dict[str, object] = {}
+
+    def fake_run(request, *, timeout_seconds: int):
+        captured["request"] = request
+        assert timeout_seconds == request.timeout_seconds
+        proof = Path(request.cwd) / "output" / "proof.txt"
+        proof.write_text("ok", encoding="ascii")
+        return SandboxProcessResult(
+            sandbox_id=request.sandbox_id, status="SUCCEEDED", return_code=0,
+            started_at=now, ended_at=now, stdout_path="redacted", stderr_path="redacted",
+        )
+
+    monkeypatch.setattr("src.backend.app.desktop_backend_entry._is_windows_runtime", lambda: True)
+    monkeypatch.setattr("src.backend.app.desktop_backend_entry._run_sandbox_self_test_process", fake_run)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--sandbox-self-test", "write_allowed_output"]) == 0
+    request = captured["request"]
+    assert request.executable_path.endswith("System32\\cmd.exe")
+    assert request.argv[0] == request.executable_path
+    assert "output\\proof.txt" in request.argv[-1]
+    assert request.environment == {"TEMP": str(Path(request.cwd) / "tmp"), "TMP": str(Path(request.cwd) / "tmp")}
+    assert not list(tmp_path.glob(".sandbox-self-test-*"))
+    assert '"network_isolation": "not_enforced"' in capsys.readouterr().out
+
+
+def test_sandbox_self_test_reports_restricted_process_start_failure(monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+    class StartFailure(Exception):
+        code = "SANDBOX_PROCESS_START_FAILED"
+        details = {"stage": "create_restricted_token", "winerror": 87}
+
+    monkeypatch.setattr("src.backend.app.desktop_backend_entry._is_windows_runtime", lambda: True)
+    monkeypatch.setattr(
+        "src.backend.app.desktop_backend_entry._run_sandbox_self_test_process",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(StartFailure()),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--sandbox-self-test", "write_allowed_output"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {
+        "ok": False,
+        "code": "SANDBOX_PROCESS_START_FAILED",
+        "stage": "create_restricted_token",
+        "winerror": 87,
+    }
 
 
 def test_desktop_parent_pid_accepts_only_a_distinct_positive_pid(

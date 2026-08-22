@@ -2,14 +2,15 @@
 
 All endpoints mirror the original behavior; the only change is store access
 via ``Depends(get_project_store)`` instead of the module-level ``mock_store``.
-Old routes remain registered in ``dashboard_routes.py`` with ``deprecated=True``.
+The canonical routes live here; ``dashboard_routes.py`` only retains helper
+functions still used by characterization tests.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from src.backend.app.api.dependencies import ProjectStore
+from src.backend.app.api.dependencies import ProjectStore, get_project_store
 from src.backend.app.api.execution_contract import reject_execution_contract
 from src.backend.app.schemas.desktop import (
     AssistantChatRequest,
@@ -29,13 +30,6 @@ from src.backend.app.services.task_adapter import (
 )
 
 router = APIRouter()
-
-
-def get_project_store() -> ProjectStore:
-    from src.backend.app.services.mock_store import mock_store
-
-    return mock_store  # type: ignore[return-value]
-
 
 # Task listing and detail
 
@@ -139,7 +133,6 @@ async def run_pipeline(
 
     from fastapi import HTTPException
 
-    from src.backend.app.services.mock_store import mock_store
     from src.backend.app.services.pipeline_runner import run_pipeline_task
     from src.backend.app.services.task_manager import task_manager
 
@@ -173,7 +166,7 @@ async def run_pipeline(
         request.execution_mode == "external_smoke"
         and request.external_smoke_mode == "approved_smoke"
     ):
-        approval = mock_store.add_approval(
+        approval = store.add_approval(
             task.id,
             approved=True,
             approved_by=(request.approved_by or "").strip(),
@@ -183,7 +176,7 @@ async def run_pipeline(
                 "matlab_external_execution": True,
             },
         )
-        mock_store.append_task_event(
+        store.append_task_event(
             task.id,
             status=task.status,
             progress=task.progress,

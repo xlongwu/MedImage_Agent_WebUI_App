@@ -23,7 +23,7 @@
 **必须不做**：
 
 - 不引入 MATLAB、SPM、DPABI 或其他外部软件执行依赖。
-- 不启用真实 GUI 自动化、PyWinAuto、任意命令、无界循环或未经审批的恢复。
+- 不启用外部桌面控制、任意命令、无界循环或未经审批的恢复。
 - 不修改用户 DICOM、NIfTI、BIDS 或 rawdata。
 - 不把 synthetic/preview/partial 输出升级为正式科学验证结果。
 - 不因发布压力降低测试、路径、审批、审计或产物真实性要求。

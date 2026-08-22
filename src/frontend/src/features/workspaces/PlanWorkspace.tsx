@@ -68,8 +68,8 @@ export function PlanWorkspace({
   projectId,
   selectedProject,
   projectConfigPath,
-  datasetIndexPath,
-  rawdataDir,
+  datasetIndexPath: _datasetIndexPath,
+  rawdataDir: _rawdataDir,
   initialPresetDraft,
   reviewedPlanId,
   onSelectedNodeChange,
@@ -78,39 +78,49 @@ export function PlanWorkspace({
 }: PlanWorkspaceProps) {
   const { t } = useI18n();
   const [showTechnicalPlanTools, setShowTechnicalPlanTools] = useState(false);
-  const [reviewedPlanRecord, setReviewedPlanRecord] = useState<ReviewedPlanRecord | null>(null);
-  const [reviewedPlanLoading, setReviewedPlanLoading] = useState(false);
-  const [reviewedPlanError, setReviewedPlanError] = useState("");
   const [reviewedPlanReloadToken, setReviewedPlanReloadToken] = useState(0);
+  const reviewedPlanRequestKey =
+    projectId && reviewedPlanId
+      ? JSON.stringify([baseUrl, projectId, reviewedPlanId, reviewedPlanReloadToken])
+      : null;
+  const [reviewedPlanState, setReviewedPlanState] = useState<{
+    error: string;
+    key: string;
+    record: ReviewedPlanRecord | null;
+  }>({ error: "", key: "", record: null });
 
   useEffect(() => {
-    if (!projectId || !reviewedPlanId) {
-      setReviewedPlanRecord(null);
-      setReviewedPlanError("");
-      setReviewedPlanLoading(false);
-      return;
-    }
+    if (!projectId || !reviewedPlanId || !reviewedPlanRequestKey) return;
 
     let cancelled = false;
-    setReviewedPlanLoading(true);
-    setReviewedPlanError("");
-    setReviewedPlanRecord(null);
     void getProjectReviewedPlan(baseUrl, projectId, reviewedPlanId)
       .then((response) => {
-        if (!cancelled) setReviewedPlanRecord(response.reviewed_plan);
+        if (!cancelled) {
+          setReviewedPlanState({
+            error: "",
+            key: reviewedPlanRequestKey,
+            record: response.reviewed_plan,
+          });
+        }
       })
       .catch((error) => {
         if (!cancelled) {
-          setReviewedPlanError(error instanceof Error ? error.message : String(error));
+          setReviewedPlanState({
+            error: error instanceof Error ? error.message : String(error),
+            key: reviewedPlanRequestKey,
+            record: null,
+          });
         }
-      })
-      .finally(() => {
-        if (!cancelled) setReviewedPlanLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [baseUrl, projectId, reviewedPlanId, reviewedPlanReloadToken]);
+  }, [baseUrl, projectId, reviewedPlanId, reviewedPlanRequestKey]);
+
+  const reviewedPlanStateIsCurrent = reviewedPlanState.key === reviewedPlanRequestKey;
+  const reviewedPlanRecord = reviewedPlanStateIsCurrent ? reviewedPlanState.record : null;
+  const reviewedPlanError = reviewedPlanStateIsCurrent ? reviewedPlanState.error : "";
+  const reviewedPlanLoading = Boolean(reviewedPlanRequestKey && !reviewedPlanStateIsCurrent);
 
   const reviewedPlanDraft = useMemo(
     () => (reviewedPlanRecord ? reviewedPlanToDraft(reviewedPlanRecord) : null),

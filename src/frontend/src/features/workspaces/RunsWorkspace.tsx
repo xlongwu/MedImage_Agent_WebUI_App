@@ -604,7 +604,10 @@ function RunArtifactInspector({
   task: TaskLogEntry | null;
 }) {
   const { t } = useI18n();
-  const artifacts = details?.artifacts.artifacts ?? [];
+  const artifacts = useMemo(
+    () => details?.artifacts.artifacts ?? [],
+    [details?.artifacts.artifacts],
+  );
   const grouped = useMemo(() => {
     const result = new Map<string, typeof artifacts>();
     artifacts.forEach((artifact) => {

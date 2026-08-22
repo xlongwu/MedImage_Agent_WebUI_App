@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.backend.app.api._errors import raise_api_error
-from src.backend.app.api.dependencies import ProjectStore
+from src.backend.app.api.dependencies import ProjectStore, get_project_store
 from src.backend.app.planner.reviewed_plan_store import (
     ReviewedPlanStoreError,
     artifact_warnings,
@@ -20,7 +20,6 @@ from src.backend.app.planner.reviewed_plan_store import (
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord, RunLinkRecord
 from src.backend.app.schemas.goal_contract import GoalContractCandidate
 from src.backend.app.schemas.planner_provenance import PlannerEvidence, PlannerInvocation
-from src.backend.app.services.mock_store import mock_store
 from src.backend.app.services.run_artifact_discovery import (
     discover_run_artifacts,
     find_run_artifact,
@@ -37,8 +36,10 @@ from src.backend.app.tools.artifact_utils import is_safe_artifact_id
 router = APIRouter()
 
 
-def get_project_history_store() -> ProjectStore:
-    return mock_store
+def get_project_history_store(
+    store: ProjectStore = Depends(get_project_store),
+) -> ProjectStore:
+    return store
 
 
 class ReviewedPlanSaveRequest(BaseModel):

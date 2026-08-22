@@ -18,3 +18,16 @@ def test_v2_runner_uses_isolated_real_lifecycle_records() -> None:
     assert report.gate_passed
     assert len(report.results) == len(manifest.cases)
     assert all(item.passed and item.trace_hash for item in report.results)
+    assert report.passed_case_count == report.case_count
+    assert report.failed_case_count == 0
+    assert report.gate_failures == ()
+    assert all(item.outcome.case_id == item.case_id for item in report.results)
+    assert all(not item.forbidden_calls_observed for item in report.results)
+    by_id = {item.case_id: item for item in report.results}
+    assert by_id["plan-only-zh"].final_state == "SUCCEEDED"
+    assert by_id["plan-only-zh"].outcome.plan_only_zero_execution is True
+    assert by_id["repair-then-valid-zh"].outcome.schema_repaired is True
+    assert (
+        by_id["unknown-call-outcome-en"].outcome.duplicate_side_effect_observed
+        is False
+    )

@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 from src.backend.app.api import (
     dashboard_routes,
     execute_reviewed_routes,
-    project_history_routes,
     project_routes,
 )
 from src.backend.app.main import app
@@ -35,7 +34,6 @@ def created_project(tmp_path: Path, monkeypatch) -> dict:
     monkeypatch.setattr(dashboard_routes, "mock_store", store)
     monkeypatch.setattr(project_context, "mock_store", store)
     monkeypatch.setattr(reviewed_plan_store, "mock_store", store)
-    monkeypatch.setattr(project_history_routes, "mock_store", store)
     monkeypatch.setattr(execute_reviewed_routes, "mock_store", store)
 
     response = client.post(

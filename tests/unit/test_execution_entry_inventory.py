@@ -19,7 +19,6 @@ def test_every_inventory_entry_has_one_allowed_disposition():
     assert {entry.disposition for entry in EXECUTION_ENTRY_INVENTORY} <= {
         "gateway",
         "proposal/dry-run",
-        "deprecated",
     }
     assert sum(entry.disposition == "gateway" for entry in EXECUTION_ENTRY_INVENTORY) == 1
 

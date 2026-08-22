@@ -15,8 +15,14 @@ def test_versioned_eval_manifest_uses_only_registered_drivers_and_bilingual_orac
 
     assert {case.driver for case in manifest.cases} == {
         "plan_only", "decision_required", "provider_failure", "invalid_action",
+        "invalid_json", "invalid_action_type", "repair_then_valid",
+        "provider_timeout", "missing_api_key", "unknown_call_outcome",
         "duplicate_command", "restart_recovery", "approval_drift", "unsafe_path",
-        "memory_context",
+        "memory_relevant_preference", "memory_irrelevant_preference",
+        "memory_stale_authoritative_source", "memory_science_confirmation_required",
+        "memory_disabled_zero_probe", "memory_partial_health",
+        "context_required_section_missing", "context_optional_section_omitted",
+        "context_size_limit", "context_cross_project_reference",
     }
     assert {case.language for case in manifest.cases} == {"en", "zh-CN"}
     assert all(case.goal and case.expected_final_state for case in manifest.cases)
@@ -38,6 +44,8 @@ def test_metric_aggregation_preserves_unknown_quality_and_rejects_out_of_scope_o
     assert report.metrics["goal_routing_accuracy"] == 1.0
     assert report.metrics["necessary_question_recall"] is None
     assert len(report.missing_case_ids) == len(manifest.cases) - 1
+    assert report.gate_passed is False
+    assert report.gate_failures
     with pytest.raises(ValueError, match="AGENT_EVAL_OUTCOME_SCOPE_INVALID"):
         AgentEvaluationService().evaluate(
             manifest=manifest, outcomes=[AgentEvalOutcome(case_id="unknown")]

@@ -23,6 +23,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
+
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -98,7 +100,7 @@ def capture_synthetic_smoke_evidence() -> dict[str, Any]:
             evidence["output_root"] = str(output_root)
 
             # Capture dcm2niix version
-            ver_result = subprocess.run(
+            ver_result = reject_unreviewed_process_start(
                 ["dcm2niix", "--version"],
                 capture_output=True,
                 text=True,
@@ -124,7 +126,9 @@ def capture_synthetic_smoke_evidence() -> dict[str, Any]:
                 str(input_dir),
             ]
 
-            result = subprocess.run(argv, capture_output=True, text=True)
+            result = reject_unreviewed_process_start(
+                argv, capture_output=True, text=True
+            )
             rc = result.returncode
             stdout = result.stdout or ""
             stderr = result.stderr or ""

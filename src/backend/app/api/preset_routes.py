@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from src.backend.app.api.dependencies import ProjectStore, get_project_store
 
 from src.backend.app.planner.pipeline_presets import (
     get_preset,
@@ -15,7 +17,6 @@ from src.backend.app.schemas.preset_schemas import (
     PipelinePresetInstantiateRequest,
     PipelinePresetInstantiateResponse,
 )
-from src.backend.app.services.mock_store import mock_store
 
 router = APIRouter()
 
@@ -46,9 +47,10 @@ def api_instantiate_pipeline_preset(
     project_id: str,
     preset_id: str,
     request: PipelinePresetInstantiateRequest = PipelinePresetInstantiateRequest(),
+    store: ProjectStore = Depends(get_project_store),
 ) -> PipelinePresetInstantiateResponse:
     """Instantiate a pipeline preset into a reviewed-plan-compatible plan dict."""
-    if mock_store.get_project(project_id) is None:
+    if store.get_project(project_id) is None:
         raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
 
     result = instantiate_preset(preset_id, request)

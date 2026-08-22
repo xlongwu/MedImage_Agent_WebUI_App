@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from src.backend.app.tools.dpabi_safety import ALLOWED_FUNCTIONS as ALLOWLISTED_SINGLE_FUNCTIONS
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
 
 
 def _matlab_quote(value: str) -> str:
@@ -206,7 +207,9 @@ def run_dpabi_subject_smooth(
     ]
 
     with stdout_log.open("w", encoding="utf-8") as out, stderr_log.open("w", encoding="utf-8") as err:
-        completed = subprocess.run(cmd, stdout=out, stderr=err, check=False)
+        completed = reject_unreviewed_process_start(
+            cmd, stdout=out, stderr=err, check=False
+        )
 
     if result_json.exists():
         data = _read_json(result_json) or {

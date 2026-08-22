@@ -39,7 +39,7 @@ def test_rule_planner_uses_canonical_plan_and_redacted_provenance() -> None:
 
 
 def test_provider_failure_has_structured_evidence_and_no_output_hash(monkeypatch) -> None:
-    monkeypatch.delenv("MEDIMAGE_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("MEDIMAGE_AGENT_MODEL_API_KEY", raising=False)
 
     result = generate_plan_from_goal("motion", provider="openai_compatible")
 

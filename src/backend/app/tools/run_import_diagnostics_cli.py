@@ -9,6 +9,7 @@ from src.backend.app.api.dashboard_routes import (
     import_dataset,
     verify_dataset_diagnostics_package,
 )
+from src.backend.app.api.dependencies import ProjectStore, get_project_store
 from src.backend.app.schemas.desktop import DatasetImportRequest
 from src.backend.app.tools.cli_utils import emit_json_result
 
@@ -44,7 +45,13 @@ def infer_dataset_type(path: str) -> str:
     return "bids"
 
 
-def maybe_register_import(project_id: str, import_path: str, dataset_type: str) -> dict | None:
+def maybe_register_import(
+    project_id: str,
+    import_path: str,
+    dataset_type: str,
+    *,
+    store: ProjectStore,
+) -> dict | None:
     if not import_path:
         return None
     path = Path(import_path)
@@ -56,33 +63,62 @@ def maybe_register_import(project_id: str, import_path: str, dataset_type: str) 
         }
     resolved_type = infer_dataset_type(import_path) if dataset_type == "auto" else dataset_type
     response = import_dataset(
-        DatasetImportRequest(project_id=project_id, path=str(path), type=resolved_type)  # type: ignore[arg-type]
+        DatasetImportRequest(project_id=project_id, path=str(path), type=resolved_type),  # type: ignore[arg-type]
+        store=store,
     )
     return response.model_dump()
 
 
-def run(project_id: str, mode: str, import_path: str = "", dataset_type: str = "auto") -> dict:
-    import_response = maybe_register_import(project_id, import_path, dataset_type)
+def run(
+    project_id: str,
+    mode: str,
+    import_path: str = "",
+    dataset_type: str = "auto",
+    *,
+    store: ProjectStore | None = None,
+) -> dict:
+    active_store = store or get_project_store()
+    import_response = maybe_register_import(
+        project_id,
+        import_path,
+        dataset_type,
+        store=active_store,
+    )
     if import_response and not import_response.get("success"):
         return {"ok": False, "project_id": project_id, "import": import_response}
     if mode == "status":
-        payload = get_latest_dataset_diagnostics_package(project_id=project_id).model_dump()
+        payload = get_latest_dataset_diagnostics_package(
+            project_id=project_id,
+            store=active_store,
+        ).model_dump()
         if import_response:
             payload["import"] = import_response
         return payload
     if mode == "package":
-        payload = create_dataset_diagnostics_package(project_id=project_id).model_dump()
+        payload = create_dataset_diagnostics_package(
+            project_id=project_id,
+            store=active_store,
+        ).model_dump()
         if import_response:
             payload["import"] = import_response
         return payload
     if mode == "verify":
-        payload = verify_dataset_diagnostics_package(project_id=project_id).model_dump()
+        payload = verify_dataset_diagnostics_package(
+            project_id=project_id,
+            store=active_store,
+        ).model_dump()
         if import_response:
             payload["import"] = import_response
         return payload
     if mode == "all":
-        package = create_dataset_diagnostics_package(project_id=project_id)
-        verification = verify_dataset_diagnostics_package(project_id=project_id)
+        package = create_dataset_diagnostics_package(
+            project_id=project_id,
+            store=active_store,
+        )
+        verification = verify_dataset_diagnostics_package(
+            project_id=project_id,
+            store=active_store,
+        )
         payload = {
             "ok": package.ok and verification.ok,
             "project_id": project_id,

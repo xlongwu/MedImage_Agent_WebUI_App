@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import shutil
 from datetime import UTC, datetime
@@ -10,8 +11,12 @@ from pathlib import Path
 from typing import Protocol
 
 from src.backend.app.core.exceptions import SafetyError, StateStoreError
+from src.backend.app.core.agent_logging import agent_log_context
 from src.backend.app.runtime.atomic_file import atomic_write_json
 from src.backend.app.schemas.sandbox import SandboxAttemptRecord, SandboxPolicy
+
+
+logger = logging.getLogger(__name__)
 
 
 class SandboxAttemptStore(Protocol):
@@ -93,6 +98,16 @@ class SandboxWorkspaceService:
         updated = self.store.update_sandbox_attempt(sandbox_id, status="PREPARED")
         if updated is None:
             raise StateStoreError("SANDBOX_ATTEMPT_WRITE_FAILED")
+        logger.info(
+            "sandbox_prepared",
+            extra={"medimage": agent_log_context(
+                project_id=project_id,
+                execution_ticket_id=execution_ticket_id,
+                run_id=run_id,
+                sandbox_id=sandbox_id,
+                event_code="SANDBOX_PREPARED",
+            )},
+        )
         return updated
 
     def stage_inputs(
@@ -134,6 +149,16 @@ class SandboxWorkspaceService:
         updated = self.store.update_sandbox_attempt(attempt.sandbox_id, status="RUNNING", started_at=datetime.now(UTC))
         if updated is None:
             raise StateStoreError("SANDBOX_ATTEMPT_WRITE_FAILED")
+        logger.info(
+            "sandbox_running",
+            extra={"medimage": agent_log_context(
+                project_id=attempt.project_id,
+                execution_ticket_id=attempt.execution_ticket_id,
+                run_id=attempt.run_id,
+                sandbox_id=attempt.sandbox_id,
+                event_code="SANDBOX_RUNNING",
+            )},
+        )
         return updated
 
     def finalize(self, attempt: SandboxAttemptRecord, *, status: str, result_code: str | None = None, output_manifest_hash: str | None = None, output_count: int = 0) -> SandboxAttemptRecord:
@@ -143,6 +168,16 @@ class SandboxWorkspaceService:
         )
         if updated is None:
             raise StateStoreError("SANDBOX_ATTEMPT_WRITE_FAILED")
+        logger.info(
+            "sandbox_terminal",
+            extra={"medimage": agent_log_context(
+                project_id=attempt.project_id,
+                execution_ticket_id=attempt.execution_ticket_id,
+                run_id=attempt.run_id,
+                sandbox_id=attempt.sandbox_id,
+                event_code=f"SANDBOX_{status}",
+            )},
+        )
         return updated
 
     @staticmethod

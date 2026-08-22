@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
+
 
 def _matlab_quote(value: str) -> str:
     return value.replace("'", "''")
@@ -67,7 +69,9 @@ def run_matlab_check(
         ]
 
     with stdout_log.open("w", encoding="utf-8") as out, stderr_log.open("w", encoding="utf-8") as err:
-        completed = subprocess.run(cmd, stdout=out, stderr=err, check=False)
+        completed = reject_unreviewed_process_start(
+            cmd, stdout=out, stderr=err, check=False
+        )
 
     if output_path.exists():
         try:

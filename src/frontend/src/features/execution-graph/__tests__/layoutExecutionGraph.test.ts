@@ -78,4 +78,26 @@ describe("layoutExecutionGraph", () => {
       first.find((node) => node.id === "a")!.position.x,
     );
   });
+
+  it("lays out a 100-node chain without dropping or duplicating nodes", () => {
+    const nodes = Array.from({ length: 100 }, (_, index) => ({
+      ...graph.nodes[0],
+      node_id: `node-${index}`,
+      label: `Node ${index}`,
+      depends_on: index === 0 ? [] : [`node-${index - 1}`],
+    }));
+    const edges = nodes.slice(1).map((node, index) => ({
+      edge_id: `node-${index}->${node.node_id}`,
+      source_node_id: `node-${index}`,
+      target_node_id: node.node_id,
+      state: "pending" as const,
+    }));
+    const largeGraph = { ...graph, nodes, edges, total_nodes: nodes.length };
+
+    const layout = layoutExecutionGraph(largeGraph);
+
+    expect(layout).toHaveLength(100);
+    expect(new Set(layout.map((node) => node.id)).size).toBe(100);
+    expect(layout[99].position.x).toBeGreaterThan(layout[0].position.x);
+  });
 });

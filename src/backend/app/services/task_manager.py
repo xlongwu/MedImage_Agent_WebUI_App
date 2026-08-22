@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from src.backend.app.schemas.desktop import (
@@ -22,7 +22,7 @@ class TaskManager:
         if not project:
             raise KeyError(request.project_id)
         task_id = f"task-{uuid4().hex[:10]}"
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         task = TaskDetail(
             id=task_id,
             run_name=f"Run_{now.strftime('%Y_%m%d_%H%M%S')}",

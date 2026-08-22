@@ -120,7 +120,7 @@ _NATIVE_FULL_CONFIRMATIONS: dict[str, bool] = {
 }
 
 _ACPC_GOAL_TERMS = (
-    "acpc", "ac-pc", "anterior commissure", "posterior commissure", "前后连合", "前后联合", "前连合", "后连合",
+    "acpc", "ac-pc", "anterior commissure", "posterior commissure", "前后连合", "前后联合", "前联合", "前连合", "后连合",
 )
 
 _PLAN_ONLY_TERMS = (
@@ -720,7 +720,13 @@ def generate_plan_from_goal(
 
     The caller explicitly selects either deterministic rules or the remote provider.
     """
-    model_config = model_config or AgentModelRuntimeConfig()
+    if model_config is None:
+        if provider == "openai_compatible":
+            from src.backend.app.core.config import ConfigService
+
+            model_config = ConfigService().model
+        else:
+            model_config = AgentModelRuntimeConfig()
     errors: list[str] = []
     warnings: list[str] = []
     messages: list[str] = []
@@ -749,7 +755,7 @@ def generate_plan_from_goal(
             }
         ),
         started_at=datetime.now(UTC),
-        timeout_ms=60_000 if provider == "openai_compatible" else 1_000,
+        timeout_ms=(model_config.timeout_seconds * 1_000 if provider == "openai_compatible" else 1_000),
     )
 
     def response(**values: Any) -> PlannerResponse:

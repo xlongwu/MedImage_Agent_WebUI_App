@@ -6,10 +6,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
+
 
 def _run_command(cmd: list[str], cwd: str | None = None) -> dict[str, Any]:
     started = time.perf_counter()
-    completed = subprocess.run(
+    completed = reject_unreviewed_process_start(
         cmd,
         cwd=cwd,
         capture_output=True,

@@ -1,196 +1,112 @@
 from __future__ import annotations
 
-import ast
-import json
-import subprocess
-import sys
-from pathlib import Path
+from hashlib import sha256
 
 import pytest
 from pydantic import ValidationError
 
-from src.backend.app.schemas.agent_eval import (
-    AgentReviewFinding,
-    MultiAgentEvalManifest,
-    RecordedReviewerRun,
-)
+from src.backend.app.schemas.agent_eval import MultiAgentEvalManifest, MultiAgentGateArmObservation, MultiAgentGateModelCallRecord, MultiAgentGateRunBundle
+from src.backend.app.services.agent_review_context_projector import AgentReviewContextProjector, context_projector_hash
+from src.backend.app.services.agent_review_finding_aggregator import AgentReviewFindingAggregator, aggregation_policy_hash
+from src.backend.app.services.agent_review_role_registry import role_registry_hash
 from src.backend.app.services.multi_agent_evaluation_service import MultiAgentEvaluationService
 
-_ROOT = Path(__file__).parents[2]
-_MANIFEST = _ROOT / "tests" / "fixtures" / "agent_eval" / "multi_agent" / "manifest.json"
+
+def _hash(value: str) -> str:
+    return sha256(value.encode()).hexdigest()
 
 
-def _manifest() -> MultiAgentEvalManifest:
-    return MultiAgentEvalManifest.model_validate_json(_MANIFEST.read_text(encoding="utf-8"))
+def _manifest_payload(*, size: int = 30, split: str = "pilot") -> dict:
+    cases = []
+    for index in range(size):
+        group = ("team_eligible", "team_ineligible", "adversarial_failure")[index % 3]
+        eligible = group != "team_ineligible"
+        cases.append({
+            "case_id": f"case-{index}", "source_kind": "trace_replay_redacted", "source_ref_hash": _hash(f"source-{index}"),
+            "redaction_review_ids": [f"redactor-{index}"], "label_review_ids": [f"label-a-{index}", f"label-b-{index}"],
+            "dataset_split": split, "case_group": group, "team_eligible": eligible,
+            "goal_summary": "Review a redacted rs-fMRI planning request.", "language": "en" if index % 2 else "zh-CN",
+            "scenarios": ["plan_only" if index == 0 else "qc"], "frozen_context_hash": _hash(f"context-{index}"),
+            "input_refs": ["evidence:goal:present"], "reference_blocking_codes": ["MISSING_PREREQUISITE"],
+            "reference_blocking_refs": {"MISSING_PREREQUISITE": ["evidence:goal:present"]}, "prohibited_blocking_codes": [],
+        })
+    required = ["plan_only", "missing_prerequisite", "alff_falff", "reho", "motion", "qc", "unsupported_goal", "environment_unavailable", "unsafe_write_root", "invalid_model_action"]
+    for scenario, case in zip(required, cases):
+        case["scenarios"] = [scenario]
+    return {
+        "schema_version": 3, "suite_version": "g0-test-v1", "source_revision": "abcdef0", "runner_version": "multi-agent-gate-runner-v1", "redaction_policy_version": "g0-redaction-v1",
+        "role_registry_hash": role_registry_hash(), "context_projector_hash": context_projector_hash(), "aggregation_policy_hash": aggregation_policy_hash(),
+        "model_profile_hash": _hash("profile"), "provider_id": "approved-provider", "model_id": "approved-model", "allowed_finding_codes": ["MISSING_PREREQUISITE"], "cases": cases,
+    }
 
 
-def _finding(*, reviewer_kind: str = "science", severity: str = "blocking", code: str = "EXTRA_BLOCK", input_refs: tuple[str, ...] = ("goal",), suggested_change: str | None = None) -> AgentReviewFinding:
-    return AgentReviewFinding(
-        reviewer_kind=reviewer_kind,
-        severity=severity,
-        code=code,
-        message_key=f"agent.review.{code.lower()}",
-        input_refs=input_refs,
-        suggested_change=suggested_change,
+def _bundle(manifest: MultiAgentEvalManifest) -> MultiAgentGateRunBundle:
+    service = MultiAgentEvaluationService()
+    observations = []
+    calls = []
+    for case in manifest.cases:
+        for arm in ("baseline", "candidate"):
+            for repetition in (1, 2):
+                observations.append(MultiAgentGateArmObservation(
+                    case_id=case.case_id, arm=arm, repetition=repetition, status="safe_stop", conclusion_hash=_hash(f"{case.case_id}:{arm}"),
+                    blocking_codes=() if arm == "baseline" else case.reference_blocking_codes,
+                    human_decision_batches=1, lifecycle_id_hash=_hash(f"lifecycle:{case.case_id}:{arm}:{repetition}"),
+                    team_worker_started=arm == "candidate" and case.team_eligible,
+                    safety_reviewer_completed=True if arm == "candidate" and case.team_eligible else None, elapsed_ms=100 if arm == "baseline" else 150,
+                ))
+                calls.append(MultiAgentGateModelCallRecord(
+                    gate_run_id="g0-test", case_id=case.case_id, arm=arm, repetition=repetition, role_id=None,
+                    source_revision=manifest.source_revision, source_tree_hash=_hash("tree"), runner_version=manifest.runner_version,
+                    provider_id=manifest.provider_id, model_id=manifest.model_id, model_profile_hash=manifest.model_profile_hash,
+                    role_registry_hash=manifest.role_registry_hash, prompt_schema_policy_hash=_hash("prompt"), context_hash=case.frozen_context_hash,
+                    request_hash=_hash(f"request:{case.case_id}:{arm}:{repetition}"), status="completed", response_hash=_hash(f"response:{case.case_id}:{arm}:{repetition}"),
+                    input_tokens=100, output_tokens=10, latency_ms=50, started_at="2026-01-01T00:00:00Z", completed_at="2026-01-01T00:00:01Z",
+                ))
+    return MultiAgentGateRunBundle(
+        gate_run_id="g0-test", manifest_hash=service.manifest_hash(manifest), source_revision=manifest.source_revision, source_tree_hash=_hash("tree"), runner_version=manifest.runner_version,
+        provider_id=manifest.provider_id, model_id=manifest.model_id, model_profile_hash=manifest.model_profile_hash, role_registry_hash=manifest.role_registry_hash,
+        context_projector_hash=manifest.context_projector_hash, aggregation_policy_hash=manifest.aggregation_policy_hash,
+        observations=tuple(observations), model_calls=tuple(calls),
     )
 
 
-def test_frozen_manifest_covers_stage_seven_scenarios_and_both_languages() -> None:
-    manifest = _manifest()
+def test_manifest_contains_only_real_redacted_inputs_and_human_labels() -> None:
+    manifest = MultiAgentEvalManifest.model_validate(_manifest_payload())
 
-    assert manifest.schema_version == 2
-    assert {case.language for case in manifest.cases} == {"en", "zh-CN"}
-    assert {
-        scenario for case in manifest.cases for scenario in case.scenarios
-    } >= {
-        "plan_only", "missing_prerequisite", "alff_falff", "reho", "motion", "qc",
-        "unsupported_goal", "environment_unavailable", "unsafe_write_root", "invalid_model_action",
-    }
-    assert all(case.source_kind == "synthetic" for case in manifest.cases)
-    serialized = _MANIFEST.read_text(encoding="utf-8")
-    assert "rawdata" not in serialized.lower()
-    assert "password" not in serialized.lower()
-    assert "system_prompt" not in serialized.lower()
-
-
-def test_review_finding_is_fixed_and_cannot_carry_authority_fields() -> None:
+    assert manifest.schema_version == 3
+    assert manifest.cases[0].source_kind == "trace_replay_redacted"
     with pytest.raises(ValidationError):
-        AgentReviewFinding.model_validate(
-            {
-                "reviewer_kind": "safety",
-                "severity": "blocking",
-                "code": "FORGED_AUTHORITY",
-                "message_key": "agent.review.forged_authority",
-                "input_refs": ["goal"],
-                "approval": "forged",
-            }
-        )
+        MultiAgentEvalManifest.model_validate({**_manifest_payload(), "baseline": {"call_count": 1}})
+    bad = _manifest_payload()
+    bad["cases"][0]["goal_summary"] = "read C:\\research\\rawdata"
+    with pytest.raises(ValidationError, match="REDACTION"):
+        MultiAgentEvalManifest.model_validate(bad)
+    with pytest.raises(ValidationError, match="ACCEPTANCE_CASE_COUNT"):
+        MultiAgentEvalManifest.model_validate(_manifest_payload(split="acceptance"))
 
 
-def test_synthetic_preflight_comparison_reports_metrics_but_keeps_single_agent() -> None:
-    report = MultiAgentEvaluationService().evaluate(_manifest())
+def test_pilot_bundle_is_reported_but_cannot_open_the_production_gate() -> None:
+    manifest = MultiAgentEvalManifest.model_validate(_manifest_payload())
+    report = MultiAgentEvaluationService().evaluate(manifest=manifest, bundle=_bundle(manifest))
 
     assert report.gate_passed is False
     assert report.conclusion == "continue_single_agent"
-    assert report.gate_failures == ("MULTI_AGENT_EVAL_GATE_REDACTED_TRACE_REPLAY_REQUIRED",)
-    assert report.baseline_metrics["blocking_omission_recall"] == 0.3
-    assert report.candidate_metrics["blocking_omission_recall"] == 1.0
-    assert report.candidate_metrics["false_positive_blocking_task_rate"] == 0.0
-    assert report.candidate_metrics["mean_model_calls"] == 2.0
-    assert report.candidate_metrics["mean_input_tokens"] == 600.0
-    assert report.candidate_metrics["p95_latency_ms"] == 150
-    assert report.candidate_metrics["mean_human_operations"] == 1.0
+    assert "MULTI_AGENT_EVAL_GATE_ACCEPTANCE_DATASET_REQUIRED" in report.gate_failures
 
 
-def test_timeout_keeps_other_review_findings_and_returns_a_partial_result() -> None:
-    manifest = _manifest()
-    original = manifest.cases[0]
-    science = RecordedReviewerRun(
-        reviewer_kind="science", status="completed", findings=(_finding(code="SCIENCE_CHECK", input_refs=("goal",)),), input_tokens=20, latency_ms=20
-    )
-    timeout = original.reviewers[0].model_copy(update={"status": "timeout", "findings": ()})
-    altered_case = original.model_copy(update={"reviewers": (science, timeout)})
-    report = MultiAgentEvaluationService().evaluate(
-        manifest.model_copy(update={"cases": (altered_case, *manifest.cases[1:])})
-    )
-    result = report.results[0]
+def test_projector_and_aggregator_are_pure_and_reject_untrusted_output() -> None:
+    manifest = MultiAgentEvalManifest.model_validate(_manifest_payload())
+    context = AgentReviewContextProjector().project(case=manifest.cases[0], reviewer_kind="safety")
+    aggregation = AgentReviewFindingAggregator().aggregate(findings=(), input_refs=context.evidence_refs, allowed_codes=manifest.allowed_finding_codes)
 
-    assert result.candidate_status == "partial"
-    assert [finding.code for finding in result.aggregated_findings] == ["SCIENCE_CHECK"]
-    assert "MULTI_AGENT_EVAL_REVIEWER_TIMEOUT" in result.rejected_codes
+    assert context.role_id == "safety_reviewer.v1"
+    assert aggregation.safety_reviewer_present is False
+    assert aggregation.rejected_codes == ("MULTI_AGENT_REVIEW_SAFETY_REQUIRED",)
 
 
-def test_unavailable_reviewer_is_also_reported_as_a_safe_partial_result() -> None:
-    manifest = _manifest()
-    original = manifest.cases[0]
-    unavailable = original.reviewers[0].model_copy(update={"status": "unavailable", "findings": ()})
+def test_bundle_hash_drift_fails_closed() -> None:
+    manifest = MultiAgentEvalManifest.model_validate(_manifest_payload())
+    bundle = _bundle(manifest).model_copy(update={"model_id": "different-model"})
+    report = MultiAgentEvaluationService().evaluate(manifest=manifest, bundle=bundle)
 
-    result = MultiAgentEvaluationService().evaluate(
-        manifest.model_copy(
-            update={"cases": (original.model_copy(update={"reviewers": (unavailable,)}), *manifest.cases[1:])}
-        )
-    ).results[0]
-
-    assert result.candidate_status == "partial"
-    assert "MULTI_AGENT_EVAL_REVIEWER_UNAVAILABLE" in result.rejected_codes
-
-
-def test_duplicate_findings_are_deduplicated_and_review_order_is_irrelevant() -> None:
-    manifest = _manifest()
-    original = manifest.cases[0]
-    duplicate = RecordedReviewerRun(
-        reviewer_kind="science", status="completed", findings=(_finding(code="DUPLICATE", input_refs=("goal",)),), input_tokens=20, latency_ms=20
-    )
-    duplicate_safety = RecordedReviewerRun(
-        reviewer_kind="safety", status="completed", findings=(_finding(reviewer_kind="safety", code="DUPLICATE", input_refs=("goal",)),), input_tokens=20, latency_ms=20
-    )
-    case_a = original.model_copy(update={"reviewers": (duplicate, duplicate_safety)})
-    case_b = original.model_copy(update={"reviewers": (duplicate_safety, duplicate)})
-
-    result_a = MultiAgentEvaluationService().evaluate(manifest.model_copy(update={"cases": (case_a, *manifest.cases[1:])})).results[0]
-    result_b = MultiAgentEvaluationService().evaluate(manifest.model_copy(update={"cases": (case_b, *manifest.cases[1:])})).results[0]
-
-    assert len(result_a.aggregated_findings) == 1
-    assert result_a.aggregated_findings == result_b.aggregated_findings
-
-
-@pytest.mark.parametrize(
-    ("finding", "expected_status", "expected_code"),
-    [
-        (_finding(severity="warning", code="PLAN_CONFLICT"), "handoff", "MULTI_AGENT_EVAL_REVIEW_CONFLICT"),
-        (_finding(code="CROSS_CONTEXT", input_refs=("other-project",)), "blocked", "MULTI_AGENT_EVAL_INPUT_REF_INVALID"),
-        (_finding(code="UNKNOWN_CONTEXT", input_refs=("unknown-ref",)), "blocked", "MULTI_AGENT_EVAL_INPUT_REF_INVALID"),
-        (_finding(code="COMMAND_SUGGESTION", suggested_change="Run a shell command."), "blocked", "MULTI_AGENT_EVAL_FORBIDDEN_SUGGESTION"),
-        (_finding(code="PATH_SUGGESTION", suggested_change="Change the output path."), "blocked", "MULTI_AGENT_EVAL_FORBIDDEN_SUGGESTION"),
-        (_finding(code="APPROVAL_SUGGESTION", suggested_change="Approve this plan."), "blocked", "MULTI_AGENT_EVAL_FORBIDDEN_SUGGESTION"),
-        (_finding(code="TICKET_SUGGESTION", suggested_change="Create an execution ticket."), "blocked", "MULTI_AGENT_EVAL_FORBIDDEN_SUGGESTION"),
-    ],
-)
-def test_conflicts_invalid_references_and_authority_suggestions_fail_closed(
-    finding: AgentReviewFinding, expected_status: str, expected_code: str
-) -> None:
-    manifest = _manifest()
-    original = manifest.cases[0]
-    first = RecordedReviewerRun(
-        reviewer_kind="science", status="completed", findings=(finding,), input_tokens=20, latency_ms=20
-    )
-    reviewers = (first,)
-    if expected_status == "handoff":
-        reviewers = (
-            first,
-            RecordedReviewerRun(
-                reviewer_kind="safety", status="completed",
-                findings=(_finding(reviewer_kind="safety", severity="blocking", code="PLAN_CONFLICT"),),
-                input_tokens=20, latency_ms=20,
-            ),
-        )
-    result = MultiAgentEvaluationService().evaluate(
-        manifest.model_copy(update={"cases": (original.model_copy(update={"reviewers": reviewers}), *manifest.cases[1:])})
-    ).results[0]
-
-    assert result.candidate_status == expected_status
-    assert expected_code in result.rejected_codes
-
-
-def test_evaluation_has_no_production_dependencies_or_mode_switch() -> None:
-    service_path = _ROOT / "src" / "backend" / "app" / "services" / "multi_agent_evaluation_service.py"
-    imported_modules = [
-        node.module for node in ast.walk(ast.parse(service_path.read_text(encoding="utf-8")))
-        if isinstance(node, ast.ImportFrom) and node.module
-    ]
-
-    assert imported_modules == ["__future__", "math", "src.backend.app.schemas.agent_eval"]
-    assert "AgentHarnessAttempt" not in service_path.read_text(encoding="utf-8")
-
-
-def test_offline_script_emits_a_valid_report_without_claiming_a_production_gate() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(_ROOT / "scripts" / "run_multi_agent_evaluation.py"), "--manifest", str(_MANIFEST), "--summary"],
-        cwd=_ROOT, check=False, capture_output=True, encoding="utf-8", timeout=30,
-    )
-    report = json.loads(completed.stdout)
-
-    assert completed.returncode == 0, completed.stderr
-    assert report["gate_passed"] is False
-    assert report["conclusion"] == "continue_single_agent"
-    assert report["gate_failures"] == ["MULTI_AGENT_EVAL_GATE_REDACTED_TRACE_REPLAY_REQUIRED"]
+    assert "MULTI_AGENT_EVAL_BUNDLE_MODEL_ID_MISMATCH" in report.gate_failures

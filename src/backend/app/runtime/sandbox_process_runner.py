@@ -11,6 +11,14 @@ from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.schemas.sandbox import SandboxProcessRequest, SandboxProcessResult
 
 
+def reject_unreviewed_process_start(*_args, **_kwargs):
+    """Fail closed for retired process-launch paths outside the gateway."""
+
+    raise SafetyError(
+        "EXECUTION_CONTRACT_REQUIRED", code="EXECUTION_CONTRACT_REQUIRED"
+    )
+
+
 class UnsupportedSandboxProcessRunner:
     def run(
         self,

@@ -52,3 +52,38 @@ def clean_synthetic_dir(tmp_path: Path) -> Path:
         shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+@pytest.fixture()
+def desktop_store_factory(tmp_path: Path, monkeypatch):
+    """Create independent desktop stores without touching application state."""
+
+    from src.backend.app.services.mock_store import SQLiteDesktopStore
+
+    monkeypatch.setenv("MEDIMAGE_DESKTOP_SEED_DEMO_DATA", "false")
+
+    def create(name: str = "desktop_state") -> SQLiteDesktopStore:
+        return SQLiteDesktopStore(tmp_path / f"{name}.sqlite")
+
+    return create
+
+
+@pytest.fixture(autouse=True)
+def bind_project_store_dependency_to_test_store(monkeypatch) -> None:
+    """Resolve route-facing store dependencies through the active test store.
+
+    Historical fixtures patch ``project_routes.mock_store`` to an isolated
+    SQLite instance. The production routes no longer expose one store global
+    per domain module, so this test-only override keeps those fixtures isolated
+    while exercising the same FastAPI dependency boundary as production.
+    """
+
+    from src.backend.app.api import project_routes
+    from src.backend.app.api.dependencies import get_project_store
+    from src.backend.app.main import app
+
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        get_project_store,
+        lambda: project_routes.mock_store,
+    )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from uuid import uuid4
 
 from src.backend.app.agent_skills.loader import AgentSkillLoader
 from src.backend.app.core.config_schema import AgentHarnessConfig, AgentModelRuntimeConfig
+from src.backend.app.core.agent_logging import agent_log_context
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.agent_model_adapter import (
     ActionCallMetadata,
@@ -49,6 +51,9 @@ from src.backend.app.services.agent_planning_action_service import (
     AgentPlanningActionService,
     HarnessActionResult,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -588,6 +593,14 @@ class AgentHarnessService:
         )
         started_step = step.model_copy(update={"model_calls": (*step.model_calls, pending_call)})
         self.store.update_agent_harness_step(started_step)
+        logger.info(
+            "agent_model_call_started",
+            extra={"medimage": agent_log_context(
+                project_id=context.project_id,
+                lifecycle_id=context.lifecycle_id,
+                event_code="AGENT_MODEL_CALL_STARTED",
+            )},
+        )
         try:
             proposal = self.adapter.propose_action(request=request)
             if not isinstance(proposal, ActionProposal):
@@ -601,6 +614,14 @@ class AgentHarnessService:
                 update={"model_calls": (*step.model_calls, completed)}
             )
             self.store.update_agent_harness_step(completed_step)
+            logger.warning(
+                "agent_model_call_failed",
+                extra={"medimage": agent_log_context(
+                    project_id=context.project_id,
+                    lifecycle_id=context.lifecycle_id,
+                    event_code="AGENT_MODEL_CALL_FAILED",
+                )},
+            )
             raise _ModelCallFailure(code=exc.code, step=completed_step) from exc
         except (ValueError, TypeError) as exc:
             metadata = ActionCallMetadata(
@@ -616,6 +637,14 @@ class AgentHarnessService:
                 update={"model_calls": (*step.model_calls, completed)}
             )
             self.store.update_agent_harness_step(completed_step)
+            logger.warning(
+                "agent_model_call_invalid",
+                extra={"medimage": agent_log_context(
+                    project_id=context.project_id,
+                    lifecycle_id=context.lifecycle_id,
+                    event_code="AGENT_MODEL_CALL_INVALID",
+                )},
+            )
             raise _ModelCallFailure(
                 code="AGENT_HARNESS_MODEL_OUTPUT_INVALID", step=completed_step,
             ) from exc
@@ -624,6 +653,14 @@ class AgentHarnessService:
         )
         completed_step = started_step.model_copy(update={"model_calls": (*step.model_calls, completed)})
         self.store.update_agent_harness_step(completed_step)
+        logger.info(
+            "agent_model_call_completed",
+            extra={"medimage": agent_log_context(
+                project_id=context.project_id,
+                lifecycle_id=context.lifecycle_id,
+                event_code="AGENT_MODEL_CALL_COMPLETED",
+            )},
+        )
         return proposal, completed_step
 
     def _complete_model_call(

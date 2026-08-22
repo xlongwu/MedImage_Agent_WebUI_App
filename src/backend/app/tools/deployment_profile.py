@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from src.backend.app.tools.artifact_utils import write_json_artifact
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
 
 REQUIRED_DEPLOYMENT_FILES = [
     ".env.example",
@@ -33,7 +34,7 @@ def _read_text(path: Path) -> str:
 
 def _run_cmd(cmd: list[str], timeout: int = 5) -> dict[str, Any]:
     try:
-        completed = subprocess.run(
+        completed = reject_unreviewed_process_start(
             cmd,
             capture_output=True,
             text=True,

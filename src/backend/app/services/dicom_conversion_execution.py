@@ -23,6 +23,8 @@ import subprocess
 import sys
 from datetime import UTC
 from pathlib import Path, PurePosixPath
+
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
 from typing import Any
 
 from src.backend.app.native_preproc.io.dicom_to_nifti import ALGORITHM_VERSION
@@ -107,7 +109,7 @@ def _detect_dcm2niix() -> dict[str, Any]:
     env_path = os.environ.get("MEDIMAGE_DCM2NIIX_PATH")
     if env_path and Path(env_path).exists():
         try:
-            result = subprocess.run(
+            result = reject_unreviewed_process_start(
                 [str(env_path), "--version"],
                 capture_output=True,
                 text=True,
@@ -129,7 +131,7 @@ def _detect_dcm2niix() -> dict[str, Any]:
     exe_path = _sh.which("dcm2niix")
     if exe_path:
         try:
-            result = subprocess.run(
+            result = reject_unreviewed_process_start(
                 [exe_path, "--version"],
                 capture_output=True,
                 text=True,
@@ -165,7 +167,7 @@ def _detect_dcm2niix() -> dict[str, Any]:
 
     if bundled:
         try:
-            result = subprocess.run(
+            result = reject_unreviewed_process_start(
                 [str(bundled), "--version"],
                 capture_output=True,
                 text=True,
@@ -317,7 +319,7 @@ def _detect_dcm2niix_runtime(
             if runner is not None:
                 result = runner([candidate, "--version"])
             else:
-                result = subprocess.run(
+                result = reject_unreviewed_process_start(
                     [candidate, "--version"],
                     capture_output=True,
                     text=True,
@@ -707,7 +709,7 @@ def _execute_single_mapping(
     ]
 
     try:
-        result = subprocess.run(
+        result = reject_unreviewed_process_start(
             cmd,
             capture_output=True,
             text=True,
@@ -1516,7 +1518,7 @@ def run_real_dcm2niix_synthetic_smoke(
 ) -> DicomConversionSandboxResult:
     """Run REAL dcm2niix via subprocess on synthetic DICOM only.
 
-    **This is the first function that may call subprocess.run().**
+    **This retired path always fails closed outside the Execution Gateway.**
     It is gated behind 9 env flags, synthetic-only input validation,
     dcm2niix availability check, and output root safety.
 
@@ -1632,7 +1634,9 @@ def run_real_dcm2niix_synthetic_smoke(
     ]
 
     try:
-        result = subprocess.run(argv, capture_output=True, text=True, check=False)
+        result = reject_unreviewed_process_start(
+            argv, capture_output=True, text=True, check=False
+        )
         rc = result.returncode
         stdout = result.stdout or ""
         stderr = result.stderr or ""

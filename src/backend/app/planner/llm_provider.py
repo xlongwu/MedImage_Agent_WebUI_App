@@ -5,7 +5,7 @@ sends it to an OpenAI-compatible API, parses the JSON response, and
 returns a structured result.
 
 Security:
-  - Never reads real API keys unless MEDIMAGE_LLM_API_KEY is set.
+  - Receives the sole validated Agent model configuration explicitly.
   - Never prints or logs API keys.
   - http_post is injectable for testing (no real network in CI).
 """
@@ -119,6 +119,113 @@ def _get_config(config: AgentModelRuntimeConfig) -> LLMProviderConfig:
         api_key_set=config.api_key is not None,
         timeout_seconds=config.timeout_seconds,
         max_output_tokens=config.max_output_tokens,
+    )
+
+
+def _transport_error_code(exc: Exception) -> str:
+    if isinstance(exc, TimeoutError):
+        return "AGENT_MODEL_PROVIDER_TIMEOUT"
+    try:
+        import httpx
+
+        if isinstance(exc, httpx.TimeoutException):
+            return "AGENT_MODEL_PROVIDER_TIMEOUT"
+    except ImportError:
+        pass
+    return "AGENT_MODEL_PROVIDER_FAILED"
+
+
+def _result_fields(result: LLMProviderResult) -> dict[str, object]:
+    return {
+        "model": result.model,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cached_input_tokens": result.cached_input_tokens,
+        "latency_ms": result.latency_ms,
+        "provider_request_id": result.provider_request_id,
+        "endpoint_class": result.endpoint_class,
+        "network_called": result.network_called,
+    }
+
+
+def call_openai_compatible_chat(
+    *,
+    messages: list[dict[str, str]],
+    config: AgentModelRuntimeConfig,
+    temperature: float,
+    max_output_tokens: int | None = None,
+    response_format: dict[str, object] | None = None,
+    http_post: Callable[..., Any] | None = None,
+) -> LLMProviderResult:
+    """Use the single OpenAI-compatible transport and stable error contract."""
+
+    provider_config = _get_config(config)
+    if provider_config.provider != "openai_compatible" or config.incomplete_reason() is not None:
+        return LLMProviderResult(
+            ok=False,
+            content="",
+            errors=["AGENT_MODEL_CONFIG_INCOMPLETE"],
+        )
+
+    body: dict[str, object] = {
+        "model": provider_config.model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_output_tokens or provider_config.max_output_tokens,
+    }
+    if response_format is not None:
+        body["response_format"] = response_format
+    headers = {
+        "Authorization": (
+            f"Bearer {config.api_key.get_secret_value() if config.api_key else ''}"
+        ),
+        "Content-Type": "application/json",
+    }
+    url = f"{provider_config.base_url.rstrip('/')}/chat/completions"
+    timeout = float(provider_config.timeout_seconds)
+    started_at = time.perf_counter()
+    try:
+        if http_post is None:
+            import httpx
+
+            response = httpx.post(
+                url,
+                headers=headers,
+                json=body,
+                timeout=timeout,
+            )
+        else:
+            response = http_post(url, headers, body, timeout)
+        if hasattr(response, "raise_for_status"):
+            response.raise_for_status()
+        raw = response.json() if hasattr(response, "json") else response
+    except Exception as exc:
+        return LLMProviderResult(
+            ok=False,
+            content="",
+            errors=[_transport_error_code(exc)],
+            latency_ms=max(0, round((time.perf_counter() - started_at) * 1000)),
+            endpoint_class="chat_completions",
+            network_called=True,
+        )
+
+    content = (
+        ((raw.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+        if isinstance(raw, dict)
+        else ""
+    )
+    if not isinstance(content, str):
+        content = ""
+    return LLMProviderResult(
+        ok=True,
+        content=content,
+        raw=raw if isinstance(raw, dict) else None,
+        **_result_metadata(
+            raw=raw,
+            response=response,
+            started_at=started_at,
+            network_called=True,
+        ),
     )
 
 
@@ -252,31 +359,16 @@ def call_openai_compatible_provider(
         )
 
     prompt = build_planner_prompt(goal, constraints=constraints)
-    api_key = config.api_key.get_secret_value() if config.api_key is not None else ""
-
-    body = {
-        "model": provider_config.model,
-        "messages": [
-            {"role": "system", "content": "You are a medical imaging pipeline planner. Output only valid JSON."},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.1,
-        "max_tokens": provider_config.max_output_tokens,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    url = f"{provider_config.base_url.rstrip('/')}/chat/completions"
-
     last_raw: dict[str, Any] | None = None
     last_metadata: dict[str, object] = {"endpoint_class": "chat_completions", "network_called": False}
     last_error = "PLANNER_OUTPUT_INVALID"
     for attempt in range(2):
-        request_body = dict(body)
-        request_body["messages"] = list(body["messages"])
+        messages = [
+            {"role": "system", "content": "You are a medical imaging pipeline planner. Output only valid JSON."},
+            {"role": "user", "content": prompt},
+        ]
         if attempt == 1:
-            request_body["messages"].append(
+            messages.append(
                 {
                     "role": "user",
                     "content": (
@@ -285,37 +377,18 @@ def call_openai_compatible_provider(
                     ),
                 }
             )
-        try:
-            started_at = time.perf_counter()
-            if http_post is None:
-                import httpx  # noqa: E402
-                resp = httpx.post(url, headers=headers, json=request_body, timeout=60.0)
-                resp.raise_for_status()
-                raw = resp.json()
-            else:
-                resp = http_post(url, headers, request_body, 60.0)
-                if hasattr(resp, "raise_for_status"):
-                    resp.raise_for_status()
-                raw = resp.json() if hasattr(resp, "json") else resp
-        except Exception as exc:
-            return LLMProviderResult(
-                ok=False,
-                content="",
-                errors=["LLM_API_CALL_FAILED"],
-                latency_ms=max(0, round((time.perf_counter() - started_at) * 1000)),
-                endpoint_class="chat_completions",
-                network_called=True,
-            )
-
-        last_raw = raw
-        last_metadata = _result_metadata(
-            raw=raw, response=resp, started_at=started_at, network_called=True
+        transport = call_openai_compatible_chat(
+            messages=messages,
+            config=config,
+            temperature=0.1,
+            max_output_tokens=provider_config.max_output_tokens,
+            http_post=http_post,
         )
-        choices = raw.get("choices", []) if isinstance(raw, dict) else []
-        content = (
-            (choices[0].get("message", {}) or {}).get("content", "")
-            if choices else ""
-        )
+        if not transport.ok:
+            return transport
+        last_raw = transport.raw
+        last_metadata = _result_fields(transport)
+        content = transport.content
         try:
             candidate = parse_llm_plan_json(content)
             from src.backend.app.planner.plan_validator import validate_plan  # noqa: E402
@@ -329,7 +402,7 @@ def call_openai_compatible_provider(
             return LLMProviderResult(
                 ok=True,
                 content=json.dumps(candidate, ensure_ascii=False),
-                raw=raw,
+                raw=last_raw,
                 **last_metadata,
             )
         except ValueError as exc:
@@ -358,56 +431,32 @@ def call_openai_compatible_action_provider(
     from src.backend.app.planner.agent_model_adapter import build_action_prompt
     from src.backend.app.schemas.agent_harness import parse_action_envelope_json
 
-    body = {
-        "model": request.model,
-        "messages": [
+    transport = call_openai_compatible_chat(
+        messages=[
             {"role": "system", "content": request.system_prompt},
             {"role": "user", "content": build_action_prompt(request)},
         ],
-        "temperature": request.model_parameters["temperature"],
-        "max_tokens": request.model_parameters["max_output_tokens"],
-        "response_format": request.model_parameters["response_format"],
-    }
-    started_at = time.perf_counter()
+        config=config,
+        temperature=float(request.model_parameters["temperature"]),
+        max_output_tokens=int(request.model_parameters["max_output_tokens"]),
+        response_format=request.model_parameters["response_format"],
+        http_post=http_post,
+    )
+    if not transport.ok:
+        return transport
     try:
-        if http_post is None:
-            import httpx  # noqa: E402
-            response = httpx.post(
-                f"{provider_config.base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {config.api_key.get_secret_value() if config.api_key else ''}", "Content-Type": "application/json"},
-                json=body,
-                timeout=float(request.model_parameters["timeout_seconds"]),
-            )
-            response.raise_for_status()
-            raw = response.json()
-        else:
-            response = http_post(
-                f"{provider_config.base_url.rstrip('/')}/chat/completions", {}, body,
-                float(request.model_parameters["timeout_seconds"]),
-            )
-            if hasattr(response, "raise_for_status"):
-                response.raise_for_status()
-            raw = response.json() if hasattr(response, "json") else response
-        content = ((raw.get("choices") or [{}])[0].get("message") or {}).get("content", "")
-        envelope = parse_action_envelope_json(content)
+        envelope = parse_action_envelope_json(transport.content)
         return LLMProviderResult(
             ok=True,
             content=envelope.model_dump_json(),
-            raw=raw,
-            **_result_metadata(raw=raw, response=response, started_at=started_at, network_called=True),
+            raw=transport.raw,
+            **_result_fields(transport),
         )
     except Exception:
-        raw_value = locals().get("raw")
-        response_value = locals().get("response")
         return LLMProviderResult(
             ok=False,
             content="",
-            raw=raw_value if isinstance(raw_value, dict) else None,
+            raw=transport.raw,
             errors=["AGENT_HARNESS_MODEL_OUTPUT_INVALID"],
-            **_result_metadata(
-                raw=raw_value,
-                response=response_value,
-                started_at=started_at,
-                network_called=True,
-            ),
+            **_result_fields(transport),
         )

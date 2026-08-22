@@ -132,7 +132,7 @@ Agent goal
 - [ ] partial/failed conversion 不产生 preprocessing-ready handoff。
 - [ ] retry/resume 不覆盖成功产物，不重复消费 ticket。
 - [ ] `execution_entry_inventory` 只保留一个 active conversion execution entry。
-- [ ] 没有外部命令、MATLAB/SPM/DPABI 或 GUI computer use。
+- [ ] 没有外部命令、MATLAB/SPM/DPABI 或桌面控制。
 
 ## 7. Hazard/Test Matrix
 

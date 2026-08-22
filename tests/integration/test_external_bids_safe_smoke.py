@@ -291,7 +291,6 @@ def _load_app_modules() -> dict[str, Any]:
     from src.backend.app.api import (
         dashboard_routes,
         execute_reviewed_routes,
-        project_history_routes,
         project_routes,
     )
     from src.backend.app.main import app
@@ -307,7 +306,6 @@ def _load_app_modules() -> dict[str, Any]:
         "app": app,
         "dashboard_routes": dashboard_routes,
         "execute_reviewed_routes": execute_reviewed_routes,
-        "project_history_routes": project_history_routes,
         "project_routes": project_routes,
         "project_context": project_context,
         "reviewed_plan_store": reviewed_plan_store,
@@ -340,7 +338,6 @@ def _isolated_store(
         modules["dashboard_routes"],
         modules["project_context"],
         modules["reviewed_plan_store"],
-        modules["project_history_routes"],
         modules["execute_reviewed_routes"],
     ):
         monkeypatch.setattr(module, "mock_store", store)

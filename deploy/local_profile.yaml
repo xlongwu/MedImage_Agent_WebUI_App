@@ -4,12 +4,12 @@ description: "Local development profile for MedImage Agent."
 
 services:
   backend:
-    command: "uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000"
+    command: "uvicorn src.backend.app.main:app --reload --host 127.0.0.1 --port 8000"
     health_url: "http://127.0.0.1:8000/api/health"
     env_file: ".env"
 
   frontend:
-    command: "cd frontend && npm run dev"
+    command: "cd src/frontend && npm run dev"
     url: "http://127.0.0.1:5173"
 
 runtime:

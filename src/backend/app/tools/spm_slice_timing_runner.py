@@ -13,6 +13,7 @@ from src.backend.app.runtime.external_tool_result import (
     missing_output_errors,
     standard_external_safety,
 )
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
 from src.backend.app.tools.slice_timing_qc import (
     build_slice_timing_parameters,
     write_slice_timing_qc_for_subject,
@@ -214,7 +215,9 @@ def run_spm_slice_timing_subject(
         cmd = [matlab_command, "-nodisplay", "-nosplash", "-r", matlab_code]
 
     with stdout_log.open("w", encoding="utf-8") as out, stderr_log.open("w", encoding="utf-8") as err:
-        completed = subprocess.run(cmd, stdout=out, stderr=err, check=False, timeout=600)
+        completed = reject_unreviewed_process_start(
+            cmd, stdout=out, stderr=err, check=False, timeout=600
+        )
 
     data = _read_json(result_json) or {
         "ok": False,

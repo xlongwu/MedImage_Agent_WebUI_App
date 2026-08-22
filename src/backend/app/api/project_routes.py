@@ -10,9 +10,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from src.backend.app.api._errors import raise_api_error
+from src.backend.app.api.dependencies import ProjectStore, get_project_store
 from src.backend.app.api.models import ProjectCreateRequest, ProjectCreateResponse
 from src.backend.app.core.exceptions import StateStoreError
 from src.backend.app.runtime.desktop_config import (
@@ -509,7 +510,10 @@ def _dashboard_project_from_create_response(
 
 
 @router.post("/api/projects/create", response_model=ProjectCreateResponse)
-def create_project(request: ProjectCreateRequest) -> ProjectCreateResponse:
+def create_project(
+    request: ProjectCreateRequest,
+    store: ProjectStore = Depends(get_project_store),
+) -> ProjectCreateResponse:
     """Create a project referencing a local BIDS-like rawdata directory."""
     project_name = request.project_name.strip()
     if not project_name:
@@ -520,7 +524,7 @@ def create_project(request: ProjectCreateRequest) -> ProjectCreateResponse:
     project_dir = _resolve_project_dir(request.project_dir, project_id, rawdata_path)
     dashboard_store_warnings: list[str] = []
     try:
-        existing_dashboard_project = mock_store.get_project(project_id)
+        existing_dashboard_project = store.get_project(project_id)
     except Exception as exc:
         existing_dashboard_project = None
         dashboard_store_warnings.append(
@@ -645,7 +649,7 @@ def create_project(request: ProjectCreateRequest) -> ProjectCreateResponse:
             and int(response.diagnostics.get("nifti_file_count") or response.diagnostics.get("nifti_files") or 0) == 0
             else "bids"
         )
-        mock_store.add_project(
+        store.add_project(
             dashboard_project,
             health_status=str(response.diagnostics.get("status", "UNKNOWN")),
             rawdata_dir=response.rawdata_dir,
@@ -663,12 +667,15 @@ def create_project(request: ProjectCreateRequest) -> ProjectCreateResponse:
 
 
 @router.delete("/api/projects/{project_id}")
-def delete_project(project_id: str) -> dict[str, Any]:
+def delete_project(
+    project_id: str,
+    store: ProjectStore = Depends(get_project_store),
+) -> dict[str, Any]:
     """Remove a project from desktop dashboard indexes, leaving rawdata/project files intact."""
-    if not mock_store.get_project(project_id):
+    if not store.get_project(project_id):
         raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
 
-    removed_from_store = mock_store.remove_project(project_id)
+    removed_from_store = store.remove_project(project_id)
     try:
         removed_from_recent = remove_recent_project(project_id)
     except Exception as exc:

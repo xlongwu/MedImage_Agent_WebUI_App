@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
+
 CHAIN_NODES = [
     {
         "node_id": "spm_slice_timing",
@@ -275,7 +277,7 @@ print(json.dumps(result, ensure_ascii=False, indent=2))
 
     result_path = run_dir / "result.json"
     try:
-        completed = subprocess.run(
+        completed = reject_unreviewed_process_start(
             ["python", "-c", script_content],
             capture_output=True, text=True, timeout=300, cwd=".",
         )

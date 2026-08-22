@@ -11,6 +11,7 @@ from src.backend.app.runtime.external_tool_result import (
     from_subprocess_result,
     standard_external_safety,
 )
+from src.backend.app.runtime.sandbox_process_runner import reject_unreviewed_process_start
 
 
 def _matlab_quote(value: str) -> str:
@@ -165,7 +166,9 @@ def run_dpabi_sandbox_smoke(
     ]
 
     with stdout_log.open("w", encoding="utf-8") as out, stderr_log.open("w", encoding="utf-8") as err:
-        completed = subprocess.run(cmd, stdout=out, stderr=err, check=False)
+        completed = reject_unreviewed_process_start(
+            cmd, stdout=out, stderr=err, check=False
+        )
 
     if result_json.exists():
         try:

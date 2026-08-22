@@ -16,12 +16,17 @@ from src.backend.app.planner.llm_provider import (
 from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 
 
-def _model_config(*, api_key: str | None = "sk-test-key") -> AgentModelRuntimeConfig:
+def _model_config(
+    *,
+    api_key: str | None = "sk-test-key",
+    timeout_seconds: int = 60,
+) -> AgentModelRuntimeConfig:
     return AgentModelRuntimeConfig(
         enabled=True,
         provider="openai_compatible",
         model="gpt-test-1",
         base_url="https://models.example.test/v1",
+        timeout_seconds=timeout_seconds,
         api_key=api_key,
     )
 
@@ -169,6 +174,38 @@ def test_fake_http_returns_valid_plan():
     result = call_openai_compatible_provider("motion", http_post=fake_post, config=_model_config())
     assert result.ok is True
     assert "data_inspection" in result.content
+
+
+def test_provider_uses_configured_timeout_and_stable_transport_errors():
+    observed: list[float] = []
+
+    def fake_post(url, headers, body, timeout):
+        observed.append(timeout)
+        return FakeResponse(_valid_plan_response())
+
+    result = call_openai_compatible_provider(
+        "motion",
+        http_post=fake_post,
+        config=_model_config(timeout_seconds=17),
+    )
+
+    assert result.ok is True
+    assert observed == [17.0]
+
+    timed_out = call_openai_compatible_provider(
+        "motion",
+        http_post=lambda *_args: (_ for _ in ()).throw(TimeoutError()),
+        config=_model_config(timeout_seconds=17),
+    )
+    failed = call_openai_compatible_provider(
+        "motion",
+        http_post=lambda *_args: (_ for _ in ()).throw(RuntimeError("secret-value")),
+        config=_model_config(timeout_seconds=17),
+    )
+
+    assert timed_out.errors == ["AGENT_MODEL_PROVIDER_TIMEOUT"]
+    assert failed.errors == ["AGENT_MODEL_PROVIDER_FAILED"]
+    assert "secret-value" not in json.dumps(failed.errors)
 
 
 def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata():

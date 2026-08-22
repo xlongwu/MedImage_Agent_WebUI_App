@@ -281,19 +281,30 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
 class MemoryRepository:
     """Short-transaction SQLite repository; safe to construct per dependency call."""
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, *, read_only: bool = False) -> None:
         self.db_path = Path(db_path).expanduser().resolve()
+        self.read_only = read_only
         self._lock = threading.RLock()
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+        if not read_only:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._initialize()
 
     @contextmanager
     def connect(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(str(self.db_path), timeout=5.0, check_same_thread=False)
+        if self.read_only and immediate:
+            raise MemoryRepositoryError("MEMORY_STORE_READ_ONLY")
+        target = self.db_path.as_uri() + "?mode=ro" if self.read_only else str(self.db_path)
+        conn = sqlite3.connect(
+            target,
+            timeout=5.0,
+            check_same_thread=False,
+            uri=self.read_only,
+        )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA secure_delete=ON")
+        if not self.read_only:
+            conn.execute("PRAGMA secure_delete=ON")
         try:
             if immediate:
                 conn.execute("BEGIN IMMEDIATE")

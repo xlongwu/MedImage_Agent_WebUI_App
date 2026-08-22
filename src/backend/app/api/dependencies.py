@@ -11,12 +11,19 @@ from src.backend.app.schemas.agent_invariant import AgentInvariantAuditRecord
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
 from src.backend.app.schemas.desktop import (
+    ApprovalRecord,
+    DatasetImportRequest,
+    DatasetImportResponse,
     DatasetSummary,
+    ModelStatus,
     ProjectDetail,
     ProjectSummary,
     ReviewedPlanRecord,
     RunLinkRecord,
     StudyOverview,
+    TaskDetail,
+    TaskEvent,
+    TaskLogEntry,
 )
 from src.backend.app.schemas.execution_ticket import ExecutionTicket, ExecutionTicketEvent
 from src.backend.app.schemas.gateway_dispatch import GatewayDispatch, GatewayDispatchEvent
@@ -33,7 +40,9 @@ from src.backend.app.schemas.recovery_attempt import (
 )
 
 
-class ProjectStore(Protocol):
+class ProjectRepository(Protocol):
+    """Project and dataset ownership boundary used by project-facing APIs."""
+
     def list_projects(self) -> list[ProjectSummary]: ...
 
     def get_project(self, project_id: str) -> ProjectDetail | None: ...
@@ -49,6 +58,49 @@ class ProjectStore(Protocol):
     def list_import_records(self, project_id: str) -> list[dict[str, Any]]: ...
 
     def list_import_paths(self, project_id: str) -> list[str]: ...
+
+    def add_project(self, project: ProjectDetail, **kwargs: object) -> ProjectDetail: ...
+
+    def remove_project(self, project_id: str) -> bool: ...
+
+    def import_dataset(self, request: DatasetImportRequest) -> DatasetImportResponse: ...
+
+    def get_model_status(self, project_id: str) -> ModelStatus | None: ...
+
+
+class RunTaskReadModel(Protocol):
+    """Read-only task projection consumed by dashboard and task query routes."""
+
+    def list_tasks(self) -> list[TaskLogEntry]: ...
+
+    def get_task(self, task_id: str) -> TaskDetail | None: ...
+
+    def list_task_events(self, task_id: str) -> list[TaskEvent]: ...
+
+    def get_task_artifacts(self, task_id: str) -> dict[str, object]: ...
+
+    def get_latest_approval(self, task_id: str) -> ApprovalRecord | None: ...
+
+
+class ApprovalAuditProjection(Protocol):
+    """Approval and audit write boundary kept separate from read projections."""
+
+    def add_approval(self, task_id: str, **kwargs: object) -> ApprovalRecord: ...
+
+    def append_task_event(self, task_id: str, **kwargs: object) -> TaskEvent: ...
+
+    def save_task_artifacts(
+        self, task_id: str, artifacts: dict[str, object]
+    ) -> dict[str, object]: ...
+
+
+class ProjectStore(
+    ProjectRepository,
+    RunTaskReadModel,
+    ApprovalAuditProjection,
+    Protocol,
+):
+    """Application store composition; domain APIs depend on narrower protocols."""
 
     def list_reviewed_plans(self, project_id: str) -> list[ReviewedPlanRecord]: ...
 
@@ -326,6 +378,18 @@ import src.backend.app.services.mock_store as _mock_store_module  # noqa: E402
 
 def get_project_store() -> ProjectStore:
     return _mock_store_module.mock_store
+
+
+def get_project_repository() -> ProjectRepository:
+    return get_project_store()
+
+
+def get_run_task_read_model() -> RunTaskReadModel:
+    return get_project_store()
+
+
+def get_approval_audit_projection() -> ApprovalAuditProjection:
+    return get_project_store()
 
 
 _AGENT_TASK_SERVICES_GUARD = Lock()

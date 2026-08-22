@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -9,6 +10,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from src.backend.app.core.exceptions import SafetyError, StateStoreError
+from src.backend.app.core.agent_logging import agent_log_context
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.schemas.agent_lifecycle import (
@@ -32,6 +34,9 @@ from src.backend.app.services.goal_evaluator import GoalEvaluator
 from src.backend.app.services.observation_collector import ObservationCollector
 from src.backend.app.services.recovery_proposal_engine import RecoveryProposalEngine
 from src.backend.app.services.run_diagnosis_service import RunDiagnosisService
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentLifecycleStore(Protocol):
@@ -459,7 +464,7 @@ class AgentOrchestrator:
             previous_observation_id=previous_observation_id,
             recovery_attempt_id=recovery_attempt_id,
         )
-        return self.transition(
+        observed = self.transition(
             project_id=project_id,
             lifecycle_id=lifecycle_id,
             to_state="OBSERVING",
@@ -475,6 +480,18 @@ class AgentOrchestrator:
                 "completeness": observation.completeness.status,
             },
         )
+        logger.info(
+            "agent_observation_completed",
+            extra={"medimage": agent_log_context(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                reviewed_plan_id=observed.reviewed_plan_id,
+                execution_ticket_id=observed.execution_ticket_id,
+                run_id=observed.run_id,
+                event_code="AGENT_OBSERVATION_COMPLETED",
+            )},
+        )
+        return observed
 
     def evaluate_goal(
         self,
@@ -540,6 +557,17 @@ class AgentOrchestrator:
                 "goal_evaluation_hash": evaluation.goal_evaluation_hash,
                 "status": evaluation.status,
             },
+        )
+        logger.info(
+            "agent_goal_evaluation_completed",
+            extra={"medimage": agent_log_context(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                reviewed_plan_id=completed.reviewed_plan_id,
+                execution_ticket_id=completed.execution_ticket_id,
+                run_id=completed.run_id,
+                event_code="AGENT_GOAL_EVALUATION_COMPLETED",
+            )},
         )
         return completed, evaluation
 
@@ -645,6 +673,17 @@ class AgentOrchestrator:
                 "recovery_proposal_hash": proposal.recovery_proposal_hash,
                 "recommended_action": summary.recommended_action,
             },
+        )
+        logger.info(
+            "agent_recovery_proposal_completed",
+            extra={"medimage": agent_log_context(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                reviewed_plan_id=updated.reviewed_plan_id,
+                execution_ticket_id=updated.execution_ticket_id,
+                run_id=updated.run_id,
+                event_code="AGENT_RECOVERY_PROPOSAL_COMPLETED",
+            )},
         )
         return updated, diagnosis, proposal
 

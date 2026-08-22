@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Card } from "../../../components/ui";
+import { formatDate } from "../../../i18n/format";
 import { useI18n } from "../../../i18n/useI18n";
 import { getAgentOperationalSummary } from "../../../lib/api/agentOperations";
 import type { AgentOperationalSummary } from "../../../lib/types/agentOperations";
@@ -13,7 +14,7 @@ export function AgentOperationalHealthCard({
   baseUrl?: string;
   projectId?: string | null;
 }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [summary, setSummary] = useState<AgentOperationalSummary | null>(null);
 
   useEffect(() => {
@@ -44,11 +45,8 @@ export function AgentOperationalHealthCard({
         <>
           <p>
             {t("agent.operations.states", {
-              count: Object.values(summary.lifecycle_state_counts).reduce(
-                (total, value) => total + value,
-                0,
-              ),
-              approvals: summary.approval_waiting_count,
+              count: summary.task_counts.total ?? 0,
+              approvals: summary.approval_counts.waiting ?? 0,
             })}
           </p>
           <p>
@@ -58,12 +56,17 @@ export function AgentOperationalHealthCard({
               unknown: summary.model_call_counts.unknown ?? 0,
             })}
           </p>
-          {summary.attentions.map((item) => (
+          {summary.attention.map((item) => (
             <p key={item.code}>
               {t("agent.operations.attention", { code: item.code, count: item.count })}
             </p>
           ))}
           {summary.truncated ? <p>{t("agent.operations.truncated")}</p> : null}
+          <p>
+            {t("agent.operations.generated", {
+              time: formatDate(locale, summary.generated_at),
+            })}
+          </p>
         </>
       ) : (
         <p>{t("agent.operations.unavailable")}</p>

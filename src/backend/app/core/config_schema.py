@@ -187,14 +187,19 @@ class AgentModelRuntimeConfig(BaseModel):
     def from_env(cls) -> AgentModelRuntimeConfig:
         provider = os.environ.get("MEDIMAGE_AGENT_MODEL_PROVIDER", "rule_based").strip().casefold()
         if provider not in {"rule_based", "openai_compatible"}:
-            provider = "rule_based"
+            raise ValueError("AGENT_MODEL_CONFIG_INVALID: MEDIMAGE_AGENT_MODEL_PROVIDER")
 
         def bounded(name: str, default: int, minimum: int, maximum: int) -> int:
-            try:
-                value = int(os.environ.get(name, str(default)))
-            except ValueError:
+            raw = os.environ.get(name)
+            if raw is None or not raw.strip():
                 return default
-            return value if minimum <= value <= maximum else default
+            try:
+                value = int(raw)
+            except ValueError:
+                raise ValueError(f"AGENT_MODEL_CONFIG_INVALID: {name}") from None
+            if not minimum <= value <= maximum:
+                raise ValueError(f"AGENT_MODEL_CONFIG_INVALID: {name}")
+            return value
 
         model = os.environ.get("MEDIMAGE_AGENT_MODEL_NAME", "").strip() or None
         base_url = os.environ.get("MEDIMAGE_AGENT_MODEL_BASE_URL", "").strip() or None

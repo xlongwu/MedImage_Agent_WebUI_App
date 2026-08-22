@@ -1833,33 +1833,6 @@ def test_m5t016_dpabi_no_executor(monkeypatch, tmp_path):
     assert resp.json()["execution"]["executor_called"] is False
 
 
-# ── 89. removed legacy GUI node → executor not called ──
-
-
-def test_m5t016_legacy_gui_node_no_executor(monkeypatch, tmp_path):
-    calls = []
-    monkeypatch.setattr(
-        "src.backend.app.runtime.execution_gateway.PIPELINE_EXECUTOR",
-        lambda **kwargs: calls.append(kwargs),
-    )
-    with pytest.raises(ReviewedPlanStoreError, match="without a contract"):
-        _preflight_body(
-            monkeypatch,
-            tmp_path,
-            plan={
-                "pipeline_id": "test",
-                "nodes": [
-                    {
-                        "id": "gui_acpc_manual",
-                        "depends_on": [],
-                        "params": {},
-                    }
-                ],
-            },
-        )
-    assert calls == []
-
-
 # ── 90. unknown node → executor not called ──
 
 

@@ -2,14 +2,15 @@
 
 All endpoints mirror the original behavior; the only change is store access
 via ``Depends(get_project_store)`` instead of the module-level ``mock_store``.
-Old routes remain registered in ``dashboard_routes.py`` with ``deprecated=True``.
+The canonical routes live here; ``dashboard_routes.py`` only retains helper
+functions still used by characterization tests.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from src.backend.app.api.dependencies import ProjectStore
+from src.backend.app.api.dependencies import ProjectStore, get_project_store
 from src.backend.app.services.artifact_adapter import (
     build_nifti_thumbnail,
 )
@@ -29,12 +30,6 @@ from src.backend.app.services.qc_adapter import (
 )
 
 router = APIRouter()
-
-
-def get_project_store() -> ProjectStore:
-    from src.backend.app.services.mock_store import mock_store
-    return mock_store  # type: ignore[return-value]
-
 
 # QC Dashboard
 

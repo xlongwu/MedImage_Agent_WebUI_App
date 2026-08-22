@@ -1,6 +1,6 @@
 # MedImage Agent 多 Agent 协作运行时设计与实施计划
 
-> 状态：Proposed，待能力评审后实施
+> 状态：Superseded as implementation authority；仅保留架构调研背景
 >
 > 文档类型：Architecture / Refactor + Feature Bundle 方案
 >
@@ -13,6 +13,18 @@
 > 当前准入状态（2026-08-16）：阶段十三的严格离线预检仅使用 synthetic 样例，因缺少
 > 可人工标注的脱敏 Trace/Replay 证据而明确失败关闭，结论保持 `single_agent`。本文件
 > 不授权 durable Team PoC、公开 API、feature flag、scheduler 或生产执行能力。
+>
+> 当前实施入口：`specs/阶段记录/阶段十四/生产多Agent架构/00_阶段规格与实施总览.md`。
+> 阶段十四把本文件中的架构背景收敛为 G0-G7 的可执行台账；若两者冲突，以阶段十四的
+> 当前范围、角色合同、失败策略和验收门槛为准。
+>
+> 已被阶段十四替换的旧候选选择包括：`goal_scope/project_evidence/safety_science` 角色命名、
+> 首期 `auto` 路由、通用 mailbox、独立 synthesis model 和静默 single fallback。当前方案
+> 固定为 `science/safety/completeness`、每任务显式启用、typed findings、确定性聚合和失败 handoff。
+>
+> **历史方案警告**：以下第 0—22 节均是 2026-07-22 的候选调研记录，其中的 schema、
+> 路由、角色、mailbox、synthesis、fallback、phase 和文件台账不得直接实施。它们只有在
+> 阶段十四文档明确重述时才仍有效；实施者不得从本文件补齐阶段十四有意删除的能力。
 
 ## 0. 执行结论
 

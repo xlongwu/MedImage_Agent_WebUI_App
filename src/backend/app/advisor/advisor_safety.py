@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.backend.app.core.config import ConfigService
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
+
 SAFETY_FLAGS = {
     "advice_only": True,
     "requires_human_confirmation": True,
@@ -26,27 +29,20 @@ def advisor_fallback(advisor_type: str) -> dict[str, Any]:
     return wrap_advisor_response({
         "message": (
             f"LLM advisor '{advisor_type}' is not enabled. "
-            "Set MEDIMAGE_LLM_ENABLED=true and configure MEDIMAGE_LLM_API_KEY to enable LLM-powered advice. "
+            "Enable and configure MEDIMAGE_AGENT_MODEL_* to use model-powered advice. "
             "The system continues to operate with deterministic pipeline execution."
         ),
         "suggestion": "Use deterministic tools (SessionDB, Insights, Error KB) for operational guidance.",
     }, advisor_type, fallback=True)
 
 
-def is_llm_enabled() -> bool:
+def is_llm_enabled(config: AgentModelRuntimeConfig | None = None) -> bool:
     """Check if LLM advisor is configured and enabled."""
-    import os
-    enabled = os.environ.get("MEDIMAGE_LLM_ENABLED", "false").lower() == "true"
-    has_key = bool(os.environ.get("MEDIMAGE_LLM_API_KEY", ""))
-    return enabled and has_key
+    runtime = config or ConfigService().model
+    return runtime.provider == "openai_compatible" and runtime.incomplete_reason() is None
 
 
-def get_llm_config() -> dict[str, str]:
-    """Get LLM configuration from environment."""
-    import os
-    return {
-        "enabled": os.environ.get("MEDIMAGE_LLM_ENABLED", "false"),
-        "provider": os.environ.get("MEDIMAGE_LLM_PROVIDER", "openai"),
-        "model": os.environ.get("MEDIMAGE_LLM_MODEL", "gpt-4o-mini"),
-        "base_url": os.environ.get("MEDIMAGE_LLM_BASE_URL", ""),
-    }
+def get_llm_config() -> AgentModelRuntimeConfig:
+    """Return the sole validated model runtime configuration."""
+
+    return ConfigService().model

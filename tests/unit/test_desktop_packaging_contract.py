@@ -27,6 +27,7 @@ def test_desktop_packaging_files_exist():
         "desktop/packaging/build_frontend.ps1",
         "desktop/packaging/build_desktop.ps1",
         "desktop/packaging/build_all_windows.ps1",
+        "desktop/packaging/test_electron_packaged_smoke.ps1",
         "src/backend/app/desktop_backend_entry.py",
         "src/backend/app/desktop_launcher_entry.py",
         "docs/桌面与前端/桌面应用打包.md",
@@ -34,6 +35,20 @@ def test_desktop_packaging_files_exist():
 
     for relative in required:
         assert (ROOT / relative).exists(), relative
+
+
+def test_packaged_electron_smoke_contract():
+    smoke = read("desktop/packaging/test_electron_packaged_smoke.ps1")
+
+    assert "MEDIMAGE_DESKTOP_SMOKE" in smoke
+    assert "MEDIMAGE_DESKTOP_SMOKE_RESULT" in smoke
+    assert "MEDIMAGE_DESKTOP_USER_DATA" in smoke
+    assert "MEDIMAGE_DESKTOP_WORKSPACE" in smoke
+    assert "rendererBackendHealthOk" in smoke
+    assert "rendererConsoleErrors" in smoke
+    assert "sidecar_stopped" in smoke
+    assert "Start-Process" in smoke
+    assert "-WindowStyle Hidden" in smoke
 
 
 def test_electron_main_contract():
@@ -153,8 +168,8 @@ def test_pyinstaller_spec_excludes_blocked_model_modules():
 
     assert "desktop_backend_entry.py" in spec
     assert '"planning_evidence_review.v1"' in spec
-    assert '"result_explanation.v1"' in spec
-    assert '"recovery_review.v1"' in spec
+    assert '"result_explanation.v1"' not in spec
+    assert '"recovery_review.v1"' not in spec
     assert '"manifest.json", "SKILL.md"' in spec
     assert "medimage-backend" in spec
     assert "upx=False" in spec
@@ -254,6 +269,10 @@ def test_packaged_gpu_probe_launches_frozen_backend_and_checks_lazy_import():
     assert "dicom_converter_available" in probe
     assert "dicom_execution_supported" in probe
     assert "_stop_backend_process_tree" in probe
+    assert "_windows_listener_owner" in probe
+    assert "listener_image != expected_image" in probe
+    assert "_wait_for_port_closed" in probe
+    assert "still owns its probe port after verified cleanup" in probe
     assert '["taskkill", "/pid", str(proc.pid), "/t", "/f"]' in probe
 
 

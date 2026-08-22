@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sys
 from datetime import UTC, datetime
@@ -22,12 +21,6 @@ DEFAULT_DESKTOP_CONFIG: dict[str, Any] = {
     "spm_dir": "./third_party/spm12",
     "dpabi_dir": "./third_party/DPABI_V8.2_240510",
     "gpu_mode": "prefer",
-    "llm": {
-        "enabled": False,
-        "base_url": "https://api.openai.com/v1",
-        "model": "",
-        "api_key_set": False,
-    },
     "dicom_conversion": {
         "enabled": False,
         "dcm2niix_path": "",
@@ -59,28 +52,22 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
 
 def get_desktop_config(redacted: bool = True) -> dict[str, Any]:
     config = _merge(DEFAULT_DESKTOP_CONFIG, _read_config())
-    config["llm"] = _merge(
-        config.get("llm", {}),
-        {
-            "enabled": os.environ.get("MEDIMAGE_LLM_ENABLED", str(config.get("llm", {}).get("enabled", False))).lower() == "true",
-            "base_url": os.environ.get("MEDIMAGE_LLM_BASE_URL", config.get("llm", {}).get("base_url")),
-            "model": os.environ.get("MEDIMAGE_LLM_MODEL", config.get("llm", {}).get("model", "")),
-            "api_key_set": bool(os.environ.get("MEDIMAGE_LLM_API_KEY")) or bool(config.get("llm", {}).get("api_key_set")),
-        },
-    )
-    if redacted:
-        config["llm"].pop("api_key", None)
+    config.pop("llm", None)
+    from src.backend.app.core.config import ConfigService
+    from src.backend.app.core.config_schema import AgentModelPublicConfig
+
+    config["agent_model"] = AgentModelPublicConfig.from_runtime(
+        ConfigService().model
+    ).model_dump(mode="json")
     return config
 
 
 def save_desktop_config(payload: dict[str, Any]) -> dict[str, Any]:
     existing = get_desktop_config(redacted=False)
     clean = dict(payload)
-    llm = dict(clean.get("llm", {}))
-    if llm.get("api_key"):
-        llm["api_key_set"] = True
-        llm.pop("api_key", None)
-    clean["llm"] = llm
+    clean.pop("llm", None)
+    clean.pop("agent_model", None)
+    existing.pop("agent_model", None)
     saved = _merge(existing, clean)
     DESKTOP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     DESKTOP_CONFIG_PATH.write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -123,7 +110,16 @@ def get_desktop_health() -> dict[str, Any]:
     except Exception as exc:
         gpu = {"ok": False, "gpu_available": False, "errors": [str(exc)]}
 
-    checks.append({"name": "llm_config", "ok": bool(config.get("llm", {}).get("api_key_set")) or not config.get("llm", {}).get("enabled"), "enabled": config.get("llm", {}).get("enabled"), "api_key_set": config.get("llm", {}).get("api_key_set")})
+    model = config.get("agent_model", {})
+    checks.append({
+        "name": "agent_model_config",
+        "ok": model.get("provider") == "rule_based" or (
+            bool(model.get("enabled")) and bool(model.get("api_key_configured"))
+        ),
+        "enabled": model.get("enabled"),
+        "provider": model.get("provider"),
+        "api_key_configured": model.get("api_key_configured"),
+    })
     checks.append(_websocket_runtime_check())
     checks.append(_desktop_store_check())
     checks.append(_pipeline_adapters_check())

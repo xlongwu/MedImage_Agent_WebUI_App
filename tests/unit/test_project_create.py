@@ -11,6 +11,7 @@ from src.backend.app.api import dashboard_routes, project_routes
 from src.backend.app.api.dependencies import get_project_store
 from src.backend.app.main import app
 from src.backend.app.runtime import desktop_config
+from src.backend.app.services import mock_store as mock_store_module
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 
 # ── Helper ──────────────────────────────────────────────────────────
@@ -24,6 +25,7 @@ def _clean_desktop_config(tmp_path: Path, monkeypatch) -> SQLiteDesktopStore:
     monkeypatch.setattr(project_routes, "DEFAULT_PROJECTS_ROOT", tmp_path / "projects")
     monkeypatch.setattr(project_routes, "mock_store", store)
     monkeypatch.setattr(dashboard_routes, "mock_store", store)
+    monkeypatch.setattr(mock_store_module, "mock_store", store)
     # Reset the config to defaults
     config_path.write_text(json.dumps(desktop_config.DEFAULT_DESKTOP_CONFIG), encoding="utf-8")
     return store

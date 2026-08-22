@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
+
+_SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:@-]{1,256}$")
+
 
 def agent_log_context(
     *,
@@ -24,4 +29,8 @@ def agent_log_context(
         "run_id": run_id,
         "sandbox_id": sandbox_id,
     }
-    return {key: value for key, value in values.items() if value}
+    return {
+        key: value
+        for key, value in values.items()
+        if value and _SAFE_IDENTIFIER.fullmatch(value)
+    }

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from src.backend.app.api import dashboard_routes, project_routes
 from src.backend.app.main import app
 from src.backend.app.runtime import desktop_config
+from src.backend.app.services import mock_store as mock_store_module
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 
 
@@ -15,7 +16,7 @@ def _isolated_store(tmp_path: Path, monkeypatch) -> SQLiteDesktopStore:
     store = SQLiteDesktopStore(tmp_path / "desktop_state.sqlite")
     monkeypatch.setattr(desktop_config, "DESKTOP_CONFIG_PATH", tmp_path / "desktop_config.json")
     monkeypatch.setattr(project_routes, "DEFAULT_PROJECTS_ROOT", tmp_path / "projects")
-    for module in (project_routes, dashboard_routes):
+    for module in (project_routes, dashboard_routes, mock_store_module):
         monkeypatch.setattr(module, "mock_store", store)
     desktop_config.DESKTOP_CONFIG_PATH.write_text(
         json.dumps(desktop_config.DEFAULT_DESKTOP_CONFIG),

@@ -42,33 +42,40 @@ const emptyEvidence: QcEvidenceSnapshot = {
 export function useQcEvidence(baseUrl: string, projectId: string): QcOverviewEvidence {
   const [reloadToken, setReloadToken] = useState(0);
   const reload = useCallback(() => setReloadToken((value) => value + 1), []);
-  const [state, setState] = useState<{ evidence: QcEvidenceSnapshot; projectId: string }>({
-    evidence: emptyEvidence,
-    projectId: "",
-  });
+  const [state, setState] = useState<{
+    evidence: QcEvidenceSnapshot;
+    projectId: string;
+    reloadToken: number;
+  }>({ evidence: emptyEvidence, projectId: "", reloadToken: -1 });
   const evidence =
-    state.projectId === projectId ? state.evidence : { ...emptyEvidence, loading: true };
+    state.projectId === projectId && state.reloadToken === reloadToken
+      ? state.evidence
+      : { ...emptyEvidence, loading: true };
 
   useEffect(() => {
     let cancelled = false;
     let pendingLoads = 5;
-    setState({ projectId, evidence: { ...emptyEvidence, loading: true } });
     const update = (partial: Partial<QcEvidenceSnapshot>, errorMessage?: string | null) => {
       if (cancelled) return;
       pendingLoads -= 1;
-      setState((current) => ({
-        projectId,
-        evidence: {
-          ...(current.projectId === projectId
+      setState((current) => {
+        const currentEvidence =
+          current.projectId === projectId && current.reloadToken === reloadToken
             ? current.evidence
-            : { ...emptyEvidence, loading: true }),
-          ...partial,
-          errorMessages: errorMessage
-            ? Array.from(new Set([...current.evidence.errorMessages, errorMessage]))
-            : current.evidence.errorMessages,
-          loading: pendingLoads > 0,
-        },
-      }));
+            : { ...emptyEvidence, loading: true };
+        return {
+          projectId,
+          reloadToken,
+          evidence: {
+            ...currentEvidence,
+            ...partial,
+            errorMessages: errorMessage
+              ? Array.from(new Set([...currentEvidence.errorMessages, errorMessage]))
+              : currentEvidence.errorMessages,
+            loading: pendingLoads > 0,
+          },
+        };
+      });
     };
 
     void loadOptional(() => getLatestQcDashboardReport(baseUrl, projectId)).then((result) =>

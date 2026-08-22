@@ -37,6 +37,7 @@ export const messagesEn = {
     "Model calls — {success} succeeded, {failure} failed, {unknown} unknown.",
   "agent.operations.attention": "{code}: {count}",
   "agent.operations.truncated": "The operational view is truncated to the safe task limit.",
+  "agent.operations.generated": "Generated {time}.",
   "agent.operations.unavailable": "Operational health is not available.",
   "agent.noTask": "Ready",
   "agent.noResult": "No evaluated result",
@@ -69,7 +70,6 @@ export const messagesEn = {
   "agent.continue": "Continue",
   "agent.approvePlan": "Approve plan",
   "agent.approveRecovery": "Approve recovery",
-  "agent.viewResults": "View results",
   "agent.confirmation.decision.title": "Confirm decisions",
   "agent.confirmation.decision.description":
     "Confirm these answers. The agent will continue planning automatically until it reaches the next required review.",
@@ -82,6 +82,7 @@ export const messagesEn = {
   "agent.confirmation.recovery.description":
     "Confirm this recovery scope. The agent will continue automatically and stop again only if another review is required.",
   "agent.confirmation.recovery.confirm": "Approve and continue automatically",
+  "agent.viewResults": "View results",
   "agent.viewDetails": "View details",
   "agent.working": "Working…",
   "agent.cancelTask": "Cancel task",
@@ -2248,12 +2249,6 @@ export const messagesEn = {
   "settings.desktop.preferGpu": "Prefer GPU",
   "settings.desktop.requireGpu": "Require GPU",
   "settings.desktop.cpuOnly": "CPU only",
-  "settings.desktop.llmUrl": "LLM base URL",
-  "settings.desktop.llmModel": "LLM model",
-  "settings.desktop.llmKey": "LLM API key",
-  "settings.desktop.configured": "Configured",
-  "settings.desktop.notConfigured": "Not configured",
-  "settings.desktop.enableLlm": "Enable LLM planner",
   "settings.desktop.saving": "Saving...",
   "settings.desktop.save": "Save settings",
   "settings.desktop.refresh": "Refresh checks",
@@ -3037,11 +3032,11 @@ export const messagesEn = {
   "technical.PlanReviewConsole.invalidPlan":
     "Generated plan is invalid and was not persisted. Missing or empty: {issues}.",
   "technical.PlanReviewConsole.provider.openai":
-    "Real LLM provider selected: requires MEDIMAGE_LLM_API_KEY. If the key is missing, the backend blocks generation before any external API call.",
+    "Real LLM provider selected: requires MEDIMAGE_AGENT_MODEL_API_KEY. If the key is missing, the backend blocks generation before any external API call.",
   "technical.PlanReviewConsole.provider.ruleBased":
     "Rule-based provider: local deterministic planner, no external API used.",
   "technical.PlanReviewConsole.provider.keyMissing":
-    "LLM provider disabled: API key not configured. MEDIMAGE_LLM_API_KEY is missing, so openai_compatible generation was blocked before any external API call. Select rule_based for local deterministic planning or configure the key before using openai_compatible.",
+    "LLM provider disabled: API key not configured. MEDIMAGE_AGENT_MODEL_API_KEY is missing, so openai_compatible generation was blocked before any external API call. Select rule_based for local deterministic planning or configure the key before using openai_compatible.",
   "technical.PlanReviewConsole.provider.invalidPlan":
     "Plan generation did not produce a valid reviewed plan.",
   "nav.primary": "Primary navigation",

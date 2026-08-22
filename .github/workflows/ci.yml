@@ -128,4 +128,8 @@ jobs:
         run: >-
           pytest tests/unit/test_desktop_backend_entry.py
           tests/unit/test_runtime_subprocess_boundary.py
+          tests/unit/test_sandbox_process_request.py
+          tests/unit/test_windows_process_sandbox.py
+          tests/integration/test_windows_process_sandbox.py
+          tests/integration/test_windows_sandbox_process_tree.py
           --tb=short

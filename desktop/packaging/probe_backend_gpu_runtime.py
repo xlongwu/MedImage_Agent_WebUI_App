@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import os
 import socket
@@ -11,6 +12,9 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+if os.name == "nt":
+    from ctypes import wintypes
 
 
 def _free_port() -> int:
@@ -28,7 +32,105 @@ def _get_json(url: str, *, timeout: float) -> dict:
         raise RuntimeError(f"{url} returned HTTP {exc.code}: {body}") from exc
 
 
-def _stop_backend_process_tree(proc: subprocess.Popen[bytes]) -> None:
+def _port_is_open(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
+def _wait_for_port_closed(port: int, *, timeout: float = 15.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _port_is_open(port):
+            return True
+        time.sleep(0.2)
+    return not _port_is_open(port)
+
+
+def _windows_process_image(pid: int) -> Path | None:
+    if os.name != "nt":
+        return None
+    process_query_limited_information = 0x1000
+    handle = ctypes.windll.kernel32.OpenProcess(
+        process_query_limited_information,
+        False,
+        pid,
+    )
+    if not handle:
+        return None
+    try:
+        size = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if not ctypes.windll.kernel32.QueryFullProcessImageNameW(
+            handle,
+            0,
+            buffer,
+            ctypes.byref(size),
+        ):
+            return None
+        return Path(buffer.value).resolve()
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+
+def _windows_listener_owner(port: int) -> tuple[int, Path | None] | None:
+    if os.name != "nt":
+        return None
+
+    class TcpRowOwnerPid(ctypes.Structure):
+        _fields_ = [
+            ("state", wintypes.DWORD),
+            ("local_address", wintypes.DWORD),
+            ("local_port", wintypes.DWORD),
+            ("remote_address", wintypes.DWORD),
+            ("remote_port", wintypes.DWORD),
+            ("owning_pid", wintypes.DWORD),
+        ]
+
+    af_inet = 2
+    tcp_table_owner_pid_listener = 3
+    insufficient_buffer = 122
+    size = wintypes.DWORD(0)
+    status = ctypes.windll.iphlpapi.GetExtendedTcpTable(
+        None,
+        ctypes.byref(size),
+        True,
+        af_inet,
+        tcp_table_owner_pid_listener,
+        0,
+    )
+    if status != insufficient_buffer:
+        return None
+    table = ctypes.create_string_buffer(size.value)
+    status = ctypes.windll.iphlpapi.GetExtendedTcpTable(
+        table,
+        ctypes.byref(size),
+        True,
+        af_inet,
+        tcp_table_owner_pid_listener,
+        0,
+    )
+    if status != 0:
+        return None
+    count = wintypes.DWORD.from_buffer_copy(table.raw[:4]).value
+    row_size = ctypes.sizeof(TcpRowOwnerPid)
+    for index in range(count):
+        offset = 4 + (index * row_size)
+        row = TcpRowOwnerPid.from_buffer_copy(table.raw[offset : offset + row_size])
+        if socket.ntohs(row.local_port & 0xFFFF) == port:
+            pid = int(row.owning_pid)
+            return pid, _windows_process_image(pid)
+    return None
+
+
+def _stop_backend_process_tree(
+    proc: subprocess.Popen[bytes],
+    *,
+    port: int,
+    backend: Path,
+) -> None:
     """Stop the PyInstaller bootloader and its extracted backend child."""
     if os.name == "nt" and proc.poll() is None:
         subprocess.run(
@@ -45,6 +147,33 @@ def _stop_backend_process_tree(proc: subprocess.Popen[bytes]) -> None:
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait(timeout=30)
+    if _wait_for_port_closed(port):
+        return
+
+    if os.name == "nt":
+        owner = _windows_listener_owner(port)
+        if owner is not None:
+            listener_pid, listener_image = owner
+            expected_image = backend.resolve()
+            if listener_image is None or listener_image != expected_image:
+                actual = str(listener_image) if listener_image else "unavailable"
+                raise RuntimeError(
+                    "Probe port remained open but its owner did not match the built "
+                    f"backend (pid={listener_pid}, image={actual})"
+                )
+            subprocess.run(
+                ["taskkill", "/pid", str(listener_pid), "/t", "/f"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if _wait_for_port_closed(port):
+                return
+
+    raise RuntimeError(
+        "Frozen backend process tree still owns its probe port after verified cleanup"
+    )
 
 
 def main() -> int:
@@ -147,7 +276,7 @@ def main() -> int:
             result_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
             print(json.dumps(evidence, indent=2))
         finally:
-            _stop_backend_process_tree(proc)
+            _stop_backend_process_tree(proc, port=port, backend=backend)
     return 0
 
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
+
 from src.backend.app.advisor.advisor_safety import (
     advisor_fallback,
     get_llm_config,
@@ -101,29 +103,22 @@ Respond with JSON containing: recommended_pipeline_template, parameter_suggestio
     return wrap_advisor_response(data, "protocol")
 
 
-def _call_llm(config: dict, prompt: str) -> str:
-    import json
-    import urllib.request
+def _call_llm(config: AgentModelRuntimeConfig, prompt: str) -> str:
+    from src.backend.app.planner.llm_provider import call_openai_compatible_chat
 
-    api_key = __import__("os").environ.get("MEDIMAGE_LLM_API_KEY", "")
-    base_url = config.get("base_url") or "https://api.openai.com/v1"
-    model = config.get("model", "gpt-4o-mini")
-
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 500,
-        "temperature": 0.3,
-    }).encode()
-
-    req = urllib.request.Request(
-        f"{base_url}/chat/completions",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+    result = call_openai_compatible_chat(
+        messages=[
+            {
+                "role": "system",
+                "content": "Provide advice only. Return one JSON object and never authorize execution.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        config=config,
+        temperature=0.3,
+        max_output_tokens=min(500, config.max_output_tokens),
+        response_format={"type": "json_object"},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read())
-    return result["choices"][0]["message"]["content"]
+    if not result.ok:
+        raise RuntimeError(result.errors[0] if result.errors else "AGENT_MODEL_PROVIDER_FAILED")
+    return result.content

@@ -9,20 +9,21 @@ echo "  MedImage Agent - One-Click Startup"
 echo "============================================"
 echo ""
 
-# ── Kill any process on ports 8000 / 5173 ──
-echo "[1/4] Cleaning ports..."
+# ── Refuse occupied ports; never terminate an unowned process ──
+echo "[1/4] Checking ports..."
 for port in 8000 5173; do
-    # Try lsof (Linux/macOS), then netstat (fallback), then Windows netstat
-    pid=$(lsof -ti:$port 2>/dev/null)
-    if [ -z "$pid" ]; then
-        pid=$(netstat -ano 2>/dev/null | grep ":$port " | grep LISTENING | awk '{print $5}' | head -1)
+    pid=""
+    if command -v lsof >/dev/null 2>&1; then
+        pid=$(lsof -ti:"$port" 2>/dev/null | head -1 || true)
+    elif command -v netstat >/dev/null 2>&1; then
+        pid=$(netstat -ano 2>/dev/null | grep ":$port " | grep LISTENING | awk '{print $5}' | head -1 || true)
     fi
     if [ -n "$pid" ] && [ "$pid" != "0" ]; then
-        kill -9 $pid 2>/dev/null || taskkill //F //PID $pid 2>/dev/null || true
-        echo "  Freed port $port (PID $pid)"
+        echo "  ERROR: Port $port is already in use by PID $pid."
+        echo "  Stop the owning process explicitly or choose another port."
+        exit 1
     fi
 done
-sleep 2
 
 # ── Start Backend ──
 echo "[2/4] Starting backend (uvicorn :8000)..."
@@ -33,7 +34,7 @@ echo "  PID: $BACKEND_PID"
 # ── Wait for backend ──
 echo "  Waiting for backend..."
 for i in $(seq 1 30); do
-    if curl -s http://127.0.0.1:8000/health > /dev/null 2>&1; then
+    if curl -s http://127.0.0.1:8000/api/health > /dev/null 2>&1; then
         echo "  Backend is ready: http://127.0.0.1:8000"
         break
     fi
@@ -62,7 +63,7 @@ echo "============================================"
 echo "  All services running!"
 echo "  Frontend : http://127.0.0.1:5173"
 echo "  Backend  : http://127.0.0.1:8000"
-echo "  Health   : http://127.0.0.1:8000/health"
+echo "  Health   : http://127.0.0.1:8000/api/health"
 echo "============================================"
 echo "  Press Ctrl+C to stop all services."
 echo ""

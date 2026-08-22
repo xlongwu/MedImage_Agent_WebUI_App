@@ -166,11 +166,11 @@ def test_unknown_node_blocked():
     plan = {
         "pipeline_id": "test",
         "nodes": [
-            {"id": "nonexistent_gui_xyz", "depends_on": []},
+            {"id": "nonexistent_node_xyz", "depends_on": []},
         ],
     }
     policy = classify_plan_nodes(plan)
-    assert "nonexistent_gui_xyz" in policy["blocked_unknown_nodes"]
+    assert "nonexistent_node_xyz" in policy["blocked_unknown_nodes"]
 
 
 # ── 13. Python QC allowed ──

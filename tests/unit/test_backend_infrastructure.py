@@ -52,28 +52,13 @@ def test_request_id_and_response_time_headers_are_added():
     assert "X-Response-Time-ms" in response.headers
 
 
-def test_api_v1_prefix_maps_to_existing_api_routes():
+def test_removed_api_v1_compatibility_prefix_fails_closed():
     app = create_app()
     client = TestClient(app)
 
     response = client.get("/api/v1/health")
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
-    assert response.headers["X-API-Version"] == "v1"
-    assert response.headers["X-Original-Path"] == "/api/v1/health"
-
-
-def test_api_v1_prefix_preserves_legacy_route_contract():
-    app = create_app()
-    client = TestClient(app)
-
-    legacy = client.get("/api/pipelines")
-    versioned = client.get("/api/v1/pipelines")
-
-    assert legacy.status_code == 200
-    assert versioned.status_code == 200
-    assert versioned.json() == legacy.json()
+    assert response.status_code == 404
 
 
 def test_domain_routes_register_the_single_agent_task_planning_chain():
@@ -188,6 +173,20 @@ def test_domain_split_routes_do_not_register_duplicate_method_paths():
     app = create_app()
     duplicates = _extract_duplicate_routes(app)
     assert duplicates == [], f"Duplicate routes: {duplicates}"
+
+
+def test_openapi_operation_ids_are_unique_and_no_routes_are_deprecated():
+    schema = create_app().openapi()
+    operations = [
+        operation
+        for methods in schema.get("paths", {}).values()
+        for method, operation in methods.items()
+        if method.lower() in {"get", "post", "put", "patch", "delete"}
+    ]
+    operation_ids = [operation["operationId"] for operation in operations]
+
+    assert len(operation_ids) == len(set(operation_ids))
+    assert all(not operation.get("deprecated", False) for operation in operations)
 
 
 def test_rate_limiter_returns_structured_429(monkeypatch):

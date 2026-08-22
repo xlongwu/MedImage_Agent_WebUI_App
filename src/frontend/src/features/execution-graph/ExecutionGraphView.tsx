@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Background,
   Controls,
@@ -9,7 +9,6 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import type { ExecutionGraphNode as GraphNode } from "../../lib/types/executionGraph";
 import { useI18n } from "../../i18n/useI18n";
 import { ExecutionGraphInspector } from "./ExecutionGraphInspector";
 import { ExecutionGraphNode } from "./ExecutionGraphNode";
@@ -33,13 +32,7 @@ export function ExecutionGraphView(props: {
   const { t } = useI18n();
   const { graph, error, loading, refresh } = useExecutionGraph(props);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  useEffect(() => {
-    setSelectedId(null);
-  }, [graph?.structure_hash]);
-  const nodes = useMemo(
-    () => (graph ? layoutExecutionGraph(graph) : []),
-    [graph?.structure_hash, graph?.nodes],
-  );
+  const nodes = useMemo(() => (graph ? layoutExecutionGraph(graph) : []), [graph]);
   const edges = useMemo<Edge[]>(
     () =>
       graph
@@ -52,7 +45,7 @@ export function ExecutionGraphView(props: {
             className: `${styles.edge} ${styles[`edge_${edge.state}`]}`,
           }))
         : [],
-    [graph?.structure_hash, graph?.state_hash],
+    [graph],
   );
   const selected =
     graph?.nodes.find((node) => node.node_id === selectedId) ?? graph?.nodes[0] ?? null;

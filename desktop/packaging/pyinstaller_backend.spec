@@ -26,8 +26,6 @@ _datas = []
 _agent_skill_root = repo_root / "src" / "backend" / "app" / "agent_skills"
 for _skill_id in (
     "planning_evidence_review.v1",
-    "result_explanation.v1",
-    "recovery_review.v1",
 ):
     for _resource_name in ("manifest.json", "SKILL.md"):
         _resource_path = _agent_skill_root / _skill_id / _resource_name

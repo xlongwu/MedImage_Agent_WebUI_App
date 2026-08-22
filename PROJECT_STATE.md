@@ -183,10 +183,11 @@ their tag state.
   former `mock` provider is removed. Both return the same strict Pydantic plan
   schema and persist redacted invocation/evidence provenance. The remote path
   permits one identical-input JSON repair and never falls back to another plan.
-- Automatic AC-PC alignment remains a real computed Python workflow with
-  reloadable artifacts and provenance, but is not claimed `validated` without
-  an independent manual-reference dataset. The former GUI Agent product routes,
-  nodes, schemas and configuration are removed; old route/node IDs are rejected.
+- Automatic AC-PC anterior-commissure localization remains a real computed
+  Python workflow with reloadable artifacts and provenance. `estimated_ac_mm`
+  is the primary localization result; `estimated_pc_mm` is retained only to
+  establish the AC-PC axis. The capability is not claimed `validated` without
+  an independent manual-reference dataset.
 
 ## Current Execution Boundaries
 
@@ -331,12 +332,18 @@ their tag state.
   both "sandbox prepared" and "numeric result produced". Per-metric status
   now distinguishes these; older manifests are read with backward-compatible
   fallback.
-- `dashboard_routes.py` remains a large legacy aggregation/conversion workflow
-  router. New unrelated domain endpoints should be split into domain routers.
+- `dashboard_routes.py` remains a large dashboard-composition and shared-helper
+  module, but extracted image, QC, task, preprocessing, and DICOM conversion
+  endpoints now have only one mounted domain-router owner. The remaining
+  dashboard/project/dataset/model/task-stream endpoints should be split only as
+  complete consumer-tested bundles.
 - Some historical docs still describe earlier route and frontend API layouts;
   long-term docs should point to the current domain-router and `lib/api/`
   structure.
-- Desktop GUI validation requires a local interactive Windows desktop.
+- The canonical unpacked Electron app has an automated hidden-renderer smoke
+  covering sidecar readiness, React mount, renderer-to-backend health, zero
+  renderer console errors, and sidecar shutdown. Visible human GUI workflows
+  and the full real-data scientific workflow still require separate validation.
 - Default Windows temp folders can retain locked pytest directories; use the
   active project interpreter and `--basetemp=.pytest_tmp`.
 - The desktop SQLite state store is ignored runtime state and can accumulate

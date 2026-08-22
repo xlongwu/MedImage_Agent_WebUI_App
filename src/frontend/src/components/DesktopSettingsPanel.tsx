@@ -14,13 +14,6 @@ type Settings = {
   spm_dir: string;
   dpabi_dir: string;
   gpu_mode: string;
-  llm: {
-    enabled: boolean;
-    base_url: string;
-    model: string;
-    api_key?: string;
-    api_key_set?: boolean;
-  };
 };
 
 const EMPTY_SETTINGS: Settings = {
@@ -30,13 +23,6 @@ const EMPTY_SETTINGS: Settings = {
   spm_dir: "./third_party/spm12",
   dpabi_dir: "./third_party/DPABI_V8.2_240510",
   gpu_mode: "prefer",
-  llm: {
-    enabled: false,
-    base_url: "https://api.openai.com/v1",
-    model: "",
-    api_key: "",
-    api_key_set: false,
-  },
 };
 
 export default function DesktopSettingsPanel({ baseUrl }: Props) {
@@ -133,43 +119,8 @@ export default function DesktopSettingsPanel({ baseUrl }: Props) {
             <option value="off">{t("settings.desktop.cpuOnly")}</option>
           </select>
         </label>
-        <label>
-          {t("settings.desktop.llmUrl")}
-          <input
-            value={settings.llm.base_url}
-            onChange={(event) => update("llm", { ...settings.llm, base_url: event.target.value })}
-          />
-        </label>
-        <label>
-          {t("settings.desktop.llmModel")}
-          <input
-            value={settings.llm.model}
-            onChange={(event) => update("llm", { ...settings.llm, model: event.target.value })}
-          />
-        </label>
-        <label>
-          {t("settings.desktop.llmKey")}
-          <input
-            type="password"
-            placeholder={
-              settings.llm.api_key_set
-                ? t("settings.desktop.configured")
-                : t("settings.desktop.notConfigured")
-            }
-            value={settings.llm.api_key || ""}
-            onChange={(event) => update("llm", { ...settings.llm, api_key: event.target.value })}
-          />
-        </label>
       </div>
       <div className="row">
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input
-            type="checkbox"
-            checked={settings.llm.enabled}
-            onChange={(event) => update("llm", { ...settings.llm, enabled: event.target.checked })}
-          />
-          {t("settings.desktop.enableLlm")}
-        </label>
         <button onClick={save} disabled={saving}>
           {saving ? t("settings.desktop.saving") : t("settings.desktop.save")}
         </button>

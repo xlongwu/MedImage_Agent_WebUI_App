@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.backend.app.agent_skills.registry import AgentSkillRegistry, BUILTIN_SKILL_IDS
 from src.backend.app.core.config import ConfigService
 from src.backend.app.core.config_schema import AgentModelRuntimeConfig
@@ -66,6 +68,19 @@ def test_config_snapshot_exposes_only_the_public_model_projection(monkeypatch) -
     assert snapshot.provider == "openai_compatible"
     assert snapshot.api_key_configured is True
     assert "profile-secret" not in snapshot.model_dump_json()
+
+
+def test_invalid_model_environment_fails_closed(monkeypatch) -> None:
+    monkeypatch.setenv("MEDIMAGE_AGENT_MODEL_PROVIDER", "unknown-provider")
+
+    with pytest.raises(ValueError, match="AGENT_MODEL_CONFIG_INVALID"):
+        AgentModelRuntimeConfig.from_env()
+
+    monkeypatch.setenv("MEDIMAGE_AGENT_MODEL_PROVIDER", "rule_based")
+    monkeypatch.setenv("MEDIMAGE_AGENT_MODEL_TIMEOUT_SECONDS", "not-a-number")
+
+    with pytest.raises(ValueError, match="MEDIMAGE_AGENT_MODEL_TIMEOUT_SECONDS"):
+        AgentModelRuntimeConfig.from_env()
 
 
 def test_canonical_request_binds_the_runtime_profile() -> None:

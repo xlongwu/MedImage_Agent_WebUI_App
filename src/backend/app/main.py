@@ -31,7 +31,6 @@ from src.backend.app.api.gpu_routes import router as gpu_router
 from src.backend.app.api.image_routes import router as image_router
 from src.backend.app.api.memory_routes import router as memory_router
 from src.backend.app.api.middleware import (
-    APIVersionMiddleware,
     RateLimitMiddleware,
     RequestIDMiddleware,
     RequestLoggingMiddleware,
@@ -203,8 +202,6 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(RequestIDMiddleware)
     app.add_middleware(RateLimitMiddleware)
-    app.add_middleware(APIVersionMiddleware)
-
     app.include_router(router)
     app.include_router(dpabi_router)
     app.include_router(rsfmri_router)

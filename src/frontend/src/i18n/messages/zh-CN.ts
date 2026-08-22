@@ -37,6 +37,7 @@ export const messagesZhCn = {
   "agent.operations.calls": "模型调用：成功 {success}，失败 {failure}，未知 {unknown}。",
   "agent.operations.attention": "{code}：{count}",
   "agent.operations.truncated": "运行视图已按安全任务上限截断。",
+  "agent.operations.generated": "生成时间：{time}。",
   "agent.operations.unavailable": "运行健康状态暂不可用。",
   "agent.noTask": "已就绪",
   "agent.noResult": "暂无已评价结果",
@@ -67,7 +68,6 @@ export const messagesZhCn = {
   "agent.continue": "继续",
   "agent.approvePlan": "批准方案",
   "agent.approveRecovery": "批准恢复",
-  "agent.viewResults": "查看结果",
   "agent.confirmation.decision.title": "确认决策",
   "agent.confirmation.decision.description":
     "确认这些选择后，Agent 将自动继续规划，直至下一处需要你审查的节点。",
@@ -80,6 +80,7 @@ export const messagesZhCn = {
   "agent.confirmation.recovery.description":
     "确认本次恢复范围后，Agent 将自动继续；只有再次需要审查时才会停下。",
   "agent.confirmation.recovery.confirm": "批准并自动继续",
+  "agent.viewResults": "查看结果",
   "agent.viewDetails": "查看详情",
   "agent.working": "处理中…",
   "agent.cancelTask": "取消任务",
@@ -2066,12 +2067,6 @@ export const messagesZhCn = {
   "settings.desktop.preferGpu": "优先 GPU",
   "settings.desktop.requireGpu": "必须使用 GPU",
   "settings.desktop.cpuOnly": "仅 CPU",
-  "settings.desktop.llmUrl": "LLM 基础地址",
-  "settings.desktop.llmModel": "LLM 模型",
-  "settings.desktop.llmKey": "LLM API 密钥",
-  "settings.desktop.configured": "已配置",
-  "settings.desktop.notConfigured": "未配置",
-  "settings.desktop.enableLlm": "启用 LLM 规划器",
   "settings.desktop.saving": "正在保存……",
   "settings.desktop.save": "保存设置",
   "settings.desktop.refresh": "刷新检查",
@@ -2796,11 +2791,11 @@ export const messagesZhCn = {
   "technical.DicomConversionExecute.confirm.confirm_execution": "我确认执行转换。",
   "technical.PlanReviewConsole.invalidPlan": "生成的计划无效，未保存。缺失或为空：{issues}。",
   "technical.PlanReviewConsole.provider.openai":
-    "已选择真实 LLM 提供方：需要 MEDIMAGE_LLM_API_KEY。若密钥缺失，后端会在任何外部 API 调用前阻止生成。",
+    "已选择真实 LLM 提供方：需要 MEDIMAGE_AGENT_MODEL_API_KEY。若密钥缺失，后端会在任何外部 API 调用前阻止生成。",
   "technical.PlanReviewConsole.provider.ruleBased":
     "规则提供方：本地确定性规划器，不使用外部 API。",
   "technical.PlanReviewConsole.provider.keyMissing":
-    "LLM 提供方已禁用：未配置 MEDIMAGE_LLM_API_KEY，因此 openai_compatible 在任何外部 API 调用前已被阻止。请选择 rule_based 进行本地确定性规划，或先配置密钥。",
+    "LLM 提供方已禁用：未配置 MEDIMAGE_AGENT_MODEL_API_KEY，因此 openai_compatible 在任何外部 API 调用前已被阻止。请选择 rule_based 进行本地确定性规划，或先配置密钥。",
   "technical.PlanReviewConsole.provider.invalidPlan": "计划生成未产生有效的待审计划。",
   "nav.primary": "主导航",
   "nav.selectProjectFirst": "请先选择项目再打开此工作区",
