@@ -9,7 +9,7 @@ import threading
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Callable
 
 import uvicorn
@@ -232,24 +232,34 @@ def _sandbox_self_test_argv(
     case_id: str, memory_input_path: Path
 ) -> tuple[str, ...]:
     """Build a fixed Windows helper invocation shared by source and packages."""
-    system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+    # This helper is unit-tested on non-Windows CI hosts.  Keep Windows path
+    # semantics explicit so a POSIX Path does not reinterpret ``C:\Windows``
+    # as a relative path beneath the checkout or pytest temporary directory.
+    system32 = PureWindowsPath(
+        os.environ.get("SystemRoot", r"C:\Windows")
+    ) / "System32"
+
+    def helper_path(name: str) -> str:
+        executable = system32 / name
+        # Preserve canonicalization on the real Windows runtime while keeping
+        # path construction deterministic when Linux CI exercises the helper.
+        return str(Path(executable).resolve()) if os.name == "nt" else str(executable)
+
     if case_id == "timeout":
-        executable = system32 / "ping.exe"
-        return (str(executable.resolve()), "127.0.0.1", "-n", "11")
+        return (helper_path("ping.exe"), "127.0.0.1", "-n", "11")
     if case_id == "memory_limit":
-        executable = system32 / "sort.exe"
-        return (str(executable.resolve()), str(memory_input_path))
-    executable = system32 / "cmd.exe"
+        return (helper_path("sort.exe"), str(memory_input_path))
+    executable = helper_path("cmd.exe")
     command = _SANDBOX_SELF_TEST_COMMANDS.get(case_id)
     if case_id == "spawn_child_tree":
         command = (
-            f'"{executable.resolve()}" /d /c exit 0 >nul 2>&1 & '
+            f'"{executable}" /d /c exit 0 >nul 2>&1 & '
             "if errorlevel 1 (exit /b 0) else (exit /b 1)"
         )
     if command is None:
         raise ValueError("Unknown sandbox self-test case")
     return (
-        str(executable.resolve()),
+        executable,
         "/d",
         "/q",
         "/c",
