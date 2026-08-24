@@ -16,6 +16,7 @@ function approvalTask(): AgentTaskResponse {
     outcome: null,
     goal_summary: "Preprocess three subjects and generate FC",
     current_action: "The reviewed plan is ready for approval.",
+    current_action_code: "waiting_approval",
     next_action: {
       type: "approve_execution",
       title: "Approve the processing plan",
@@ -115,7 +116,6 @@ describe("AgentWorkspace", () => {
             error: "AGENT_EXECUTION_BLOCKED: REVIEWED_EXECUTION_DISABLED",
           }}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -139,7 +139,6 @@ describe("AgentWorkspace", () => {
             error: "APPROVAL_SUMMARY_EXPIRED",
           }}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -166,7 +165,6 @@ describe("AgentWorkspace", () => {
               "AGENT_EXECUTION_PREREQUISITE_MISSING: ReHo execution requires a realignment or smoothing producer.",
           }}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -193,7 +191,6 @@ describe("AgentWorkspace", () => {
             error: "AGENT_DRY_RUN_BLOCKED: PLAN_ADAPTER_FAILED",
           }}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -220,7 +217,6 @@ describe("AgentWorkspace", () => {
             error: "AGENT_EXECUTION_BLOCKED: SAFE_EXECUTION_POLICY_BLOCKED",
           }}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -261,7 +257,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={{ ...controller(approvalTask()), error }}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -290,7 +285,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={controller(task)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -303,51 +297,6 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByText(/reviewed node/)).not.toBeInTheDocument();
   });
 
-  it("opens the exact reviewed plan from the plan details action", () => {
-    const onOpenReviewedPlan = vi.fn();
-    render(
-      <I18nProvider locale="en">
-        <AgentWorkspaceView
-          advancedMode={false}
-          controller={controller(approvalTask())}
-          dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
-          onOpenReviewedPlan={onOpenReviewedPlan}
-          onOpenRuns={vi.fn()}
-          projectName="Demo Project"
-        />
-      </I18nProvider>,
-    );
-
-    fireEvent.click(screen.getByText("Task details and compatibility views"));
-    fireEvent.click(screen.getByRole("button", { name: "Plan details" }));
-
-    expect(onOpenReviewedPlan).toHaveBeenCalledWith("plan-1");
-  });
-
-  it("keeps overview and QC compatibility workspaces reachable", () => {
-    const onOpenLegacyWorkspace = vi.fn();
-    render(
-      <I18nProvider locale="en">
-        <AgentWorkspaceView
-          advancedMode={false}
-          controller={controller(approvalTask())}
-          dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={onOpenLegacyWorkspace}
-          onOpenRuns={vi.fn()}
-          projectName="Demo Project"
-        />
-      </I18nProvider>,
-    );
-
-    fireEvent.click(screen.getByText("Task details and compatibility views"));
-    fireEvent.click(screen.getByRole("button", { name: "Overview details" }));
-    fireEvent.click(screen.getByRole("button", { name: "QC details" }));
-
-    expect(onOpenLegacyWorkspace).toHaveBeenNthCalledWith(1, "overview");
-    expect(onOpenLegacyWorkspace).toHaveBeenNthCalledWith(2, "qc");
-  });
-
   it("shows one primary action and keeps technical evidence behind Advanced Mode", () => {
     const task = approvalTask();
     const { rerender } = render(
@@ -356,7 +305,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={controller(task)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -375,7 +323,6 @@ describe("AgentWorkspace", () => {
           advancedMode={true}
           controller={controller(task)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -393,7 +340,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={controller(null)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -445,7 +391,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={controller(task)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -507,7 +452,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={controller(task)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -559,7 +503,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={controller(task)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -629,7 +572,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={controller(task)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -688,7 +630,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={controller(revisionTask)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -720,7 +661,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={controller(canceledTask)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           projectName="Demo Project"
         />
@@ -815,7 +755,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={controller(task)}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           onReopenAttention={onReopenAttention}
           projectName="Demo Project"
@@ -837,7 +776,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={{ ...controller(approvalTask()), approve: onApprove }}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           onReopenAttention={onReopenAttention}
           projectName="Demo Project"
@@ -880,7 +818,6 @@ describe("AgentWorkspace", () => {
           advancedMode={false}
           controller={{ ...controller(task), approveRecovery: onApproveRecovery }}
           dataStateLabel="Converted BIDS/NIfTI"
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenRuns={vi.fn()}
           onReopenAttention={onReopenAttention}
           projectName="Demo Project"

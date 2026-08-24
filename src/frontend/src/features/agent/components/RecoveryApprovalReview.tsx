@@ -40,6 +40,7 @@ export function RecoveryApprovalReview({
       </dl>
       <div className={styles.attentionAction}>
         <Button
+          data-agent-action="approve_recovery"
           data-primary-action="true"
           disabled={mutating}
           onClick={() => void onApprove().catch((): void => {})}

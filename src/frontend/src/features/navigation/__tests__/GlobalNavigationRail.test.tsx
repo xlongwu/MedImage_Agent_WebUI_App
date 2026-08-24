@@ -6,15 +6,13 @@ import { I18nProvider } from "../../../i18n/I18nProvider";
 import { GlobalNavigationRail } from "../GlobalNavigationRail";
 
 describe("GlobalNavigationRail", () => {
-  it("navigates through existing workspace callbacks without inventing execution actions", async () => {
+  it("exposes only Projects, Agent, Runs, and Settings", async () => {
     const user = userEvent.setup();
-    const onOpenLegacyWorkspace = vi.fn();
     const onOpenWorkspace = vi.fn();
     render(
       <I18nProvider locale="en">
         <GlobalNavigationRail
-          location={{ kind: "legacy", projectId: "project-1", workspace: "overview" }}
-          onOpenLegacyWorkspace={onOpenLegacyWorkspace}
+          location={{ kind: "project", projectId: "project-1", workspace: "agent" }}
           onOpenProjects={vi.fn()}
           onOpenWorkspace={onOpenWorkspace}
           projectId="project-1"
@@ -22,17 +20,13 @@ describe("GlobalNavigationRail", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByRole("button", { name: "Overview" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    await user.click(screen.getByRole("button", { name: "Results" }));
-    expect(onOpenLegacyWorkspace).toHaveBeenCalledWith("project-1", "results");
-
+    expect(screen.getByRole("button", { name: "Agent" })).toHaveAttribute("aria-current", "page");
     await user.click(screen.getByRole("button", { name: "Runs" }));
     expect(onOpenWorkspace).toHaveBeenCalledWith("project-1", "runs");
 
     expect(screen.queryByRole("button", { name: /execute/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(4);
   });
 
   it("keeps project workspaces disabled until a project is selected", () => {
@@ -40,7 +34,6 @@ describe("GlobalNavigationRail", () => {
       <I18nProvider locale="en">
         <GlobalNavigationRail
           location={{ kind: "projects" }}
-          onOpenLegacyWorkspace={vi.fn()}
           onOpenProjects={vi.fn()}
           onOpenWorkspace={vi.fn()}
           projectId={null}
@@ -50,6 +43,6 @@ describe("GlobalNavigationRail", () => {
 
     expect(screen.getByRole("button", { name: "Projects" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Agent" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Results" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeDisabled();
   });
 });

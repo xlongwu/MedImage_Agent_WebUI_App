@@ -4,7 +4,6 @@ import { Button, Card, Dialog, EmptyState, Skeleton } from "../../components/ui"
 import type { I18nContextValue } from "../../i18n/context";
 import { useI18n } from "../../i18n/useI18n";
 import type { ProjectInventory } from "../../lib/projectWorkflow";
-import type { LegacyWorkspace } from "../navigation/workspaceModel";
 import styles from "./AgentWorkspace.module.css";
 import { CurrentAction } from "./components/CurrentAction";
 import { DecisionBatchCard } from "./components/DecisionBatchCard";
@@ -195,8 +194,6 @@ export function AgentWorkspace({
   advancedMode,
   controller,
   inventory,
-  onOpenLegacyWorkspace,
-  onOpenReviewedPlan,
   onOpenRuns,
   onReopenAttention,
   projectName,
@@ -204,8 +201,6 @@ export function AgentWorkspace({
   advancedMode: boolean;
   controller: AgentTaskController;
   inventory: ProjectInventory | null;
-  onOpenLegacyWorkspace: (workspace: LegacyWorkspace) => void;
-  onOpenReviewedPlan?: (reviewedPlanId: string) => void;
   onOpenRuns: () => void;
   onReopenAttention?: () => void;
   projectName: string;
@@ -215,8 +210,6 @@ export function AgentWorkspace({
       advancedMode={advancedMode}
       controller={controller}
       dataStateLabel={inventory?.dataStateLabel ?? "—"}
-      onOpenLegacyWorkspace={onOpenLegacyWorkspace}
-      onOpenReviewedPlan={onOpenReviewedPlan}
       onOpenRuns={onOpenRuns}
       onReopenAttention={onReopenAttention}
       projectName={projectName}
@@ -228,8 +221,6 @@ export function AgentWorkspaceView({
   advancedMode,
   controller,
   dataStateLabel,
-  onOpenLegacyWorkspace,
-  onOpenReviewedPlan,
   onOpenRuns,
   onReopenAttention = () => {},
   projectName,
@@ -237,8 +228,6 @@ export function AgentWorkspaceView({
   advancedMode: boolean;
   controller: AgentTaskController;
   dataStateLabel: string;
-  onOpenLegacyWorkspace: (workspace: LegacyWorkspace) => void;
-  onOpenReviewedPlan?: (reviewedPlanId: string) => void;
   onOpenRuns: () => void;
   onReopenAttention?: () => void;
   projectName: string;
@@ -273,7 +262,11 @@ export function AgentWorkspaceView({
       </header>
 
       <ProjectSummaryCard dataStateLabel={dataStateLabel} projectName={projectName} task={task} />
-      <AgentOperationalHealthCard baseUrl={controller.baseUrl} projectId={controller.projectId} />
+      <AgentOperationalHealthCard
+        advancedMode={advancedMode}
+        baseUrl={controller.baseUrl}
+        projectId={controller.projectId}
+      />
 
       <Dialog
         description={t("agent.newTaskConfirmation")}
@@ -348,7 +341,7 @@ export function AgentWorkspaceView({
               recovery={task.recovery}
             />
           ) : task.state === "completed" && planOnlyResult ? null : isDecisionAction(task) ? (
-            <DecisionBatchCard batch={task.decision_batch!} onReopenAttention={onReopenAttention} />
+            <DecisionBatchCard onReopenAttention={onReopenAttention} />
           ) : (
             <NextActionCard
               key={task.next_action.decision_batch_id ?? task.next_action.type}
@@ -361,6 +354,7 @@ export function AgentWorkspaceView({
           )}
           {task.result_summary ? (
             <ResultSummaryCard
+              baseUrl={controller.baseUrl ?? ""}
               onOpenRuns={onOpenRuns}
               result={task.result_summary}
               explanation={task.result_explanation}
@@ -376,8 +370,6 @@ export function AgentWorkspaceView({
             advancedMode={advancedMode}
             harnessActivity={controller.harnessActivity}
             onLoadHarnessActivity={controller.loadHarnessActivity}
-            onOpenLegacyWorkspace={onOpenLegacyWorkspace}
-            onOpenReviewedPlan={onOpenReviewedPlan ?? (() => onOpenLegacyWorkspace("plan"))}
             onOpenRuns={onOpenRuns}
             task={task}
           />

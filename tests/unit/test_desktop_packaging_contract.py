@@ -27,6 +27,7 @@ def test_desktop_packaging_files_exist():
         "desktop/packaging/build_frontend.ps1",
         "desktop/packaging/build_desktop.ps1",
         "desktop/packaging/build_all_windows.ps1",
+        "desktop/packaging/write_release_provenance.py",
         "desktop/packaging/test_electron_packaged_smoke.ps1",
         "src/backend/app/desktop_backend_entry.py",
         "src/backend/app/desktop_launcher_entry.py",
@@ -47,8 +48,28 @@ def test_packaged_electron_smoke_contract():
     assert "rendererBackendHealthOk" in smoke
     assert "rendererConsoleErrors" in smoke
     assert "sidecar_stopped" in smoke
+    assert "MEDIMAGE_DESKTOP_VISIBLE_SMOKE" in smoke
+    assert "backend.managed" in smoke
+    assert "agent_first_routes_visited" in smoke
+    assert 'ValidateSet("shell", "bids", "dicom", "recovery")' in smoke
+    assert "create_agent_first_e2e_fixture.py" in smoke
+    assert "MEDIMAGE_ENABLE_REVIEWED_EXECUTION" in smoke
+    assert "RawdataManifestBefore" in smoke
+    assert 'Copy-Item -LiteralPath $RecoverySubjectSource' in smoke
+    assert 'if ($Workflow -eq "recovery")' in smoke
+    assert "$RecoveryTruthfulPartial" in smoke
+    assert "latestRecoveryAttempt" in smoke
+    assert 'target_subject_ids[0] -ne "sub-003"' in smoke
     assert "Start-Process" in smoke
-    assert "-WindowStyle Hidden" in smoke
+    assert 'WindowStyle = "Hidden"' in smoke
+    assert "ExpectedGitSha" in smoke
+    assert "EvidenceDir" in smoke
+    assert "buildProvenance" in smoke
+    assert "release-artifacts.json" in smoke
+    assert "rawdata-before.json" in smoke
+    assert "rawdata-after.json" in smoke
+    assert "final-screenshot.png" in smoke
+    assert "Refusing to overwrite non-empty evidence directory" in smoke
 
 
 def test_electron_main_contract():
@@ -64,6 +85,19 @@ def test_electron_main_contract():
     assert "mainLandmarkPresent" in main
     assert "rendererConsoleErrors" in main
     assert "rendererBackendHealthOk" in main
+    assert "MEDIMAGE_DESKTOP_VISIBLE_SMOKE" in main
+    assert "verifyAgentFirstNavigation" in main
+    assert "verifyBidsToFcWorkflow" in main
+    assert "verifyRecoveryWorkflow" in main
+    assert "truthfulPartialHandoff" in main
+    assert "latestRecoveryAttempt" in main
+    assert 'data-agent-action="approve_recovery"' in main
+    assert "restoreRecoverySmokeInput" in main
+    assert "MEDIMAGE_DESKTOP_SMOKE_WORKFLOW" in main
+    assert "MEDIMAGE_DESKTOP_SMOKE_SCREENSHOT" in main
+    assert "captureSmokeScreenshot" in main
+    assert "buildProvenance" in main
+    assert "build-provenance.json" in main
     assert 'fetch(backendBaseUrl + "/api/health")' in main
     assert "MEDIMAGE_DESKTOP_USER_DATA" in main
     assert "MEDIMAGE_DESKTOP_WORKSPACE" in main
@@ -73,6 +107,9 @@ def test_electron_main_contract():
     assert 'path.join(getUserWorkspace(), ".runtime", "backend-sidecar")' in main
     assert "MEDIMAGE_DESKTOP_API_BASE_URL" in main
     assert "loadFile(frontendIndex)" in main
+    assert "copySeedDirectory" in main
+    assert "isSymbolicLink" in main
+    assert "fs.cpSync" not in main
     assert "medimage-backend.bin" in main
     assert "copyFileSync" in main
     assert "DEFAULT_BACKEND_STARTUP_TIMEOUT_MS = 120_000" in main
@@ -137,6 +174,8 @@ def test_electron_builder_contract():
 
     assert "../../src/frontend/dist" in builder
     assert "../packaging/dist/backend_payload" in builder
+    assert "../packaging/dist/release_metadata/build-provenance.json" in builder
+    assert "release/build-provenance.json" in builder
     assert "../resources/tools" not in builder
     assert "../../matlab" not in builder
     assert "workspace_seed/matlab" not in builder
@@ -323,6 +362,13 @@ def test_desktop_dist_wrapper_uses_workspace_caches():
     assert "Focused packaging tests" in build_all
     assert "DirOnly" in build_desktop
     assert "DirOnly" in build_all
+    assert "ExpectedGitSha" in build_all
+    assert "RequireCleanWorktree" in build_all
+    assert "Assert-ReleaseCandidate" in build_all
+    assert "git status --porcelain=v1 --untracked-files=all" in build_all
+    assert "write_release_provenance.py" in build_desktop
+    assert "build-provenance.json" in build_desktop
+    assert "release-artifacts.json" in build_desktop
     assert "LASTEXITCODE" in build_desktop
     assert "Copy-Item" in build_desktop
     assert "backend_payload" in build_desktop

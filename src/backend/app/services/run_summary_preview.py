@@ -67,6 +67,57 @@ def _dedupe_paths(paths: list[Path]) -> list[Path]:
     return deduped
 
 
+def recovery_run_output_roots(
+    project: ProjectDetail,
+    record: RunLinkRecord,
+) -> list[Path]:
+    """Return output roots only for a fully bound project-owned recovery run."""
+    payload = record.payload if isinstance(record.payload, dict) else {}
+    attempt_id = str(payload.get("recovery_attempt_id") or "")
+    output_namespace = str(payload.get("output_namespace") or "")
+    attempt_root_value = payload.get("attempt_output_root")
+    state_root_value = payload.get("state_root")
+    metadata = project.metadata if isinstance(project.metadata, dict) else {}
+    project_root_value = metadata.get("project_dir")
+    if not all(
+        (
+            attempt_id,
+            attempt_root_value,
+            state_root_value,
+            project_root_value,
+            record.project_config_path,
+            record.pipeline_path,
+        )
+    ):
+        return []
+    attempt_root = Path(str(attempt_root_value)).expanduser().resolve()
+    project_root = Path(str(project_root_value)).expanduser().resolve()
+    rawdata_roots = _rawdata_roots(project)
+    try:
+        attempt_root.relative_to(project_root)
+    except ValueError:
+        return []
+    if _relative_to_any(attempt_root, rawdata_roots):
+        return []
+    if (
+        output_namespace != f"recovery_attempts/{attempt_id}"
+        or attempt_root.name != attempt_id
+        or attempt_root.parent.name != "recovery_attempts"
+        or Path(record.project_config_path).expanduser().resolve()
+        != attempt_root / "control" / "project_config.yaml"
+        or Path(record.pipeline_path).expanduser().resolve()
+        != attempt_root / "control" / "pipeline.yaml"
+        or Path(str(state_root_value)).expanduser().resolve() != attempt_root / "work"
+    ):
+        return []
+    return [
+        attempt_root / "work",
+        attempt_root / "reports",
+        attempt_root / "logs",
+        attempt_root / "derivatives",
+    ]
+
+
 def _project_summary_roots(project: ProjectDetail, record: RunLinkRecord) -> list[Path]:
     roots: list[Path] = []
     metadata = project.metadata if isinstance(project.metadata, dict) else {}
@@ -86,6 +137,7 @@ def _project_summary_roots(project: ProjectDetail, record: RunLinkRecord) -> lis
                 base / "derivatives",
             ]
         )
+    roots.extend(recovery_run_output_roots(project, record))
     return _dedupe_paths(roots)
 
 

@@ -41,7 +41,7 @@ describe("AgentOperationalHealthCard", () => {
   it("renders only the read-only structured health projection", async () => {
     render(
       <I18nProvider locale="en">
-        <AgentOperationalHealthCard baseUrl="http://localhost" projectId="project-1" />
+        <AgentOperationalHealthCard advancedMode baseUrl="http://localhost" projectId="project-1" />
       </I18nProvider>,
     );
 

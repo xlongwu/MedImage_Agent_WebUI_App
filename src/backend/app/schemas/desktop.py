@@ -20,6 +20,19 @@ class HealthResponse(BaseModel):
     version: str = "0.1.0"
 
 
+class ProjectAgentTaskSummary(BaseModel):
+    task_id: str
+    state: Literal["preparing", "waiting_for_user", "running", "needs_attention", "completed"]
+    outcome: Literal["succeeded", "partial", "failed", "canceled", "indeterminate"] | None = None
+    goal_summary: str
+    current_action: str
+    current_action_code: str
+    requires_user: bool
+    result_title: str | None = None
+    recent_activity: str
+    updated_at: str
+
+
 class ProjectSummary(BaseModel):
     id: str
     name: str
@@ -28,6 +41,7 @@ class ProjectSummary(BaseModel):
     created_date: str
     subjects_count: int
     current_pipeline_id: str
+    latest_agent_task: ProjectAgentTaskSummary | None = None
 
 
 class ProjectDetail(ProjectSummary):

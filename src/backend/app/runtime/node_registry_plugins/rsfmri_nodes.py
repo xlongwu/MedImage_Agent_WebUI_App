@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from src.backend.app.runtime.node_registry_plugins.base import NodeExecutionContext, NodeRunner
@@ -142,6 +143,21 @@ def run_functional_connectivity_subject_node(context, node, subject_record=None,
             "outputs": [],
             "errors": ["Missing subject_id"],
         }
+    input_nii = node.params.get("input_nii")
+    if not input_nii and isinstance(subject_record, dict):
+        for session in subject_record.get("sessions", []):
+            if not isinstance(session, dict):
+                continue
+            for functional in session.get("func", []):
+                if isinstance(functional, dict) and functional.get("bold"):
+                    input_nii = functional["bold"]
+                    break
+            if input_nii:
+                break
+    if input_nii and not Path(str(input_nii)).is_file():
+        raise RuntimeError(
+            "TRANSIENT_IO: registered functional input is temporarily unavailable"
+        )
     result = run_functional_connectivity_subject(
         subject_id=subject_id,
         derivatives_dir=context.derivatives_dir,
@@ -150,7 +166,15 @@ def run_functional_connectivity_subject_node(context, node, subject_record=None,
         atlas_path=node.params.get("atlas_path"),
         labels_path=node.params.get("labels_path"),
         generate_seed_map=bool(node.params.get("generate_seed_map", False)),
-        input_nii=node.params.get("input_nii"),
+        input_nii=input_nii,
+        allowed_input_roots=tuple(
+            str(root)
+            for root in (
+                context.tool_execution_context.input_roots
+                if getattr(context, "tool_execution_context", None) is not None
+                else ()
+            )
+        ),
     )
     result["node_id"] = node.id
     return result

@@ -19,6 +19,7 @@ from src.backend.app.services.run_artifact_discovery import (
     discover_run_artifacts,
     find_run_artifact,
 )
+from src.backend.app.services.run_summary_preview import resolve_run_summary_path
 
 
 def _isolated_store(tmp_path: Path, monkeypatch) -> SQLiteDesktopStore:
@@ -93,6 +94,51 @@ def _artifact_by_name(artifacts: list[dict], name: str) -> dict:
         if artifact["name"] == name:
             return artifact
     raise AssertionError(f"Artifact not found: {name}; got {artifacts}")
+
+
+def test_recovery_summary_is_accepted_from_its_bound_isolated_output_root(
+    tmp_path,
+    monkeypatch,
+):
+    store = _isolated_store(tmp_path, monkeypatch)
+    client = TestClient(app)
+    created = _create_project(client, tmp_path, "Recovery Summary Project")
+    project = _project(store, created)
+    attempt_id = "recovery_attempt_bound"
+    attempt_root = Path(created["project_dir"]) / "recovery_attempts" / attempt_id
+    control = attempt_root / "control"
+    control.mkdir(parents=True)
+    config_path = control / "project_config.yaml"
+    pipeline_path = control / "pipeline.yaml"
+    config_path.write_text("project: {}\n", encoding="utf-8")
+    pipeline_path.write_text("nodes: []\n", encoding="utf-8")
+    summary_path = attempt_root / "work" / "pipeline_runs" / "recovery-run" / "summary.json"
+    summary_path.parent.mkdir(parents=True)
+    summary_path.write_text('{"status":"SUCCESS"}', encoding="utf-8")
+    now = utc_now_iso()
+    record = RunLinkRecord(
+        run_link_id="recovery-summary-link",
+        project_id=created["project_id"],
+        reviewed_plan_id="reviewed-recovery-summary",
+        run_id="recovery-run",
+        pipeline_path=str(pipeline_path),
+        summary_path=str(summary_path),
+        project_config_path=str(config_path),
+        status="SUCCESS",
+        created_at=now,
+        updated_at=now,
+        payload={
+            "recovery_attempt_id": attempt_id,
+            "output_namespace": f"recovery_attempts/{attempt_id}",
+            "attempt_output_root": str(attempt_root),
+            "state_root": str(attempt_root / "work"),
+        },
+    )
+
+    resolved, warnings = resolve_run_summary_path(project, record)
+
+    assert resolved == summary_path.resolve()
+    assert warnings == []
 
 
 def _write_run_artifact_fixture(
@@ -219,6 +265,8 @@ def test_discover_run_artifacts_finds_outputs_and_enriches_records(tmp_path, mon
     assert paths["csv"].name in names
     assert paths["log"].name in names
     assert paths["mat"].name in names
+    node_state = _artifact_by_name(artifacts, paths["state"].name)
+    assert node_state["artifact_type"] == "node_state"
     missing = _artifact_by_name(artifacts, paths["missing"].name)
     assert missing["exists"] is False
     assert any("ARTIFACT_FILE_MISSING" in item for item in missing["warnings"])

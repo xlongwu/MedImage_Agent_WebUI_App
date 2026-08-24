@@ -10,9 +10,11 @@ import styles from "../AgentWorkspace.module.css";
 export function AgentOperationalHealthCard({
   baseUrl,
   projectId,
+  advancedMode,
 }: {
   baseUrl?: string;
   projectId?: string | null;
+  advancedMode: boolean;
 }) {
   const { locale, t } = useI18n();
   const [summary, setSummary] = useState<AgentOperationalSummary | null>(null);
@@ -32,7 +34,7 @@ export function AgentOperationalHealthCard({
     };
   }, [baseUrl, projectId]);
 
-  if (!projectId) return null;
+  if (!projectId || (!advancedMode && !summary?.attention.length)) return null;
   return (
     <Card className={styles.harnessStatus} aria-label={t("agent.operations.title")}>
       <div className={styles.cardHeading}>

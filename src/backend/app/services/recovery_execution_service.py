@@ -264,10 +264,38 @@ class RecoveryExecutionService:
             raise SafetyError(
                 "RECOVERY_PARENT_OUTPUT_ROOT_REQUIRED", code="RECOVERY_PARENT_OUTPUT_ROOT_REQUIRED"
             )
-        root = (
-            Path(parent.output_roots[0]) / "recovery_attempts" / attempt.recovery_attempt_id
-        ).resolve()
-        parent_root = Path(parent.output_roots[0]).resolve()
+        source_config = Path(parent.project_config_path).resolve()
+        config = yaml.safe_load(source_config.read_text(encoding="utf-8")) or {}
+        project_root_value = (config.get("project") or {}).get("root_dir")
+        if not project_root_value:
+            raise SafetyError(
+                "RECOVERY_PROJECT_ROOT_REQUIRED", code="RECOVERY_PROJECT_ROOT_REQUIRED"
+            )
+        project_root = Path(project_root_value).resolve()
+        rawdata_value = (config.get("data") or {}).get("rawdata_dir")
+        rawdata_root = Path(rawdata_value).resolve() if rawdata_value else None
+        approved_project_roots: list[Path] = []
+        for value in parent.output_roots:
+            candidate = Path(value).resolve()
+            try:
+                candidate.relative_to(project_root)
+            except ValueError:
+                continue
+            if rawdata_root is not None:
+                try:
+                    candidate.relative_to(rawdata_root)
+                except ValueError:
+                    pass
+                else:
+                    continue
+            approved_project_roots.append(candidate)
+        if not approved_project_roots:
+            raise SafetyError(
+                "RECOVERY_PROJECT_OUTPUT_ROOT_REQUIRED",
+                code="RECOVERY_PROJECT_OUTPUT_ROOT_REQUIRED",
+            )
+        parent_root = approved_project_roots[0]
+        root = (parent_root / "recovery_attempts" / attempt.recovery_attempt_id).resolve()
         try:
             root.relative_to(parent_root)
         except ValueError as exc:

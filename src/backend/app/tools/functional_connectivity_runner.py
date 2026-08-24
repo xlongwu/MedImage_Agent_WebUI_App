@@ -23,6 +23,7 @@ def run_functional_connectivity_subject(
     input_nii: str | None = None,
     prefer_gpu: bool = True,
     require_gpu: bool = False,
+    allowed_input_roots: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     if backend == "gpu":
         if not input_nii:
@@ -75,6 +76,7 @@ def run_functional_connectivity_subject(
         input_nii=input_nii,
         prefer_gpu=prefer_gpu,
         require_gpu=require_gpu,
+        allowed_input_roots=allowed_input_roots,
     )
     r["node_id"] = "functional_connectivity_subject"
     return r

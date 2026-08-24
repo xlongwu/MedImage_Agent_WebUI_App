@@ -84,7 +84,7 @@ _STATE_MAP: dict[str, str] = {
     "HUMAN_HANDOFF": "needs_attention",
     "GOAL_SATISFIED": "completed",
     "SUCCEEDED": "completed",
-    "CANCELED": "completed",
+    "CANCELED": "needs_attention",
 }
 
 _PHASE_MAP: dict[str, str] = {
@@ -232,7 +232,7 @@ class AgentTaskReadModel:
             outcome = "canceled"
 
         progress = self._progress(state, observation)
-        recovery = self._recovery_summary(proposal, diagnosis, approval)
+        recovery = self._recovery_summary(proposal, diagnosis, approval, plan)
         next_action = self._next_action(
             state=state,
             public_state=public_state,
@@ -259,6 +259,7 @@ class AgentTaskReadModel:
             outcome=outcome,
             goal_summary=goal,
             current_action=self._current_action(public_state, state),
+            current_action_code=self._current_action_code(public_state, state),
             next_action=next_action,
             automation=self._automation(public_state=public_state, next_action=next_action),
             progress=progress,
@@ -500,7 +501,7 @@ class AgentTaskReadModel:
             return None
 
     @staticmethod
-    def _recovery_summary(proposal, diagnosis, approval) -> AgentTaskRecoverySummary | None:
+    def _recovery_summary(proposal, diagnosis, approval, plan) -> AgentTaskRecoverySummary | None:
         if proposal is None:
             return None
         candidate = next(
@@ -512,12 +513,34 @@ class AgentTaskReadModel:
         diagnosis_text = "Recovery evidence requires review."
         if diagnosis is not None:
             diagnosis_text = f"Root cause: {diagnosis.root_cause_status}; {len(diagnosis.facts)} evidence fact(s)."
+        reviewed_subjects: tuple[str, ...] = ()
+        if plan is not None and isinstance(plan.payload, dict):
+            plan_payload = plan.payload.get("plan")
+            metadata = (
+                plan_payload.get("metadata")
+                if isinstance(plan_payload, dict)
+                and isinstance(plan_payload.get("metadata"), dict)
+                else {}
+            )
+            raw_subjects = metadata.get("subject_ids") or metadata.get("subjects")
+            if isinstance(raw_subjects, list | tuple):
+                reviewed_subjects = tuple(
+                    sorted({str(subject) for subject in raw_subjects if str(subject)})
+                )
+        affected_subjects = tuple(candidate.target_subject_ids)
+        untouched_subjects = tuple(
+            subject for subject in reviewed_subjects if subject not in affected_subjects
+        )
         return AgentTaskRecoverySummary(
             proposal_id=proposal.recovery_proposal_id,
             diagnosis=diagnosis_text,
-            affected_subjects=candidate.target_subject_ids,
+            affected_subjects=affected_subjects,
             recommended_action=candidate.action,
-            untouched_scope=("All subjects and nodes outside the approved recovery scope",),
+            untouched_scope=(
+                untouched_subjects
+                if untouched_subjects
+                else ("All subjects and nodes outside the approved recovery scope",)
+            ),
             requires_new_plan=candidate.changes_reviewed_plan,
             approval_summary_hash=(approval.recovery_approval_hash if approval is not None else None),
         )
@@ -673,6 +696,38 @@ class AgentTaskReadModel:
         if internal_state not in _STATE_MAP:
             return "This task uses an unsupported internal state and needs review."
         return "The task needs attention before it can continue."
+
+    @staticmethod
+    def _current_action_code(public_state: str, internal_state: str) -> str:
+        internal = {
+            "CREATED": "preparing_context",
+            "CONTEXT_READY": "preparing_plan",
+            "PLAN_DRAFTED": "preparing_plan",
+            "PLAN_VALIDATED": "preparing_plan",
+            "WAITING_FOR_INPUT": "waiting_input",
+            "WAITING_FOR_SCIENCE_DECISION": "waiting_science_decision",
+            "WAITING_FOR_APPROVAL": "waiting_approval",
+            "APPROVED": "executing",
+            "EXECUTION_READY": "executing",
+            "RUNNING": "executing",
+            "OBSERVING": "validating",
+            "EVALUATING": "validating",
+            "DIAGNOSING": "recovery",
+            "RETRY_PROPOSED": "recovery",
+            "WAITING_FOR_RETRY_APPROVAL": "recovery",
+            "RETRYING": "recovery",
+            "RECOVERY_PROPOSED": "recovery",
+            "WAITING_FOR_RECOVERY_APPROVAL": "recovery",
+            "RECOVERY_READY": "recovery",
+            "RECOVERING": "recovery",
+            "GOAL_SATISFIED": "completed",
+            "SUCCEEDED": "completed",
+            "CANCELED": "attention",
+        }
+        return internal.get(
+            internal_state,
+            "attention" if public_state == "needs_attention" else "preparing_plan",
+        )
 
     def _technical_details(self, lifecycle, plan, ticket, observation, evaluation):
         node_ids: tuple[str, ...] = ()

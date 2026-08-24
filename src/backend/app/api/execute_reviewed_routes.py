@@ -57,6 +57,7 @@ from src.backend.app.schemas.execution_consistency import (
     verify_execution_consistency,
 )
 from src.backend.app.schemas.native_preproc_api import NativeFullPreprocRequest
+from src.backend.app.schemas.recovery import RecoveryQuotaLimits
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
@@ -1340,6 +1341,24 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                     code="GOAL_CONTRACT_BINDING_REQUIRED",
                 )
             ticket_service = ExecutionTicketService(mock_store)
+            project_record = mock_store.get_project(reviewed_plan.project_id)
+            project_metadata = (
+                getattr(project_record, "metadata", {})
+                if project_record is not None
+                else {}
+            )
+            recovery_policy_payload = (
+                project_metadata.get("recovery_policy")
+                if isinstance(project_metadata, dict)
+                else None
+            )
+            recovery_quota = RecoveryQuotaLimits(
+                **(
+                    recovery_policy_payload
+                    if isinstance(recovery_policy_payload, dict)
+                    else {}
+                )
+            )
             issued_ticket = ticket_service.issue(
                 project_id=reviewed_plan.project_id,
                 reviewed_plan_id=reviewed_plan.reviewed_plan_id,
@@ -1370,6 +1389,17 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                 goal_contract_hash=goal_contract_hash,
                 evaluation_policy_version=evaluation_policy_version,
                 max_retry_count=0,
+                max_lifecycle_recovery_attempts=(
+                    recovery_quota.max_lifecycle_recovery_attempts
+                ),
+                max_node_attempts=recovery_quota.max_node_attempts,
+                max_subject_node_attempts=(
+                    recovery_quota.max_subject_node_attempts
+                ),
+                max_replans=recovery_quota.max_replans,
+                max_recovery_wall_seconds=(
+                    recovery_quota.max_recovery_wall_seconds
+                ),
             )
             orchestrator = AgentOrchestrator(mock_store)
             if request.lifecycle_id:
@@ -1582,16 +1612,20 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                 and "lifecycle" in locals()
                 and lifecycle.state == "RUNNING"
             ):
-                lifecycle = orchestrator.transition(
-                    project_id=lifecycle.project_id,
-                    lifecycle_id=lifecycle.lifecycle_id,
-                    to_state="FAILED",
-                    command_id=f"executor:{consumed_ticket.execution_ticket_id}:failed",
-                    actor=consumed_ticket.approved_actor,
-                    source_command="executor_failed",
-                    reason="; ".join(executor_errors),
-                    updates={"last_error": "; ".join(executor_errors)},
-                )
+                try:
+                    # A terminal node failure is still complete run evidence.
+                    # Keep the lifecycle observable so the deterministic
+                    # evaluator can preserve successful subjects and produce a
+                    # scoped Recovery Proposal.  Dispatch exceptions are
+                    # handled by the exception path above and remain FAILED.
+                    lifecycle = AgentTaskReconciler(mock_store).reconcile_once(
+                        project_id=lifecycle.project_id,
+                        lifecycle_id=lifecycle.lifecycle_id,
+                    )
+                except Exception as exc:
+                    response_warnings.append(
+                        f"LIFECYCLE_FAILURE_COORDINATION_FAILED: {exc}"
+                    )
             result = {
                 "ok": False,
                 "status": "EXECUTION_FAILED",

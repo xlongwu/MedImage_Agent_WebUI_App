@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import multiprocessing
+import platform
 import re
+import sys
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -35,6 +39,7 @@ from src.backend.app.native_preproc.orchestrator.stage_graph import (
 )
 from src.backend.app.native_preproc.orchestrator.subject_worker import execute_subject_worker
 from src.backend.app.runtime.atomic_file import atomic_write_json
+from src.backend.app.version import APP_VERSION
 from src.backend.app.schemas.native_preproc_api import (
     NativeFullPreprocRequest,
     NativeFullPreprocResponse,
@@ -581,6 +586,53 @@ def _batch_run_dir(
     return run_id, run_dir
 
 
+def _prepare_batch_output_scope(
+    request: NativeFullPreprocRequest,
+    *,
+    project_id: str,
+    project_dir: str,
+) -> tuple[str, Path, NativeFullPreprocResponse | None]:
+    run_id, run_dir = _batch_run_dir(
+        request,
+        project_id=project_id,
+        project_dir=project_dir,
+    )
+    occupied = run_dir.is_dir() and any(run_dir.iterdir())
+    manifest_path = run_dir / "native_full_run_manifest.json"
+    if occupied and manifest_path.is_file():
+        try:
+            existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            existing_manifest = {}
+        if isinstance(existing_manifest, dict) and existing_manifest.get("dry_run") is True:
+            occupied = False
+    if not occupied:
+        return run_id, run_dir, None
+    if request.overwrite_policy == "fail_if_exists":
+        return run_id, run_dir, NativeFullPreprocResponse(
+            ok=False,
+            status="blocked",
+            project_id=project_id,
+            run_id=run_id,
+            run_dir=str(run_dir),
+            blocking_issues=["OUTPUT_SCOPE_EXISTS"],
+            errors=[
+                "OUTPUT_SCOPE_EXISTS: the reviewed fail-if-exists policy preserved the existing run directory."
+            ],
+            safety_flags={
+                "rawdata_readonly_confirmed": True,
+                "existing_outputs_preserved": True,
+                "no_external_tools_executed": True,
+            },
+        )
+    new_run_id = _batch_run_id(project_id)
+    if request.output_dir:
+        new_run_dir = run_dir.parent / f"{run_dir.name}-{new_run_id}"
+    else:
+        new_run_dir = run_dir.parent / new_run_id
+    return new_run_id, new_run_dir, None
+
+
 def _stage_status_lists(
     stage_results: list[NativeFullStageApiResult],
 ) -> tuple[list[str], list[str], list[str], list[str], list[str], list[str]]:
@@ -817,6 +869,7 @@ def _write_batch_response(
     child_runs: list[tuple[str, NativeFullPreprocResponse]],
     warnings: list[str],
     resource_decision: ResourceDecision | None = None,
+    request: NativeFullPreprocRequest,
     group_summary_enabled: bool = True,
     persist: bool = True,
 ) -> NativeFullPreprocResponse:
@@ -830,12 +883,82 @@ def _write_batch_response(
     validation_path = run_dir / "artifacts" / "validation_report" / "native_preproc_validation_report.json"
     final_path = run_dir / "artifacts" / "final_report" / "native_preproc_final_report.json"
     manifest_path = run_dir / "native_full_run_manifest.json"
+    resource_provenance_path = run_dir / "provenance" / "resource_provenance.json"
     if persist:
         run_dir.mkdir(parents=True, exist_ok=True)
+        resource_provenance_path.parent.mkdir(parents=True, exist_ok=True)
         if group_summary_enabled:
             group_path.parent.mkdir(parents=True, exist_ok=True)
         validation_path.parent.mkdir(parents=True, exist_ok=True)
         final_path.parent.mkdir(parents=True, exist_ok=True)
+
+    resource_payload = {
+        "provenance_type": "native_resource_selection",
+        "project_id": project_id,
+        "run_id": run_id,
+        "created_at": _now_iso(),
+        "requested_policy": {
+            "cpu": request.cpu_policy.model_dump(mode="json"),
+            "compute": request.compute_policy.model_dump(mode="json"),
+            "overwrite": request.overwrite_policy,
+        },
+        "selected_resources": {
+            **(resource_decision.as_dict() if resource_decision else {}),
+            "actual_backends": sorted(
+                {
+                    stage.backend
+                    for stage in stage_results
+                    if stage.backend
+                }
+            ),
+            "stage_backends": {
+                f"{stage.result.get('subject_id') or 'batch'}:{stage.stage_id}": stage.backend
+                for stage in stage_results
+                if stage.backend
+            },
+        },
+        "runtime_environment": {
+            "python": sys.version.split()[0],
+            "platform": platform.platform(),
+            "app_version": APP_VERSION,
+            "thread_environment": {
+                key: os.environ.get(key)
+                for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
+            },
+            "gpu_visibility": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        },
+        "fallback": {
+            "cpu_allowed": request.compute_policy.allow_cpu_fallback,
+            "selected_backend_is_recorded_by_each_stage": True,
+        },
+        "reproducibility": {
+            "seed": None,
+            "seed_reason": "The resource scheduler is deterministic and performs no random sampling.",
+            "dtype_authority": "stage_provenance",
+            "tolerance_authority": "stage_validation_contract",
+        },
+    }
+    if persist:
+        atomic_write_json(resource_provenance_path, resource_payload, schema_version=1)
+        stage_results.insert(
+            0,
+            NativeFullStageApiResult(
+                stage_id="resource_planning",
+                display_name="Resource planning provenance",
+                node_id="native_preproc_full_execute",
+                status="metadata_only",
+                capability_level="metadata_only",
+                validation_status="not_applicable",
+                backend="native_python",
+                output_artifacts=[
+                    build_artifact_ref(
+                        resource_provenance_path,
+                        artifact_type="provenance",
+                    ).model_dump(mode="json")
+                ],
+                result={"resource_decision": resource_payload["selected_resources"]},
+            ),
+        )
 
     subject_count = len(child_summaries)
     completed_subject_count = sum(1 for item in child_summaries if item.get("status") == "succeeded")
@@ -1026,6 +1149,7 @@ def _write_batch_response(
         worker_count_used=(resource_decision.worker_count_used if resource_decision else 1),
         threads_per_worker_calculated=(resource_decision.threads_per_worker_calculated if resource_decision else 1),
         resource_decision=(resource_decision.as_dict() if resource_decision else {}),
+        resource_provenance_path=(str(resource_provenance_path) if persist else ""),
         subject_execution=child_summaries,
         progress_url=f"/api/projects/{project_id}/preprocessing/native/runs/{run_id}/progress",
         started_at=(progress_now_iso() if resource_decision else ""),
@@ -1051,7 +1175,13 @@ def _run_registered_batch(
     )
     if not subject_requests:
         return None
-    run_id, run_dir = _batch_run_dir(request, project_id=project_id, project_dir=project_dir)
+    run_id, run_dir, conflict = _prepare_batch_output_scope(
+        request,
+        project_id=project_id,
+        project_dir=project_dir,
+    )
+    if conflict is not None:
+        return conflict
     decision = plan_subject_execution(subject_requests, request.cpu_policy)
     warnings.append(
         "CPU scheduler decision: "
@@ -1193,6 +1323,7 @@ def _run_registered_batch(
         child_runs=child_runs,
         warnings=warnings,
         resource_decision=decision,
+        request=request,
         group_summary_enabled=bool(request.stage_overrides.get("group_summary", True)),
         persist=persist,
     )

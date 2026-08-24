@@ -15,6 +15,7 @@ function task(projectId = "project-1"): AgentTaskResponse {
     outcome: null,
     goal_summary: "Generate FC",
     current_action: "Awaiting a scientific decision",
+    current_action_code: "waiting_science_decision",
     next_action: {
       type: "answer_science_decision",
       title: "Answer decision",

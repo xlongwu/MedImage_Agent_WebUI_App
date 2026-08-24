@@ -30,8 +30,8 @@ def _gpu_snapshot(*, free: int = 6 * 1024**3, total: int = 8 * 1024**3) -> dict[
     }
 
 
-def test_compute_policy_defaults_to_cpu_and_rejects_unknown_stage() -> None:
-    assert NativeComputePolicy().backend == "cpu"
+def test_compute_policy_defaults_to_auto_and_rejects_unknown_stage() -> None:
+    assert NativeComputePolicy().backend == "auto"
     with pytest.raises(ValidationError, match="unsupported or non-GPU"):
         NativeComputePolicy(stage_backends={"reho": "gpu"})
 
@@ -135,4 +135,6 @@ def test_dry_run_exposes_a_compute_plan_for_every_native_stage() -> None:
     assert response.stage_results
     assert all("compute_plan" in stage.result for stage in response.stage_results)
     alff = next(stage for stage in response.stage_results if stage.stage_id == "alff")
-    assert alff.result["compute_plan"]["requested_backend"] == "cpu"
+    assert alff.result["compute_plan"]["requested_backend"] == "auto"
+    assert alff.result["compute_plan"]["selected_backend"] == "cpu"
+    assert "auto_gpu_not_released_for_stage" in alff.result["compute_plan"]["limiting_factors"]

@@ -1,15 +1,8 @@
 import { Badge, Button, Card } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
-import type { AgentTaskDecisionBatch } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
 
-export function DecisionBatchCard({
-  batch,
-  onReopenAttention,
-}: {
-  batch: AgentTaskDecisionBatch;
-  onReopenAttention: () => void;
-}) {
+export function DecisionBatchCard({ onReopenAttention }: { onReopenAttention: () => void }) {
   const { t } = useI18n();
 
   return (

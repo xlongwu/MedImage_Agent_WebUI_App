@@ -17,9 +17,12 @@ from src.backend.app.planner.reviewed_plan_store import (
     save_reviewed_plan,
     snapshot_warnings,
 )
+from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord, RunLinkRecord
 from src.backend.app.schemas.goal_contract import GoalContractCandidate
 from src.backend.app.schemas.planner_provenance import PlannerEvidence, PlannerInvocation
+from src.backend.app.schemas.planning import PlanningRequest
+from src.backend.app.services.agent_evidence_service import AgentEvidenceService
 from src.backend.app.services.run_artifact_discovery import (
     discover_run_artifacts,
     find_run_artifact,
@@ -54,6 +57,7 @@ class ReviewedPlanSaveRequest(BaseModel):
     reviewed_actor: str | None = None
     planner_invocation: PlannerInvocation | None = None
     planner_evidence: PlannerEvidence | None = None
+    lifecycle_id: str | None = None
 
 
 def _ensure_project(project_id: str, store: ProjectStore) -> None:
@@ -92,6 +96,34 @@ def save_project_reviewed_plan(
 ) -> dict[str, Any]:
     _ensure_project(project_id, store)
     try:
+        planning_request = None
+        if request.lifecycle_id:
+            lifecycle = store.get_agent_lifecycle(request.lifecycle_id)
+            if lifecycle is None or lifecycle.project_id != project_id:
+                raise ReviewedPlanStoreError("PLANNING_REQUEST_LIFECYCLE_MISMATCH")
+            if lifecycle.state not in {"CREATED", "CONTEXT_READY", "PLAN_DRAFTED"}:
+                raise ReviewedPlanStoreError("PLANNING_REQUEST_LIFECYCLE_STATE_INVALID")
+            snapshot = AgentEvidenceService(store).build_snapshot(
+                project_id=project_id,
+                lifecycle_id=request.lifecycle_id,
+                requested_types=("project", "dataset", "artifacts", "plans", "capabilities"),
+            )
+            planning_request = PlanningRequest(
+                project_id=project_id,
+                lifecycle_id=request.lifecycle_id,
+                goal=str(request.goal or ""),
+                project_config_path=str(request.project_config_path or ""),
+                evidence_snapshot_hash=snapshot.snapshot_hash,
+                revision_reason="initial",
+                provider_ref=str(request.provider or "manual-reviewed-plan"),
+                prompt_version="manual-reviewed-plan-v1",
+                model_profile_hash=stable_hash(
+                    {
+                        "provider": str(request.provider or "manual-reviewed-plan"),
+                        "prompt_version": "manual-reviewed-plan-v1",
+                    }
+                ),
+            )
         record = save_reviewed_plan(
             project_id=project_id,
             project_config_path=request.project_config_path,
@@ -105,6 +137,7 @@ def save_project_reviewed_plan(
             reviewed_actor=request.reviewed_actor,
             planner_invocation=request.planner_invocation,
             planner_evidence=request.planner_evidence,
+            planning_request=planning_request,
             store=store,
         )
     except ReviewedPlanStoreError as exc:
@@ -314,7 +347,7 @@ def get_project_run_state_timeline(
         artifacts, _ = discover_run_artifacts(project, record)
         for art in artifacts:
             name = str(art.get("name") or "")
-            if "node_state" not in name.lower():
+            if art.get("artifact_type") != "node_state" and "node_state" not in name.lower():
                 continue
             if not art.get("exists"):
                 continue

@@ -35,7 +35,7 @@ class NativeCpuExecutionPolicy(BaseModel):
     authority so a copied request cannot overcommit a different workstation.
     """
 
-    mode: Literal["serial", "process", "auto"] = "serial"
+    mode: Literal["serial", "process", "auto"] = "auto"
     max_subject_workers: int | None = Field(default=None, ge=1, le=32)
     cpu_threads_per_worker: int | None = Field(default=None, ge=1, le=64)
     memory_budget_bytes: int | None = Field(default=None, ge=1)
@@ -65,7 +65,7 @@ class NativeComputePolicy(BaseModel):
     ``gpu`` is a require-GPU request; only ``auto`` may fall back to CPU.
     """
 
-    backend: NativeComputeBackend = "cpu"
+    backend: NativeComputeBackend = "auto"
     device: NativeComputeDevice = "auto"
     precision: Literal["float32", "float64"] = "float32"
     gpu_memory_budget_bytes: int | None = Field(default=None, ge=1)
@@ -94,6 +94,7 @@ class NativeFullPreprocRequest(BaseModel):
     subject_id: str = ""
     session_id: str = ""
     output_dir: str = ""
+    overwrite_policy: Literal["fail_if_exists", "write_new_run_directory"] = "fail_if_exists"
 
     input_bold: str = ""
     input_bids_dir: str = ""
@@ -175,12 +176,13 @@ class NativeFullPreprocResponse(BaseModel):
     blocking_issues: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
     safety_flags: dict[str, bool] = Field(default_factory=dict)
-    scheduler_mode: Literal["serial", "process", "auto"] = "serial"
+    scheduler_mode: Literal["serial", "process", "auto"] = "auto"
     worker_count_requested: int | None = None
     worker_count_calculated: int = 1
     worker_count_used: int = 1
     threads_per_worker_calculated: int = 1
     resource_decision: dict[str, Any] = Field(default_factory=dict)
+    resource_provenance_path: str = ""
     subject_execution: list[dict[str, Any]] = Field(default_factory=list)
     progress_url: str = ""
     started_at: str = ""

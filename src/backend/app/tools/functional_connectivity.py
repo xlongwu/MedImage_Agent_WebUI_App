@@ -48,18 +48,35 @@ def _find_filtered(subject_id: str, derivatives_dir: str) -> Path | None:
     return candidates[0] if candidates else None
 
 
-def _safe_derivative_input(path: Path, subject_id: str, derivatives_dir: str) -> bool:
-    func_dir = (Path(derivatives_dir) / "rsfmri_preproc" / subject_id / "func").resolve()
-    try:
-        path.resolve().relative_to(func_dir)
-    except ValueError:
-        return False
-    return path.name.startswith("filt_") and _nifti_ext(path) in {".nii", ".nii.gz"}
-
-
-def _safe_atlas(path: Path, derivatives_dir: str) -> bool:
+def _safe_derivative_input(
+    path: Path,
+    subject_id: str,
+    derivatives_dir: str,
+    allowed_input_roots: tuple[str, ...] = (),
+) -> bool:
     resolved = path.resolve()
-    roots = [Path(derivatives_dir).resolve(), Path("outputs/work").resolve()]
+    roots = (derivatives_dir, *allowed_input_roots)
+    for root in roots:
+        func_dir = (Path(root) / "rsfmri_preproc" / subject_id / "func").resolve()
+        try:
+            resolved.relative_to(func_dir)
+        except ValueError:
+            continue
+        return path.name.startswith("filt_") and _nifti_ext(path) in {".nii", ".nii.gz"}
+    return False
+
+
+def _safe_atlas(
+    path: Path,
+    derivatives_dir: str,
+    allowed_input_roots: tuple[str, ...] = (),
+) -> bool:
+    resolved = path.resolve()
+    roots = [
+        Path(derivatives_dir).resolve(),
+        *(Path(root).resolve() for root in allowed_input_roots),
+        Path("outputs/work").resolve(),
+    ]
     for root in roots:
         try:
             resolved.relative_to(root)
@@ -310,6 +327,7 @@ def run_python_functional_connectivity_subject(
     input_nii: str | None = None,
     prefer_gpu: bool = False,
     require_gpu: bool = False,
+    allowed_input_roots: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     try:
         import nibabel as nib
@@ -341,7 +359,12 @@ def run_python_functional_connectivity_subject(
             qc_md,
             [f"Filtered functional input not found: {input_path}"],
         )
-    if not _safe_derivative_input(input_path, subject_id, derivatives_dir):
+    if not _safe_derivative_input(
+        input_path,
+        subject_id,
+        derivatives_dir,
+        allowed_input_roots,
+    ):
         return _fail(
             subject_id, result_json, qc_json, qc_md, [f"Unsafe filtered input: {input_path}"]
         )
@@ -357,7 +380,7 @@ def run_python_functional_connectivity_subject(
 
         if atlas_path:
             atlas_file = Path(atlas_path)
-            if not _safe_atlas(atlas_file, derivatives_dir):
+            if not _safe_atlas(atlas_file, derivatives_dir, allowed_input_roots):
                 materialized = _materialize_known_template_atlas(
                     atlas_file, derivatives_dir, warnings
                 )
@@ -369,7 +392,11 @@ def run_python_functional_connectivity_subject(
 
             labels_path_for_load = labels_path
             labels_materialized = None
-            if labels_path and not _safe_atlas(Path(labels_path), derivatives_dir):
+            if labels_path and not _safe_atlas(
+                Path(labels_path),
+                derivatives_dir,
+                allowed_input_roots,
+            ):
                 labels_materialized = _materialize_known_template_labels(
                     Path(labels_path), derivatives_dir, warnings
                 )

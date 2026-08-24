@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from src.backend.app.native_preproc.orchestrator.stage_graph import iter_native_full_stage_specs
 from src.backend.app.runtime import node_registry
 from src.backend.app.runtime.node_registry_plugins.base import merge_registries
+from src.backend.app.runtime.node_registry_plugins import rsfmri_nodes
 from src.backend.app.runtime.tool_catalog import build_tool_catalog
 
 EXPECTED_NATIVE_NODE_IDS = {
@@ -115,3 +118,53 @@ def test_external_helper_aliases_are_not_exposed_by_runtime_registry():
         node_registry.NODE_REGISTRY["spm_realign_subject"].__name__
         == "_external_legacy_node_blocker"
     )
+
+
+def test_functional_connectivity_node_uses_the_current_subject_bold(monkeypatch, tmp_path):
+    captured = {}
+    bold_path = tmp_path / "sub-003_task-rest_bold.nii.gz"
+    bold_path.write_bytes(b"fixture")
+
+    def fake_runner(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(rsfmri_nodes, "run_functional_connectivity_subject", fake_runner)
+    result = rsfmri_nodes.run_functional_connectivity_subject_node(
+        SimpleNamespace(derivatives_dir="derivatives"),
+        SimpleNamespace(
+            id="functional_connectivity_subject",
+            params={"atlas_path": "atlas.nii.gz"},
+        ),
+        {
+            "subject_id": "sub-003",
+            "sessions": [
+                {
+                    "func": [
+                        {
+                            "bold": str(bold_path),
+                            "exists": True,
+                        }
+                    ]
+                }
+            ],
+        },
+        "sub-003",
+    )
+
+    assert result["ok"] is True
+    assert captured["subject_id"] == "sub-003"
+    assert captured["input_nii"].endswith("sub-003_task-rest_bold.nii.gz")
+
+
+def test_functional_connectivity_node_classifies_missing_registered_bold_as_transient_io():
+    with pytest.raises(RuntimeError, match="TRANSIENT_IO"):
+        rsfmri_nodes.run_functional_connectivity_subject_node(
+            SimpleNamespace(derivatives_dir="derivatives"),
+            SimpleNamespace(id="functional_connectivity_subject", params={}),
+            {
+                "subject_id": "sub-003",
+                "sessions": [{"func": [{"bold": "missing-bold.nii.gz", "exists": True}]}],
+            },
+            "sub-003",
+        )

@@ -18,6 +18,7 @@ from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.core.config import ConfigService
 from src.backend.app.planner.memory_influence_guard import MemoryInfluenceGuard
+from src.backend.app.planner.plan_validator import validate_plan
 from src.backend.app.services.agent_approval_execution_service import AgentApprovalExecutionService
 from src.backend.app.services.agent_evidence_service import AgentEvidenceService
 from src.backend.app.services.agent_execution_prerequisites import execution_prerequisite_issue
@@ -182,6 +183,84 @@ def test_subject_science_decision_applies_reviewed_native_subject_scope() -> Non
         {"science_answers": {"subject_id": "sub-001"}},
     )
     assert applied["nodes"][0]["params"]["subject_id"] == "sub-001"
+
+
+def test_raw_dicom_requires_explicit_conversion_preparation_decision() -> None:
+    plan = {
+        "nodes": [
+            {
+                "id": "native_preproc_full_execute",
+                "backend": "native_python",
+                "params": {},
+            }
+        ],
+        "project_context": {
+            "diagnostics": {
+                "dicom_file_count": 42,
+                "nifti_file_count": 0,
+                "agent_conversion_execution_ready": False,
+            }
+        },
+    }
+
+    decision = AgentPlanningService._science_decision_items(plan, {})[0]
+
+    assert decision.kind == "dicom_conversion"
+    assert decision.recommended_option == "approve_conversion"
+    assert "42 detected DICOM files" in decision.impact
+    assert "Execution Ticket" in decision.impact
+
+    prepared_plan = {
+        **plan,
+        "project_context": {
+            "diagnostics": {
+                "dicom_file_count": 42,
+                "nifti_file_count": 0,
+                "agent_conversion_execution_ready": True,
+                "agent_conversion_run_id": "conv-reviewed",
+            }
+        },
+    }
+    assert AgentPlanningService._science_decision_items(prepared_plan, {}) == []
+
+
+def test_native_science_answers_use_only_registered_execution_parameters() -> None:
+    plan = {
+        "pipeline_id": "native-full-fc",
+        "nodes": [
+            {
+                "id": "native_preproc_full_execute",
+                "backend": "native_python",
+                "params": {
+                    "input_bids_dir": "C:/research/demo/rawdata",
+                    "confirmations": {},
+                },
+            }
+        ],
+        "metadata": {
+            "science_decisions": {
+                "global_signal_regression_required": True,
+                "tr_conflict": {"bids": 2.0, "project": 2.2},
+            }
+        },
+    }
+
+    applied = AgentPlanningService._apply_science_answers(
+        plan,
+        {
+            "science_answers": {
+                "global_signal_regression": "include",
+                "repetition_time": "bids",
+            }
+        },
+    )
+    params = applied["nodes"][0]["params"]
+
+    assert params["include_global_signal"] is True
+    assert params["tr"] == 2.0
+    assert "global_signal_regression" not in params
+    validation = validate_plan(applied)
+    assert validation.ok, validation.to_dict()
 
 
 def test_reho_approval_preflight_rejects_incomplete_native_preprocessing_chain() -> None:
@@ -436,7 +515,7 @@ def _planner(*, request, **_kwargs):
                 {
                     "id": "functional_connectivity_subject",
                     "backend": "python-cpu",
-                    "params": {"atlas": "schaefer-200", "output_dir": "derivatives/fc"},
+                    "params": {"atlas_path": "schaefer-200"},
                 }
             ],
         },
@@ -447,7 +526,20 @@ def _planner(*, request, **_kwargs):
 
 def _missing_atlas_planner(**kwargs):
     result = _planner(**kwargs)
-    result["plan"]["nodes"][0]["params"].pop("atlas")
+    result["plan"]["nodes"][0]["params"].pop("atlas_path")
+    result["plan"]["metadata"] = {
+        "science_decisions": {
+            "atlas_required": True,
+            "atlas_candidates": [
+                {
+                    "name": "schaefer-200",
+                    "path": "C:/research/demo/resources/schaefer-200.nii.gz",
+                    "license": "CC-BY-4.0",
+                    "checksum": "a" * 64,
+                }
+            ],
+        }
+    }
     return result
 
 
@@ -689,14 +781,19 @@ def test_science_decision_blocks_approval_and_answer_rebuilds_plan(tmp_path) -> 
         project_id="project-1",
         lifecycle_id=waiting.lifecycle_id,
         batch_id=waiting.pending_decision_batch.batch_id,
-        answers=[{"item_id": "atlas", "value": "schaefer-200"}],
+        answers=[
+            {
+                "item_id": "atlas",
+                "value": "C:/research/demo/resources/schaefer-200.nii.gz",
+            }
+        ],
         command_id="answer-2",
         actor="user",
     )
     assert ready.state == "WAITING_FOR_APPROVAL"
     assert (
-        store.get_reviewed_plan("reviewed-1").payload["plan"]["nodes"][0]["params"]["atlas"]
-        == "schaefer-200"
+        store.get_reviewed_plan("reviewed-1").payload["plan"]["nodes"][0]["params"]["atlas_path"]
+        == "C:/research/demo/resources/schaefer-200.nii.gz"
     )
 
 
@@ -761,35 +858,62 @@ def test_subject_decision_rebuilds_reviewed_plan_and_approval_scope(tmp_path) ->
 
 
 @pytest.mark.parametrize(
-    ("signals", "backend", "kind", "answer", "expected_key", "expected_value"),
+    (
+        "signals",
+        "node_id",
+        "node_params",
+        "backend",
+        "kind",
+        "answer",
+        "expected_key",
+        "expected_value",
+    ),
     [
         (
             {"global_signal_regression_required": True},
-            "python-cpu",
+            "native_preproc_full_execute",
+            {"input_bids_dir": "C:/research/demo/rawdata", "confirmations": {}},
+            "native_python",
             "global_signal_regression",
             "include",
-            "global_signal_regression",
+            "include_global_signal",
             True,
         ),
         (
             {"tr_conflict": {"bids": 2.0, "project": 2.2}},
-            "python-cpu",
+            "native_preproc_full_execute",
+            {"input_bids_dir": "C:/research/demo/rawdata", "confirmations": {}},
+            "native_python",
             "repetition_time",
             "bids",
             "tr",
             2.0,
         ),
         (
-            {"template_required": True},
-            "python-cpu",
+            {
+                "template_required": True,
+                "template_candidates": [
+                    {
+                        "name": "Registered MNI template",
+                        "path": "C:/research/demo/resources/templates/mni.nii.gz",
+                        "license": "CC-BY-4.0",
+                        "checksum": "b" * 64,
+                    }
+                ],
+            },
+            "native_preproc_full_execute",
+            {"input_bids_dir": "C:/research/demo/rawdata", "confirmations": {}},
+            "native_python",
             "template",
-            "MNI152NLin6Asym",
+            "C:/research/demo/resources/templates/mni.nii.gz",
             "template",
-            "MNI152NLin6Asym",
+            "C:/research/demo/resources/templates/mni.nii.gz",
         ),
         (
             {"existing_run_conflict": True},
-            "python-cpu",
+            "native_preproc_full_execute",
+            {"input_bids_dir": "C:/research/demo/rawdata", "confirmations": {}},
+            "native_python",
             "overwrite",
             "write_new_run_directory",
             "overwrite_policy",
@@ -797,6 +921,8 @@ def test_subject_decision_rebuilds_reviewed_plan_and_approval_scope(tmp_path) ->
         ),
         (
             {"experimental_gpu": True, "cpu_backend": "python-cpu"},
+            "functional_connectivity_subject",
+            {"atlas_path": "C:/research/demo/resources/atlas.nii.gz"},
             "gpu-experimental",
             "experimental_backend",
             "use_cpu",
@@ -806,10 +932,20 @@ def test_subject_decision_rebuilds_reviewed_plan_and_approval_scope(tmp_path) ->
     ],
 )
 def test_science_decision_matrix_requires_explicit_answer_and_rebuilds_plan(
-    tmp_path, signals, backend, kind, answer, expected_key, expected_value
+    tmp_path,
+    signals,
+    node_id,
+    node_params,
+    backend,
+    kind,
+    answer,
+    expected_key,
+    expected_value,
 ) -> None:
     def planner(**kwargs):
         result = _planner(**kwargs)
+        result["plan"]["nodes"][0]["id"] = node_id
+        result["plan"]["nodes"][0]["params"] = dict(node_params)
         result["plan"]["nodes"][0]["backend"] = backend
         result["plan"]["metadata"] = {"science_decisions": signals}
         return result
@@ -1234,6 +1370,30 @@ def test_unsupported_goal_requests_goal_revision_and_answer_replaces_goal(tmp_pa
     assert ready.state == "WAITING_FOR_APPROVAL"
     assert ready.goal_text == "Compute functional connectivity"
     assert ready.goal_hash == stable_hash({"goal": "Compute functional connectivity"})
+
+
+def test_supported_fc_goal_with_missing_input_requests_input_not_goal_revision(tmp_path) -> None:
+    def planner(**_kwargs):
+        return {
+            "ok": False,
+            "plan": {},
+            "validation": {},
+            "errors": [
+                "REGISTERED_FUNCTIONAL_INPUT_REQUIRED: register BIDS/NIfTI functional input."
+            ],
+        }
+
+    _store, service = _service(tmp_path, planner=planner)
+    waiting = service.create(
+        project_id="project-1",
+        goal="Generate FC",
+        command_id="create-fc-missing-input",
+        actor="user",
+    )
+
+    assert waiting.state == "WAITING_FOR_INPUT"
+    assert waiting.pending_decision_batch.items[0].kind == "missing_input"
+    assert "REGISTERED_FUNCTIONAL_INPUT_REQUIRED" in waiting.pending_decision_batch.items[0].impact
 
 
 def test_plan_only_task_stores_reviewed_plan_and_finishes_without_dry_run_or_approval(

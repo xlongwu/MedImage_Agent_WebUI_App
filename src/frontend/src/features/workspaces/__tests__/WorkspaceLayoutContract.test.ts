@@ -26,16 +26,7 @@ describe("workspace row-balance contract", () => {
   });
 
   it("keeps the primary desktop workspaces on equal-height rows", () => {
-    const workspaceStyles = [
-      "OverviewWorkspace.module.css",
-      "DataConversionWorkspace.module.css",
-      "PlanWorkspace.module.css",
-      "PreprocessingWorkspace.module.css",
-      "RunsWorkspace.module.css",
-      "QCReportsWorkspace.module.css",
-      "ResultsWorkspace.module.css",
-      "SettingsEnvironmentWorkspace.module.css",
-    ];
+    const workspaceStyles = ["RunsWorkspace.module.css", "SettingsEnvironmentWorkspace.module.css"];
 
     for (const name of workspaceStyles) {
       expect(readWorkspaceStyle(name), name).toContain("align-items: stretch;");
@@ -45,20 +36,9 @@ describe("workspace row-balance contract", () => {
     expect(agent).toMatch(/\.projectSummary\s*{[\s\S]*?align-items:\s*stretch;/);
   });
 
-  it("uses explicit row groupings where automatic placement previously left orphan cards", () => {
-    const plan = readWorkspaceStyle("PlanWorkspace.module.css");
-    const preprocessing = readWorkspaceStyle("PreprocessingWorkspace.module.css");
-    const qualityControl = readWorkspaceStyle("QCReportsWorkspace.module.css");
+  it("keeps the remaining Settings workspace free of retired row-span coupling", () => {
     const settings = readWorkspaceStyle("SettingsEnvironmentWorkspace.module.css");
 
-    expect(plan).toContain('grid-template-areas: "outline graph inspector"');
-    expect(preprocessing).toMatch(/\.handoffCard\s*{[\s\S]*?order:\s*2;/);
-    expect(preprocessing).toMatch(/\.executionGateCard\s*{[\s\S]*?order:\s*3;/);
-    expect(qualityControl).toMatch(/\.summaryCard\s*{[\s\S]*?grid-column:\s*span\s+7;/);
-    expect(qualityControl).toMatch(/\.outlierCard\s*{[\s\S]*?grid-column:\s*span\s+5;/);
-    expect(qualityControl).toMatch(
-      /\.comparisonCard,[\s\S]*?\.visualSpecCard\s*{[\s\S]*?grid-column:\s*span\s+4;/,
-    );
     expect(settings).not.toContain("grid-row: span 2;");
   });
 });

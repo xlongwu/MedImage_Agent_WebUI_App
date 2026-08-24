@@ -107,7 +107,8 @@ def test_native_full_execute_generates_truthful_artifact_backed_status(tmp_path)
     fc = next(
         stage for stage in result.stage_results if stage.stage_id == "functional_connectivity"
     )
-    assert fc.status == "succeeded"
+    assert fc.status == "warning"
+    assert any(warning.startswith("gpu_fallback:") for warning in fc.warnings)
     assert {artifact["artifact_type"] for artifact in fc.output_artifacts} >= {
         "fc_matrix",
         "fisher_z_matrix",

@@ -7,10 +7,10 @@ from src.backend.app.schemas.native_preproc_api import (
 )
 
 
-def test_cpu_policy_defaults_to_serial_for_legacy_requests() -> None:
+def test_cpu_policy_defaults_to_bounded_auto_planning() -> None:
     request = NativeFullPreprocRequest()
 
-    assert request.cpu_policy.mode == "serial"
+    assert request.cpu_policy.mode == "auto"
 
 
 def test_resource_planner_respects_cpu_memory_and_user_ceiling(monkeypatch, tmp_path) -> None:

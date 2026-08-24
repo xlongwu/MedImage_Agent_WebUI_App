@@ -104,6 +104,21 @@ def _canonical_path(value: str | Path) -> str:
     return str(Path(value).expanduser().resolve())
 
 
+def _expected_recovery_output_roots(
+    parent_output_roots: tuple[str, ...],
+    output_namespace: str,
+) -> tuple[str, ...]:
+    """Return every exact child namespace allowed by the parent ticket."""
+    return tuple(
+        sorted(
+            {
+                _canonical_path(Path(root) / output_namespace)
+                for root in parent_output_roots
+            }
+        )
+    )
+
+
 def _canonical_ticket_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return {field: payload[field] for field in _IMMUTABLE_FIELDS}
 
@@ -494,10 +509,13 @@ class ExecutionTicketService:
             raise SafetyError("RECOVERY_CHILD_NODE_SCOPE_EXPANDED", code="RECOVERY_CHILD_NODE_SCOPE_EXPANDED")
         canonical_output = _canonical_path(output_root)
         expected_namespace = f"recovery_attempts/{attempt.recovery_attempt_id}"
-        expected_output = _canonical_path(Path(parent.output_roots[0]) / expected_namespace)
+        expected_outputs = _expected_recovery_output_roots(
+            parent.output_roots,
+            expected_namespace,
+        )
         if (
             attempt.output_namespace != expected_namespace
-            or canonical_output != expected_output
+            or canonical_output not in expected_outputs
             or not self._is_within_path(canonical_output, parent.output_roots)
             or canonical_output in parent.output_roots
         ):
@@ -720,8 +738,11 @@ class ExecutionTicketService:
         if (
             len(ticket.output_roots) != 1
             or ticket.output_namespace != f"recovery_attempts/{ticket.recovery_attempt_id}"
-            or Path(ticket.output_roots[0]).resolve()
-            != (Path(parent.output_roots[0]).resolve() / ticket.output_namespace).resolve()
+            or _canonical_path(ticket.output_roots[0])
+            not in _expected_recovery_output_roots(
+                parent.output_roots,
+                ticket.output_namespace,
+            )
             or any(not self._is_within_path(root, parent.output_roots) for root in ticket.output_roots)
             or any(root in parent.output_roots for root in ticket.output_roots)
             or any(self._is_within_path(root, parent.readonly_roots) for root in ticket.output_roots)

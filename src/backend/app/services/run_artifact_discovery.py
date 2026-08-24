@@ -11,6 +11,7 @@ from typing import Any
 
 from src.backend.app.schemas.desktop import ProjectDetail, RunLinkRecord
 from src.backend.app.services.run_artifact_preview import json_preview_summary
+from src.backend.app.services.run_summary_preview import recovery_run_output_roots
 from src.backend.app.tools.artifact_utils import read_json_artifact
 
 SUMMARY_WARNING_LIMIT = 50
@@ -74,6 +75,7 @@ def _project_summary_roots(project: ProjectDetail, record: RunLinkRecord) -> lis
                 base / "preprocessing_native_runs",
             ]
         )
+    roots.extend(recovery_run_output_roots(project, record))
     return _dedupe_paths(roots)
 
 
@@ -565,6 +567,8 @@ def _artifact_record(
     if "audit_records" in {part.casefold() for part in path.parts}:
         artifact["artifact_type"] = "audit_record"
         artifact["registration_status"] = "persisted"
+    if source.endswith("node_states") or "/states/" in str(path).replace("\\", "/"):
+        artifact["artifact_type"] = "node_state"
     _enrich_qc_json_artifact(artifact, path, source, warnings)
     error_excerpt = _error_excerpt_for_artifact(path, str(artifact["kind"]))
     if error_excerpt:

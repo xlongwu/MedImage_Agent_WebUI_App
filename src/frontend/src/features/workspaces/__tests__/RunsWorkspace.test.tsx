@@ -35,6 +35,7 @@ function agentTaskEvidence(): AgentTaskResponse {
     outcome: null,
     goal_summary: "Generate FC and QC",
     current_action: "Running reviewed processing",
+    current_action_code: "executing",
     next_action: {
       type: "none",
       title: "No action",

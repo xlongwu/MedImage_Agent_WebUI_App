@@ -197,6 +197,20 @@
   white-space: nowrap;
 }
 
+.taskStatus {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.taskStatus small {
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .state i {
   width: 7px;
   height: 7px;

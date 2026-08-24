@@ -61,6 +61,13 @@ check(
 );
 check("main injects runtime backend URL", main.includes("MEDIMAGE_DESKTOP_API_BASE_URL") && main.includes("syncRuntimeEnv"));
 check("main loads local static frontend", main.includes("loadFile(frontendIndex)") && main.includes("src\", \"frontend\", \"dist"));
+check(
+  "main copies workspace seeds without traversing restricted parent paths",
+  main.includes("copySeedDirectory") &&
+    main.includes("lstatSync") &&
+    main.includes("isSymbolicLink") &&
+    !main.includes("fs.cpSync")
+);
 check("main stops managed backend on quit", main.includes("backendProcess.kill()") && main.includes('app.on("before-quit"'));
 check(
   "main enforces one desktop instance",
@@ -92,6 +99,21 @@ check(
   "main verifies renderer-to-backend HTTP integration during smoke",
   main.includes("rendererBackendHealthOk") &&
     main.includes('fetch(backendBaseUrl + "/api/health")')
+);
+check(
+  "main supports an isolated visible Agent-first navigation smoke",
+  main.includes("MEDIMAGE_DESKTOP_VISIBLE_SMOKE") &&
+    main.includes("verifyAgentFirstNavigation") &&
+    main.includes("verifyBidsToFcWorkflow") &&
+    main.includes("navigationCount") &&
+    main.includes("visited")
+);
+check(
+  "main records exact-SHA build provenance and visible workflow evidence",
+  main.includes("build-provenance.json") &&
+    main.includes("buildProvenance") &&
+    main.includes("MEDIMAGE_DESKTOP_SMOKE_SCREENSHOT") &&
+    main.includes("captureSmokeScreenshot")
 );
 check("main denies new windows", main.includes("setWindowOpenHandler") && main.includes('action: "deny"'));
 check("main restricts dev URLs to localhost", main.includes("isAllowedDevUrl") && main.includes("127.0.0.1"));
@@ -125,6 +147,11 @@ check("preload exposes minimal IPC bridge", preload.includes("getBackendBaseUrl"
 
 check("builder includes frontend static dist", builder.includes("../../src/frontend/dist"));
 check("builder includes backend sidecar payload resource", builder.includes("../packaging/dist/backend_payload"));
+check(
+  "builder includes exact-SHA build provenance",
+  builder.includes("../packaging/dist/release_metadata/build-provenance.json") &&
+    builder.includes("release/build-provenance.json")
+);
 check("builder excludes external converter resources", !builder.includes("../resources/tools"));
 check("builder excludes MATLAB workspace resources", !builder.includes("../../matlab") && !builder.includes("workspace_seed/matlab"));
 check("builder targets Windows installer", builder.includes("target: nsis"));

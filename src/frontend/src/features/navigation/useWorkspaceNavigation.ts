@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 
-import type { AppLocation, LegacyWorkspace, ProjectWorkspace } from "./workspaceModel";
-import { legacyLocationForProject, locationForProject } from "./workspaceModel";
+import type { AppLocation, ProjectWorkspace } from "./workspaceModel";
+import { locationForProject } from "./workspaceModel";
 
 export function useWorkspaceNavigation() {
   const [location, setLocation] = useState<AppLocation>({ kind: "projects" });
@@ -14,13 +14,8 @@ export function useWorkspaceNavigation() {
   const openWorkspace = useCallback((projectId: string, workspace: ProjectWorkspace) => {
     setLocation({ kind: "project", projectId, workspace });
   }, []);
-  const openLegacyWorkspace = useCallback((projectId: string, workspace: LegacyWorkspace) => {
-    setLocation(legacyLocationForProject(projectId, workspace));
-  }, []);
-
   return {
     location,
-    openLegacyWorkspace,
     openProject,
     openProjects,
     openWorkspace,

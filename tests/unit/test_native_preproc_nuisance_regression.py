@@ -51,7 +51,8 @@ def test_nuisance_regression_removes_known_motion_confound_and_writes_tsv(tmp_pa
         polynomial_order=0,
     )
 
-    assert result.status == "succeeded"
+    assert result.status == "warning"
+    assert any(warning.startswith("gpu_fallback:") for warning in result.warnings)
     assert validate_stage_result_artifacts(result) == []
     residual_path = Path(
         next(

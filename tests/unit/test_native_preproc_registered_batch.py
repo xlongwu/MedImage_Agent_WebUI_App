@@ -193,6 +193,18 @@ def test_registered_conversion_inputs_run_all_subjects(monkeypatch, tmp_path) ->
     ]
     assert all("subjects" not in Path(request.output_dir).parts for request in calls)
     assert Path(result.manifest_path).exists()
+    assert Path(result.resource_provenance_path).exists()
+    resource_provenance = json.loads(
+        Path(result.resource_provenance_path).read_text(encoding="utf-8")
+    )
+    assert resource_provenance["_schema_version"] == 1
+    assert resource_provenance["requested_policy"]["cpu"]["mode"] == "auto"
+    assert resource_provenance["selected_resources"]["worker_count_used"] >= 1
+    assert resource_provenance["reproducibility"]["seed"] is None
+    reloaded = service.load_native_full_run_manifest(
+        "demo-project", "native-batch", project_dir=str(project_dir)
+    )
+    assert reloaded.resource_provenance_path == result.resource_provenance_path
     group_summary = json.loads(
         (
             Path(result.run_dir) / "artifacts" / "group_summary" / "native_group_summary.json"
@@ -270,6 +282,69 @@ def test_registered_conversion_inputs_filter_to_reviewed_subject(monkeypatch, tm
     assert Path(calls[0].input_bold).name == "sub-001_task-rest_bold.nii.gz"
     assert Path(calls[0].sidecar_json).name == "sub-001_task-rest_bold.json"
     assert Path(calls[0].t1w).name == "sub-001_T1w.nii.gz"
+
+
+def test_registered_batch_overwrite_policy_preserves_existing_output(monkeypatch, tmp_path) -> None:
+    project_dir = tmp_path / "project"
+    registry_path = (
+        project_dir / "preprocessing_inputs" / "conv-001" / "preprocessing_artifact_registry.json"
+    )
+    registry_path.parent.mkdir(parents=True)
+    _write_conversion_registry(project_dir, registry_path)
+    occupied = project_dir / "preprocessing_native_runs" / "occupied-run"
+    occupied.mkdir(parents=True)
+    marker = occupied / "keep.txt"
+    marker.write_text("preserve", encoding="utf-8")
+    calls: list[NativeFullPreprocRequest] = []
+
+    def _fake_execute(project_id, request, *, project_dir=""):
+        calls.append(request)
+        return NativeFullPreprocResponse(
+            ok=True,
+            status="succeeded",
+            project_id=project_id,
+            run_id=request.run_id,
+            run_dir=request.output_dir,
+            safety_flags={"rawdata_readonly_confirmed": True},
+        )
+
+    monkeypatch.setattr(service, "execute_native_full_preproc", _fake_execute)
+    metadata = {
+        "project_dir": str(project_dir),
+        "preprocessing_conversion_run_id": "conv-001",
+        "preprocessing_input_registry_path": str(registry_path),
+    }
+
+    blocked = service.run_native_full_execute(
+        "demo-project",
+        NativeFullPreprocRequest(
+            run_id="occupied-run",
+            conversion_run_id="conv-001",
+            overwrite_policy="fail_if_exists",
+            confirmations=_confirmations(),
+        ),
+        project_dir=str(project_dir),
+        project_metadata=metadata,
+    )
+    assert blocked.status == "blocked"
+    assert "OUTPUT_SCOPE_EXISTS" in blocked.blocking_issues
+    assert calls == []
+    assert marker.read_text(encoding="utf-8") == "preserve"
+
+    created = service.run_native_full_execute(
+        "demo-project",
+        NativeFullPreprocRequest(
+            run_id="occupied-run",
+            conversion_run_id="conv-001",
+            overwrite_policy="write_new_run_directory",
+            confirmations=_confirmations(),
+        ),
+        project_dir=str(project_dir),
+        project_metadata=metadata,
+    )
+    assert Path(created.run_dir) != occupied
+    assert Path(created.run_dir).parent == occupied.parent
+    assert marker.read_text(encoding="utf-8") == "preserve"
 
 
 def test_registered_batch_omits_unreviewed_group_summary_and_duplicate_reports(

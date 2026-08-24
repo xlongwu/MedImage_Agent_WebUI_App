@@ -69,12 +69,12 @@ export function ProjectSidebar({
               </span>
               <span
                 aria-label={
-                  hasReviewedPipelineReference(project)
-                    ? t("projects.pipelineSet")
-                    : t("projects.needsSetup")
+                  project.latest_agent_task
+                    ? t(`agent.currentAction.${project.latest_agent_task.current_action_code}`)
+                    : t("projects.agentNotStarted")
                 }
                 className={styles.stateDot}
-                data-ready={hasReviewedPipelineReference(project)}
+                data-ready={project.latest_agent_task?.state === "completed"}
               />
             </button>
           );
@@ -92,9 +92,4 @@ export function ProjectSidebar({
       </Button>
     </aside>
   );
-}
-
-function hasReviewedPipelineReference(project: ProjectSummary): boolean {
-  const value = project.current_pipeline_id?.trim().toLowerCase();
-  return Boolean(value && value !== "none" && value !== "not-selected");
 }

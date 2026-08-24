@@ -29,6 +29,24 @@ from src.backend.app.services.recovery_proposal_engine import (
 )
 
 
+DEFAULT_PROJECT_RECOVERY_POLICY = RecoveryQuotaLimits(
+    max_lifecycle_recovery_attempts=2,
+    max_node_attempts=1,
+    max_subject_node_attempts=1,
+    max_replans=1,
+    max_recovery_wall_seconds=600,
+)
+
+
+def default_project_recovery_policy() -> dict[str, int]:
+    """Return the explicit fail-closed quota policy persisted for new projects."""
+    return {
+        key: int(value)
+        for key, value in DEFAULT_PROJECT_RECOVERY_POLICY.model_dump().items()
+        if value is not None
+    }
+
+
 class RecoveryPolicyStore(Protocol):
     def get_project(self, project_id: str): ...
     def get_agent_lifecycle(self, lifecycle_id: str): ...

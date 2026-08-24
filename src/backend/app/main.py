@@ -41,6 +41,8 @@ from src.backend.app.api.plan_validator_routes import router as plan_validator_r
 from src.backend.app.api.preprocessing_routes import router as preprocessing_router
 from src.backend.app.api.preset_routes import router as preset_router
 from src.backend.app.api.project_history_routes import router as project_history_router
+from src.backend.app.api.project_agent_settings_routes import router as project_agent_settings_router
+from src.backend.app.api.project_agent_summary_routes import router as project_agent_summary_router
 from src.backend.app.api.execution_graph_routes import router as execution_graph_router
 from src.backend.app.api.project_routes import router as project_router
 from src.backend.app.api.qc_routes import router as qc_router
@@ -236,6 +238,8 @@ def create_app() -> FastAPI:
     app.include_router(preset_router)
     app.include_router(project_router)
     app.include_router(project_history_router)
+    app.include_router(project_agent_settings_router)
+    app.include_router(project_agent_summary_router)
     app.include_router(execution_graph_router)
     app.include_router(sandbox_router)
     return app

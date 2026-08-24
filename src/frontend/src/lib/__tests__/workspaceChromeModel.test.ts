@@ -7,18 +7,11 @@ describe("workspaceChromePresetForLocation", () => {
     expect(workspaceChromePresetForLocation({ kind: "projects" })).toBe("project-library");
     expect(
       workspaceChromePresetForLocation({
-        kind: "legacy",
+        kind: "project",
         projectId: "p1",
-        workspace: "overview",
+        workspace: "agent",
       }),
     ).toBe("project-dashboard");
-    expect(
-      workspaceChromePresetForLocation({
-        kind: "legacy",
-        projectId: "p1",
-        workspace: "results",
-      }),
-    ).toBe("image-workspace");
     expect(
       workspaceChromePresetForLocation({
         kind: "project",
@@ -28,9 +21,9 @@ describe("workspaceChromePresetForLocation", () => {
     ).toBe("task-workspace");
     expect(
       workspaceChromePresetForLocation({
-        kind: "legacy",
+        kind: "project",
         projectId: "p1",
-        workspace: "plan",
+        workspace: "settings",
       }),
     ).toBe("standard-workspace");
   });

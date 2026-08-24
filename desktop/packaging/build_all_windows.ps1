@@ -6,11 +6,46 @@ param(
     [string]$NsisArchive,
     [string]$NsisResourcesArchive,
     [switch]$DirOnly,
-    [string]$PythonExe
+    [string]$PythonExe,
+    [string]$ExpectedGitSha,
+    [switch]$RequireCleanWorktree
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+
+function Assert-ReleaseCandidate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Root,
+        [string]$ExpectedSha,
+        [switch]$RequireClean
+    )
+
+    Push-Location $Root
+    try {
+        $ActualSha = (git rev-parse HEAD).Trim().ToLowerInvariant()
+        if ($LASTEXITCODE -ne 0 -or -not $ActualSha) {
+            throw "Unable to resolve the release candidate Git SHA."
+        }
+        if ($ExpectedSha -and $ActualSha -ne $ExpectedSha.Trim().ToLowerInvariant()) {
+            throw "RELEASE_SHA_MISMATCH: expected $($ExpectedSha.Trim().ToLowerInvariant()), actual $ActualSha"
+        }
+        # Keep this command explicit: release evidence must include untracked files.
+        $StatusLines = @(git status --porcelain=v1 --untracked-files=all)
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to inspect the release candidate working tree."
+        }
+        if ($RequireClean -and $StatusLines.Count -gt 0) {
+            $Details = ($StatusLines | Select-Object -First 20) -join [Environment]::NewLine
+            throw "RELEASE_WORKTREE_DIRTY:$([Environment]::NewLine)$Details"
+        }
+        Write-Host "Release candidate source: sha=$ActualSha clean=$($StatusLines.Count -eq 0)"
+    }
+    finally {
+        Pop-Location
+    }
+}
 
 function Clear-PackagingResiduals {
     param(
@@ -77,6 +112,13 @@ function Invoke-PytestChecked {
 
 Push-Location $RepoRoot
 try {
+    $EffectiveRequireClean = $RequireCleanWorktree -or [bool]$ExpectedGitSha
+    if ($ExpectedGitSha -or $EffectiveRequireClean) {
+        Assert-ReleaseCandidate `
+            -Root $RepoRoot.Path `
+            -ExpectedSha $ExpectedGitSha `
+            -RequireClean:$EffectiveRequireClean
+    }
     Clear-PackagingResiduals -Root $RepoRoot
     $TestPython = if ($PythonExe) { $PythonExe } else { "python" }
 
@@ -123,6 +165,15 @@ try {
     }
     if ($DirOnly) {
         $DesktopBuildArgs.DirOnly = $true
+    }
+    if ($PythonExe) {
+        $DesktopBuildArgs.PythonExe = $PythonExe
+    }
+    if ($ExpectedGitSha) {
+        $DesktopBuildArgs.ExpectedGitSha = $ExpectedGitSha
+    }
+    if ($EffectiveRequireClean) {
+        $DesktopBuildArgs.RequireCleanWorktree = $true
     }
     & (Join-Path $RepoRoot "desktop\packaging\build_desktop.ps1") @DesktopBuildArgs
 

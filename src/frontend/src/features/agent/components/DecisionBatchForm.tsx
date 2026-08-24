@@ -165,7 +165,13 @@ export function DecisionBatchForm({
       })}
       <div className={styles.actionFooter}>
         <span>{t("agent.decision.batch.expiry")}</span>
-        <Button data-primary-action="true" disabled={mutating} type="submit" variant="primary">
+        <Button
+          data-agent-action="answer_science_decision"
+          data-primary-action="true"
+          disabled={mutating}
+          type="submit"
+          variant="primary"
+        >
           {mutating ? t("agent.working") : t("agent.confirmation.decision.confirm")}
         </Button>
       </div>

@@ -120,6 +120,13 @@ _STRICT_PARAMETERS: dict[str, dict[str, ParameterContract]] = {
         "stage_overrides": _parameter("object", default={}),
         "cpu_policy": _parameter("object", default={}),
         "compute_policy": _parameter("object", default={}),
+        "overwrite_policy": _parameter(
+            "string",
+            default="fail_if_exists",
+            enum=("fail_if_exists", "write_new_run_directory"),
+        ),
+        "include_global_signal": _parameter("boolean", default=False),
+        "tr": _parameter("number", nullable=True, minimum=0.000001),
     },
     "native_preproc_full_dry_run": {
         "input_bold": _parameter("string", nullable=True, path_access="read"),

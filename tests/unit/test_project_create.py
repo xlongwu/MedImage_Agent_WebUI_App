@@ -146,6 +146,13 @@ def test_created_project_persists_in_dashboard_project_api(tmp_path, monkeypatch
     )
     assert detail_payload["metadata"]["dataset_index_path"] == created_payload["dataset_index_path"]
     assert detail_payload["metadata"]["diagnostics"] == created_payload["diagnostics"]
+    assert detail_payload["metadata"]["recovery_policy"] == {
+        "max_lifecycle_recovery_attempts": 2,
+        "max_node_attempts": 1,
+        "max_subject_node_attempts": 1,
+        "max_replans": 1,
+        "max_recovery_wall_seconds": 600,
+    }
     assert detail_payload["metadata"]["created_at"]
     assert detail_payload["metadata"]["updated_at"]
 

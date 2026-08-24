@@ -89,6 +89,7 @@ export function ExecutionApprovalReview({
       ) : null}
       <div className={styles.attentionAction}>
         <Button
+          data-agent-action="approve_execution"
           data-primary-action="true"
           disabled={mutating || Boolean(task.next_action.disabled_reason)}
           onClick={() => void onApprove().catch((): void => {})}

@@ -1,6 +1,6 @@
 # Project State
 
-Current as of 2026-08-16.
+Current as of 2026-08-24.
 
 ## Version and Branch
 
@@ -11,9 +11,11 @@ Current as of 2026-08-16.
 - Backend `APP_VERSION` (`src/backend/app/version.py`) is `0.6.0-rc1`.
   All package surface versions (frontend, desktop/electron, pyproject.toml)
   aligned to `0.6.0-rc1` as of 2026-06-20 architecture audit.
-- Release-state baseline branch: `main`. The current working tree contains the
-  Phase 10 Agent-first source implementation, but it has no clean exact-SHA,
-  packaging, tag, or release claim yet.
+- Release-state baseline branch: `main`. Phase 15 Agent-first convergence and
+  release-Gate fixes are tracked on that branch; the exact candidate identity
+  is carried by the package provenance and external Gate evidence rather than
+  duplicated as a self-referential source-document SHA. No tag or published
+  release is claimed here.
 - Local Git tags present:
   - `v0.3.0-rc1` tagged 2026-06-06
   - `v0.4.0-rc1` tagged 2026-06-10
@@ -203,7 +205,9 @@ their tag state.
   flags, release approval/readiness evidence, confirmation payloads, audit
   package evidence, checksum/rollback checks, and safe output roots.
 - Agent-first visibility and a single approval card do not relax any execution
-  gate. Advanced mode affects navigation only.
+  gate. The ordinary project navigation is Projects, Agent, Runs, and Settings;
+  advanced evidence is layered inside Agent/Runs rather than restoring retired
+  specialist workspaces.
 - The optional Harness action catalog is fail-closed at A0/A1. It cannot expose
   A2 execution or A3 scope changes to a model; approval identity binds the
   evidence snapshot, science answers, MemoryContext, provider/prompt and
@@ -301,11 +305,27 @@ their tag state.
 - Packaging output directories are generated artifacts unless explicitly
   promoted through a release artifact process.
 - The current dirty-tree canonical `win-unpacked` directory was rebuilt on
-  2026-07-26 without generating an installer. A fresh isolated workspace and
-  Electron `userData` smoke verified backend readiness, renderer/backend HTTP
-  health, a mounted React root and main landmark, zero renderer console errors,
-  normal app exit, and zero owned sidecar processes after exit. This is local
-  task evidence, not an exact-SHA release claim.
+  2026-08-24 without generating an installer. The visible packaged harness now
+  drives the BIDS-to-FC, DICOM-to-BIDS/preprocessing/FC, and failed-subject
+  recovery workflows in separate isolated workspace, `userData`, database, and
+  evidence directories. It enforces operation/approval bounds, reloadable FC
+  evidence, recovery-attempt lineage, unchanged rawdata and untouched-subject
+  hashes, zero renderer console errors, and owned-sidecar shutdown. The current
+  evidence is intentionally marked `clean_source=false`; it proves the local
+  harness and package behavior, not the formal exact-SHA release Gate.
+- Release packaging can now require both an expected commit and a clean tree.
+  The package embeds a build-provenance manifest containing the Git SHA,
+  cleanliness flag, application versions, and checksums of packaged inputs;
+  the visible smoke copies that manifest plus the artifact inventory, rawdata
+  manifests, screenshot, result, Gate summary, and logs into a write-once
+  evidence directory. SHA drift or a dirty source candidate fails closed.
+- On 2026-08-25 the clean exact-SHA unpacked candidate completed all three
+  visible packaged workflows with their write-once evidence directories. BIDS
+  used three explicit operations, DICOM used four, and recovery added one
+  explicit approval for only `sub-003`; each truthful outcome remained
+  `partial`, rawdata was unchanged, renderer console errors were zero, and the
+  owned sidecar stopped after exit. This closes the unpacked three-flow Gate,
+  but does not claim installer, tag, or published-release completion.
 - Packaging candidate `6a392c15079f51c16a8e3c2a035915972aabd9ff` was rebuilt
   with the `mamba` Python 3.11.15 environment into a PyInstaller backend
   sidecar, launcher, and Electron unpacked directory. Packaged smoke confirmed
@@ -340,40 +360,37 @@ their tag state.
 - Some historical docs still describe earlier route and frontend API layouts;
   long-term docs should point to the current domain-router and `lib/api/`
   structure.
-- The canonical unpacked Electron app has an automated hidden-renderer smoke
-  covering sidecar readiness, React mount, renderer-to-backend health, zero
-  renderer console errors, and sidecar shutdown. Visible human GUI workflows
-  and the full real-data scientific workflow still require separate validation.
+- The canonical unpacked Electron app has automated hidden-renderer and visible
+  Agent-first workflow smokes. The visible synthetic BIDS, synthetic DICOM, and
+  bounded local-recovery fixtures pass on the current dirty diagnostic build;
+  this does not replace the clean exact-SHA release rerun or real-data/manual
+  scientific validation.
 - Default Windows temp folders can retain locked pytest directories; use the
   active project interpreter and `--basetemp=.pytest_tmp`.
 - The desktop SQLite state store is ignored runtime state and can accumulate
   stale local paths. Fresh stores contain no fabricated projects or runs;
   deterministic dashboard fixtures are available only through the explicit
   `MEDIMAGE_DESKTOP_SEED_DEMO_DATA=true` demo/test opt-in.
-- Full DICOM-to-preprocessing-to-report Electron-window-driven E2E remains
-  unproven; source-level paths, packaged-sidecar/API paths, and the isolated
-  Agent-workspace browser-visible single-subject preprocessing path are
-  demonstrated separately.
+- The visible Electron DICOM fixture demonstrates the governed conversion,
+  preprocessing, FC, and result-evidence interaction path with synthetic data.
   Preview/subset runs and synthetic-atlas FC remain labeled `preview_only` or
-  `partial`.
-- The Phase 10 Agent-first changes remain in a dirty working tree. A local
-  canonical unpacked package and isolated smoke now exist, but exact-SHA
-  packaging, Electron-window scientific workflow validation, installer checks,
-  and release/version alignment are deferred and must not be inferred from the
-  local package.
-- Single-subject packaged-sidecar restart recovery is demonstrated. Forced
-  termination, failed-subject isolation, and approved local retry have not yet
-  been demonstrated on the three-subject DemoData set.
+  `partial`; this is not real-data scientific validation.
+- The Phase 15 unpacked clean exact-SHA three-flow Gate is complete. Installer
+  checks, version alignment, tag, CI confirmation for the pushed candidate, and
+  publication remain separate pending release steps.
+- Failed-subject isolation and one approved local retry are now demonstrated by
+  the visible packaged synthetic three-subject recovery fixture. Forced process
+  termination and restart recovery for that same multi-subject fixture remain
+  separate release/lifecycle checks.
 
 ## Next Work
 
-1. Validate running-state graceful exit, forced termination, restart recovery,
-   failed-subject isolation, and approved local retry without modifying rawdata.
-2. Drive the three-subject workflow through the visible Electron UI if a safe,
-   project-native UI harness is approved; retain the packaged-sidecar/API result
-   as the current non-UI workflow evidence.
-3. Align version surfaces and release documentation, inventory/checksum the
-   Windows artifacts, and publish `v0.6.0-rc2` only after all release gates pass.
+1. Confirm remote CI for the pushed Phase 15 candidate and retain the local
+   exact-SHA provenance and three write-once evidence directories together.
+2. Validate forced termination and restart recovery for the packaged
+   multi-subject flow without modifying rawdata or untouched outputs.
+3. Align version surfaces and release documentation, run installer checks, and
+   publish `v0.6.0-rc2` only after every release Gate passes.
 
 ## Reference Documents
 

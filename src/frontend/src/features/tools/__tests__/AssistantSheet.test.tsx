@@ -17,7 +17,7 @@ function renderSheet(
   render(
     <I18nProvider locale={locale}>
       <AssistantSheet
-        activePageLabel="QC"
+        activePageLabel="Runs"
         error=""
         input=""
         loading={false}
@@ -74,7 +74,7 @@ describe("AssistantSheet", () => {
 
     expect(screen.getByRole("dialog", { name: "Assistant" })).toBeInTheDocument();
     expect(screen.getByLabelText("Assistant context")).toHaveTextContent("Demo Project");
-    expect(screen.getByLabelText("Assistant context")).toHaveTextContent("QC");
+    expect(screen.getByLabelText("Assistant context")).toHaveTextContent("Runs");
     expect(screen.getByLabelText("Assistant context")).toHaveTextContent("Preprocessing run");
     expect(screen.getByLabelText("Assistant context")).toHaveTextContent(
       "data series sub-001 / series-001 / subject sub-001 / series bold / node Motion correction",
@@ -87,7 +87,7 @@ describe("AssistantSheet", () => {
     );
     expect(screen.getByLabelText("Assistant suggestions")).toHaveTextContent("Suggested prompts");
     expect(screen.getByLabelText("Assistant suggestions")).toHaveTextContent(
-      "Explain which QC evidence is still pending",
+      "Explain the selected run diagnostics",
     );
     expect(screen.getByText("Execution boundary")).toBeInTheDocument();
     expect(screen.getByText(/Mock provider mode uses the local safe default/i)).toBeInTheDocument();
@@ -96,15 +96,13 @@ describe("AssistantSheet", () => {
   it("copies suggested prompts into the assistant input", () => {
     const { onInput } = renderSheet();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Draft a non-executing QC review checklist" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Draft the next reviewed run follow-up" }));
 
-    expect(onInput).toHaveBeenCalledWith("Draft a non-executing QC review checklist");
+    expect(onInput).toHaveBeenCalledWith("Draft the next reviewed run follow-up");
   });
 
   it("keeps chat controls available inside the sheet", () => {
-    const { onNewChat, onSubmit } = renderSheet({ input: "Explain QC" });
+    const { onNewChat, onSubmit } = renderSheet({ input: "Explain Runs" });
 
     fireEvent.click(screen.getByRole("button", { name: "New Chat" }));
     fireEvent.submit(screen.getByRole("textbox", { name: "Ask AI Assistant" }).closest("form")!);
@@ -118,7 +116,7 @@ describe("AssistantSheet", () => {
 
     expect(screen.getByRole("dialog", { name: "助手" })).toBeInTheDocument();
     expect(screen.getByLabelText("助手上下文")).toHaveTextContent("解释／总结／起草");
-    expect(screen.getByLabelText("助手建议")).toHaveTextContent("解释仍待获取的 QC 证据");
+    expect(screen.getByLabelText("助手建议")).toHaveTextContent("解释所选运行诊断");
     expect(screen.getByRole("button", { name: "新对话" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "向 AI 助手提问" })).toBeInTheDocument();
   });

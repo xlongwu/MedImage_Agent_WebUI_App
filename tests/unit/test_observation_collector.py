@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,13 +20,30 @@ from src.backend.app.runtime.execution_gateway import (
 )
 from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord, RunLinkRecord
+from src.backend.app.schemas.observation import (
+    ArtifactObservation,
+    CapabilityObservation,
+    NodeObservation,
+    ObservationBindings,
+    ObservationCompleteness,
+    ObservationRecord,
+    ObservationSourceRef,
+    PipelineObservation,
+    ScientificObservation,
+)
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
 from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 from src.backend.app.services.observation_collector import (
     ObservationCollector,
+    _merge_recovery_evidence,
     calculate_observation_hash,
+)
+from src.backend.app.services.observation_adapters import (
+    AdaptedObservationFacts,
+    _artifact_type_from_path,
+    _subject_id_from_path,
 )
 from src.backend.app.services.preprocessing_artifact_registry import REGISTRY_FILENAME
 
@@ -265,6 +283,163 @@ def test_collector_persists_immutable_traceable_snapshot_and_reloads(tmp_path):
     ) == [observation]
     with pytest.raises(ValidationError):
         observation.pipeline.status = "FAILED"
+
+
+def test_subject_node_instances_match_one_logical_pipeline_node(tmp_path):
+    store, _, lifecycle, summary_path = _prepared_run(
+        tmp_path,
+        node_id="functional_connectivity_subject",
+    )
+    (
+        tmp_path
+        / "project"
+        / "work"
+        / "states"
+        / "run-1"
+        / "functional_connectivity_subject.json"
+    ).unlink()
+    state_paths = []
+    for subject_id, status in (
+        ("sub-001", "SUCCESS"),
+        ("sub-002", "SUCCESS"),
+        ("sub-003", "FAILED"),
+    ):
+        state_path = (
+            tmp_path
+            / "project"
+            / "work"
+            / "states"
+            / "run-1"
+            / subject_id
+            / "functional_connectivity_subject.json"
+        )
+        _write_json(
+            state_path,
+            {
+                "run_id": "run-1",
+                "subject": subject_id,
+                "node": "functional_connectivity_subject",
+                "status": status,
+                "outputs": [],
+                "errors": ["TRANSIENT_IO"] if status == "FAILED" else [],
+                "warnings": [],
+            },
+        )
+        state_paths.append(str(state_path))
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary.update(
+        {
+            "status": "FAILED",
+            "nodes_total": 1,
+            "nodes_success": 0,
+            "nodes_failed": 1,
+            "node_states": state_paths,
+        }
+    )
+    _write_json(summary_path, summary)
+
+    observation = ObservationCollector(store).collect(
+        project_id="project-1", lifecycle_id=lifecycle.lifecycle_id
+    )
+
+    assert observation.pipeline.summary_consistent is True
+    assert "PIPELINE_NODE_STATE_COUNT_CONFLICT" not in observation.completeness.conflicts
+    assert [(node.subject_id, node.status) for node in observation.nodes] == [
+        ("sub-001", "SUCCESS"),
+        ("sub-002", "SUCCESS"),
+        ("sub-003", "FAILED"),
+    ]
+
+
+def test_recovery_observation_preserves_untouched_subject_evidence_and_replaces_target():
+    now = datetime.now(UTC)
+    prior_source = ObservationSourceRef(
+        source_id="prior-artifacts",
+        source_type="artifact_registry",
+        read_status="ok",
+        observed_at=now,
+    )
+    previous = ObservationRecord(
+        observation_id="previous-observation",
+        bindings=ObservationBindings(
+            project_id="project-1",
+            lifecycle_id="lifecycle-1",
+            reviewed_plan_id="reviewed-1",
+            plan_hash="plan-hash",
+            run_id="parent-run",
+            execution_ticket_id="parent-ticket",
+            dispatch_id="parent-dispatch",
+        ),
+        collected_at=now,
+        sources=(prior_source,),
+        pipeline=PipelineObservation(status="FAILED"),
+        nodes=(
+            NodeObservation(node_id="fc", subject_id="sub-001", status="SUCCESS"),
+            NodeObservation(node_id="fc", subject_id="sub-003", status="FAILED"),
+        ),
+        artifacts=(
+            ArtifactObservation(
+                artifact_id="artifact-sub-001",
+                artifact_type="fc_matrix",
+                subject_id="sub-001",
+                exists=True,
+            ),
+            ArtifactObservation(
+                artifact_id="artifact-sub-003-old",
+                artifact_type="fc_matrix",
+                subject_id="sub-003",
+                exists=False,
+            ),
+        ),
+        capability=CapabilityObservation(),
+        scientific=ScientificObservation(),
+        completeness=ObservationCompleteness(status="complete"),
+        observation_hash="prior-hash",
+    )
+    current_source = ObservationSourceRef(
+        source_id="current-node",
+        source_type="node_states",
+        read_status="ok",
+        observed_at=now,
+    )
+    facts = AdaptedObservationFacts(
+        sources=[current_source],
+        nodes=[NodeObservation(node_id="fc", subject_id="sub-003", status="SUCCESS")],
+        artifacts=[
+            ArtifactObservation(
+                artifact_id="artifact-sub-003-new",
+                artifact_type="fc_matrix",
+                subject_id="sub-003",
+                exists=True,
+            )
+        ],
+        missing_sources=["artifacts", "node_states", "validations"],
+    )
+
+    _merge_recovery_evidence(facts, previous, target_subjects={"sub-003"})
+
+    assert [(node.subject_id, node.status) for node in facts.nodes] == [
+        ("sub-001", "SUCCESS"),
+        ("sub-003", "SUCCESS"),
+    ]
+    assert [artifact.artifact_id for artifact in facts.artifacts] == [
+        "artifact-sub-001",
+        "artifact-sub-003-new",
+    ]
+    assert {source.source_id for source in facts.sources} == {
+        "prior-artifacts",
+        "current-node",
+    }
+    assert facts.missing_sources == ["validations"]
+
+
+def test_discovered_correlation_matrix_infers_fc_type_and_subject_from_path():
+    artifact_path = Path(
+        "derivatives/functional_connectivity/sub-003/correlation_matrix.npy"
+    )
+
+    assert _artifact_type_from_path(artifact_path) == "fc_matrix"
+    assert _subject_id_from_path(artifact_path) == "sub-003"
 
 
 def test_registered_reloadable_fc_artifact_is_computed_and_checksum_bound(tmp_path):

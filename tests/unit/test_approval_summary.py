@@ -63,6 +63,8 @@ def _native_reviewed(tmp_path, *, subject_id: str) -> ReviewedPlanRecord:
                 "params": {
                     "subject_id": subject_id,
                     "input_bids_dir": str(tmp_path / "rawdata"),
+                    "cpu_policy": {"mode": "auto"},
+                    "compute_policy": {"backend": "auto", "allow_cpu_fallback": True},
                     "confirmations": {},
                     "stage_overrides": {"realignment": True},
                 },
@@ -107,6 +109,11 @@ def test_summary_binds_selected_subject_and_changes_hash_with_scope(tmp_path) ->
     assert first.sections[0].summary == (
         "Approve exactly 1 reviewed node(s) for subject sub-001."
     )
+    assert first.schema_version == 4
+    assert first.resource_policy == {
+        "cpu_policy": {"mode": "auto"},
+        "compute_policy": {"backend": "auto", "allow_cpu_fallback": True},
+    }
     assert first.summary_hash != changed.summary_hash
 
 

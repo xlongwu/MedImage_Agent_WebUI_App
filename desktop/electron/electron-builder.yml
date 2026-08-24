@@ -13,6 +13,8 @@ extraResources:
     to: frontend
   - from: ../packaging/dist/backend_payload
     to: backend
+  - from: ../packaging/dist/release_metadata/build-provenance.json
+    to: release/build-provenance.json
   - from: ../../examples
     to: workspace_seed/examples
 win:

@@ -26,6 +26,9 @@ from src.backend.app.runtime.desktop_config import (
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.funraw_t1raw_detector import detect_funraw_t1raw_layout
 from src.backend.app.services.mock_store import mock_store
+from src.backend.app.services.recovery_policy_service import (
+    default_project_recovery_policy,
+)
 from src.backend.app.tools.data_inspector import inspect_dataset
 from src.backend.app.tools.project_config_writer import write_project_config
 
@@ -503,6 +506,7 @@ def _dashboard_project_from_create_response(
             "project_config_path": response.project_config_path,
             "dataset_index_path": response.dataset_index_path,
             "diagnostics": diagnostics,
+            "recovery_policy": default_project_recovery_policy(),
             "created_at": created_at,
             "updated_at": now,
         },

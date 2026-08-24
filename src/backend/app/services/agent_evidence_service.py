@@ -78,6 +78,13 @@ class AgentEvidenceService:
                     summary="Project metadata subject count conflicts with the authoritative project record.",
                     source_refs=(project_ref,),
                 ))
+            diagnostics = metadata.get("diagnostics")
+            diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+            facts.extend((
+                EvidenceFact(key="bold_sidecar_count", value=int(diagnostics.get("bold_sidecar_count") or 0), source_refs=(project_ref,)),
+                EvidenceFact(key="registered_atlas_count", value=1 if isinstance((metadata.get("agent_defaults") or {}).get("default_atlas") if isinstance(metadata.get("agent_defaults"), dict) else None, dict) else 0, source_refs=(project_ref,)),
+                EvidenceFact(key="unfinished_run_count", value=int(diagnostics.get("unfinished_run_count") or 0), source_refs=(project_ref,)),
+            ))
 
         if "dataset" in requested:
             dataset = self.store.get_dataset_summary(project_id) if hasattr(self.store, "get_dataset_summary") else None
@@ -170,7 +177,7 @@ class AgentEvidenceService:
         if not requested:
             requested = tuple(item for item in snapshot.requested_types if item in cls.DEFAULT_TYPES)
         key_prefixes = {
-            "project": {"dataset_type", "subject_count"},
+            "project": {"dataset_type", "subject_count", "bold_sidecar_count", "registered_atlas_count", "unfinished_run_count"},
             "dataset": {"dataset_health", "dataset_subject_count"},
             "artifacts": {"registered_input_count"},
             "plans": {"reviewed_plan_count"},
@@ -243,7 +250,7 @@ class AgentEvidenceService:
         """Return a stable typed projection without changing the source snapshot."""
         requested = tuple(item for item in snapshot.requested_types if item in wanted)
         key_prefixes = {
-            "project": {"dataset_type", "subject_count"},
+            "project": {"dataset_type", "subject_count", "bold_sidecar_count", "registered_atlas_count", "unfinished_run_count"},
             "dataset": {"dataset_health", "dataset_subject_count"},
             "artifacts": {"registered_input_count"},
             "plans": {"reviewed_plan_count"},

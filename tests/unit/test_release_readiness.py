@@ -178,9 +178,10 @@ def test_import_diagnostics_tool_present(checks):
     assert checks[("backend_tools", "tool:run_dicom_preflight_cli.py")] == "PASS"
 
 
-def test_current_frontend_workspaces_are_present(checks):
-    assert checks[("frontend", "data conversion workspace")] == "PASS"
-    assert checks[("frontend", "preprocessing workspace")] == "PASS"
+def test_current_agent_first_workspaces_are_present(checks):
+    assert checks[("frontend", "agent workspace")] == "PASS"
+    assert checks[("frontend", "runs workspace")] == "PASS"
+    assert checks[("frontend", "settings workspace")] == "PASS"
 
 
 # ── Output files ──

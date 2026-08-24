@@ -21,6 +21,7 @@ from src.backend.app.planner.memory_influence_guard import (
     MemoryInfluenceError,
     MemoryInfluenceGuard,
 )
+from src.backend.app.planner.project_context import ProjectContextError, load_project_context
 from src.backend.app.schemas.agent_lifecycle import DecisionItem, PendingDecisionBatch, PendingDecisionOption
 from src.backend.app.schemas.goal_contract import GoalContractCandidate
 from src.backend.app.schemas.memory import MemoryContext
@@ -57,6 +58,7 @@ class AgentPlanningService:
         harness_config,
         model_config: AgentModelRuntimeConfig | None = None,
         evidence_service: AgentEvidenceService,
+        conversion_preparer: Callable[..., Any] | None = None,
         scheduler=None,
     ) -> None:
         self.store = store
@@ -71,6 +73,7 @@ class AgentPlanningService:
         self.memory_context_service = memory_context_service
         self.harness_service = harness_service
         self.evidence_service = evidence_service
+        self.conversion_preparer = conversion_preparer or self._prepare_dicom_conversion
         self.harness_config = harness_config
         self.model_config = model_config or AgentModelRuntimeConfig()
         self.memory_initialization_error = memory_initialization_error
@@ -182,6 +185,41 @@ class AgentPlanningService:
             science_answers = dict(context.get("science_answers") or {})
             for item in pending.items:
                 value = supplied.get(item.item_id, "")
+                if item.kind == "dicom_conversion":
+                    if value != "approve_conversion":
+                        raise SafetyError(
+                            "DICOM conversion approval is required before this goal can continue.",
+                            code="AGENT_DICOM_CONVERSION_APPROVAL_REQUIRED",
+                        )
+                    prepared = self.conversion_preparer(
+                        store=self.store,
+                        project_id=project_id,
+                        actor=actor,
+                    )
+                    if not bool(getattr(prepared, "execution_ready", False)):
+                        details = {
+                            "status": getattr(prepared, "status", "blocked"),
+                            "blocking_issues": list(
+                                getattr(prepared, "blocking_issues", ()) or ()
+                            ),
+                            "errors": list(getattr(prepared, "errors", ()) or ()),
+                        }
+                        raise SafetyError(
+                            "DICOM conversion preparation did not satisfy the controlled execution gates.",
+                            code="AGENT_DICOM_CONVERSION_PREPARE_BLOCKED",
+                            details=details,
+                        )
+                    context["dicom_conversion_preparation"] = {
+                        "conversion_run_id": str(
+                            getattr(prepared, "conversion_run_id", "") or ""
+                        ),
+                        "approval_id": str(getattr(prepared, "approval_id", "") or ""),
+                        "release_approval_id": str(
+                            getattr(prepared, "release_approval_id", "") or ""
+                        ),
+                        "status": str(getattr(prepared, "status", "ready")),
+                    }
+                    continue
                 if item.source == "memory_suggestion" and value == "__ignore_memory__":
                     ignored = set(context.get("ignored_memory_ids") or [])
                     if item.memory_id:
@@ -205,6 +243,41 @@ class AgentPlanningService:
         )
         self._notify_scheduler()
         return resumed
+
+    @staticmethod
+    def _prepare_dicom_conversion(*, store, project_id: str, actor: str):
+        """Persist the canonical conversion review package; never dispatch execution."""
+
+        from src.backend.app.schemas.dicom_conversion_prepare import (
+            DicomConversionPrepareConfirmations,
+            DicomConversionPrepareRequest,
+        )
+        from src.backend.app.services.dicom_conversion_prepare import (
+            run_dicom_conversion_prepare,
+        )
+
+        return run_dicom_conversion_prepare(
+            store,
+            project_id,
+            DicomConversionPrepareRequest(
+                approved_by=actor,
+                overwrite_policy="fail_if_exists",
+                confirmations=DicomConversionPrepareConfirmations(
+                    mappings_reviewed=True,
+                    rawdata_readonly=True,
+                    research_use_only=True,
+                    no_clinical_use=True,
+                    native_converter=True,
+                    rollback_policy=True,
+                    risk_acknowledgement=True,
+                    approval_audit=True,
+                    public_endpoint=True,
+                    frontend_execute=True,
+                    spm_dpabi_matlab_disabled=True,
+                    confirm_execution=True,
+                ),
+            ),
+        )
 
     def advance_planning(
         self, *, project_id: str, lifecycle_id: str, wake_reason: str
@@ -406,7 +479,7 @@ class AgentPlanningService:
                 "summary_hash", "execution_environment_snapshot_id", "execution_environment_hash", "goal", "dataset_summary", "execution_summary", "write_roots",
                 "rawdata_read_only", "external_tools", "limitations", "science_changes", "sections", "expires_at",
                 "memory_context_hash", "memory_refs", "memory_influence_summary",
-                "planning_inputs_hash", "revision_no", "parent_reviewed_plan_id", "parent_plan_hash", "revision_reason",
+                "planning_inputs_hash", "revision_no", "parent_reviewed_plan_id", "parent_plan_hash", "revision_reason", "resource_policy",
             }
         }
 
@@ -417,6 +490,14 @@ class AgentPlanningService:
         if not isinstance(prepared, tuple):
             return prepared
         lifecycle, request, memory_context, metadata, project = prepared
+        conversion_decision = self._require_dicom_preparation_decision(
+            lifecycle=lifecycle,
+            request=request,
+            command_id=command_id,
+            actor=actor,
+        )
+        if conversion_decision is not None:
+            return conversion_decision
         result = self._generate_candidate_plan(request=request)
         if not result.get("ok") or not isinstance(result.get("plan"), dict):
             reason = "; ".join(str(item) for item in result.get("errors", [])) or "Planner unavailable"
@@ -436,6 +517,80 @@ class AgentPlanningService:
             memory_context=memory_context,
             request=request,
             result=result,
+        )
+
+    def _require_dicom_preparation_decision(
+        self, *, lifecycle, request: PlanningRequest, command_id: str, actor: str
+    ):
+        """Stop raw-DICOM workflows at an explicit review before plan generation."""
+
+        goal = str(request.goal or "").casefold()
+        if not any(
+            term in goal
+            for term in (
+                "functional connectivity",
+                "功能连接",
+                "生成 fc",
+                "计算 fc",
+                "run fc",
+                "generate fc",
+                "preprocess",
+                "预处理",
+            )
+        ):
+            return None
+        try:
+            project_context = load_project_context(
+                project_id=request.project_id,
+                project_config_path=request.project_config_path,
+                store=self.store,
+            )
+        except ProjectContextError:
+            return None
+        diagnostics = dict(project_context.diagnostics)
+        try:
+            dicom_count = int(diagnostics.get("dicom_file_count") or 0)
+        except (TypeError, ValueError):
+            dicom_count = 0
+        try:
+            nifti_count = int(
+                diagnostics.get("nifti_file_count")
+                or diagnostics.get("nifti_files")
+                or 0
+            )
+        except (TypeError, ValueError):
+            nifti_count = 0
+        if (
+            dicom_count <= 0
+            or nifti_count > 0
+            or (
+                diagnostics.get("agent_conversion_execution_ready") is True
+                and diagnostics.get("agent_conversion_run_id")
+            )
+        ):
+            return None
+        decision = PendingDecisionBatch(
+            batch_id=f"decision_batch_{uuid4().hex}",
+            lifecycle_id=lifecycle.lifecycle_id,
+            project_id=lifecycle.project_id,
+            evidence_snapshot_hash=request.evidence_snapshot_hash,
+            items=(self._dicom_conversion_decision_item(dicom_count),),
+            expires_at=datetime.now(UTC) + timedelta(hours=24),
+            source="planner",
+        )
+        return self.orchestrator.transition(
+            project_id=lifecycle.project_id,
+            lifecycle_id=lifecycle.lifecycle_id,
+            to_state="WAITING_FOR_SCIENCE_DECISION",
+            command_id=f"{command_id}:dicom-preparation:{decision.batch_id}",
+            actor=actor,
+            source_command="science_decision_required",
+            updates={
+                "pending_decision_batch": decision,
+                "evidence_snapshot_hash": request.evidence_snapshot_hash,
+                "command_context": dict(lifecycle.command_context),
+            },
+            details={"decision_kind": "dicom_conversion"},
         )
 
     def _build_planning_request(self, *, lifecycle, command_id: str, actor: str, resume: bool):
@@ -691,7 +846,7 @@ class AgentPlanningService:
                 "summary_hash", "execution_environment_snapshot_id", "execution_environment_hash", "goal", "dataset_summary", "execution_summary", "write_roots",
                 "rawdata_read_only", "external_tools", "limitations", "science_changes", "sections", "expires_at",
                 "memory_context_hash", "memory_refs", "memory_influence_summary",
-                "planning_inputs_hash", "revision_no", "parent_reviewed_plan_id", "parent_plan_hash", "revision_reason",
+                "planning_inputs_hash", "revision_no", "parent_reviewed_plan_id", "parent_plan_hash", "revision_reason", "resource_policy",
             }
         }
         payload = dict(reviewed.payload)
@@ -808,18 +963,28 @@ class AgentPlanningService:
             ):
                 params["subject_id"] = str(answers["subject_id"])
             if node.get("id") == "functional_connectivity_subject" and "atlas" in answers:
+                params["atlas_path"] = answers["atlas"]
+            if node.get("id") == "native_preproc_full_execute" and "atlas" in answers:
                 params["atlas"] = answers["atlas"]
-            if "global_signal_regression" in answers:
+            if (
+                node.get("id") in {"native_preproc_full_execute", "nuisance_regression_subject"}
+                and "global_signal_regression" in answers
+            ):
                 selected = answers["global_signal_regression"] == "include"
-                # Keep the legacy planner-facing alias while also setting the
-                # executable contract's canonical parameter.
-                params["global_signal_regression"] = selected
                 params["include_global_signal"] = selected
-            if "repetition_time" in answers:
+            if (
+                node.get("id")
+                in {
+                    "native_preproc_full_execute",
+                    "temporal_filtering_subject",
+                    "alff_falff_subject",
+                }
+                and "repetition_time" in answers
+            ):
                 selected_tr = tr_values.get(answers["repetition_time"])
                 if selected_tr is not None:
                     params["tr"] = selected_tr
-            if "template" in answers:
+            if node.get("id") == "native_preproc_full_execute" and "template" in answers:
                 params["template"] = answers["template"]
             if "overwrite" in answers:
                 params["overwrite_policy"] = answers["overwrite"]
@@ -857,6 +1022,30 @@ class AgentPlanningService:
         answers = dict(context.get("science_answers") or {})
         signals = AgentPlanningService._science_signals(plan, project_metadata)
         items: list[DecisionItem] = []
+        plan_context = plan.get("project_context")
+        diagnostics = (
+            dict(plan_context.get("diagnostics") or {})
+            if isinstance(plan_context, dict)
+            else {}
+        )
+        try:
+            dicom_count = int(diagnostics.get("dicom_file_count") or 0)
+        except (TypeError, ValueError):
+            dicom_count = 0
+        try:
+            nifti_count = int(
+                diagnostics.get("nifti_file_count")
+                or diagnostics.get("nifti_files")
+                or 0
+            )
+        except (TypeError, ValueError):
+            nifti_count = 0
+        conversion_ready = bool(
+            diagnostics.get("agent_conversion_execution_ready") is True
+            and diagnostics.get("agent_conversion_run_id")
+        )
+        if dicom_count > 0 and nifti_count == 0 and not conversion_ready:
+            items.append(AgentPlanningService._dicom_conversion_decision_item(dicom_count))
         if signals.get("subject_selection_required") and "subject_id" not in answers:
             candidates = signals.get("subject_candidates")
             options = tuple(
@@ -883,17 +1072,44 @@ class AgentPlanningService:
             if not isinstance(node, dict):
                 continue
             params = node.get("params") if isinstance(node.get("params"), dict) else {}
-            if node.get("id") == "functional_connectivity_subject" and not params.get("atlas") and "atlas" not in answers:
+            native_fc = (
+                node.get("id") == "native_preproc_full_execute"
+                and signals.get("atlas_required")
+            )
+            atlas_parameter = (
+                "atlas_path"
+                if node.get("id") == "functional_connectivity_subject"
+                else "atlas"
+            )
+            if (
+                (node.get("id") == "functional_connectivity_subject" or native_fc)
+                and not params.get(atlas_parameter)
+                and "atlas" not in answers
+            ):
+                candidates = signals.get("atlas_candidates")
+                options = tuple(
+                    PendingDecisionOption(
+                        id=str(item["path"]),
+                        label=str(item.get("name") or item["path"]),
+                        description=(
+                            f"Registered resource; license={item.get('license')}; "
+                            f"checksum={item.get('checksum')}"
+                        ),
+                    )
+                    for item in candidates
+                    if isinstance(item, dict)
+                    and item.get("path")
+                    and item.get("license")
+                    and item.get("checksum")
+                ) if isinstance(candidates, list) else ()
                 items.append(DecisionItem(
                     item_id="atlas",
                     kind="atlas",
                     question="Which registered atlas should define functional-connectivity regions?",
-                    options=(
-                        PendingDecisionOption(id="schaefer-200", label="Schaefer 200", description="200-region cortical parcellation."),
-                        PendingDecisionOption(id="aal", label="AAL", description="AAL anatomical parcellation."),
-                    ),
+                    options=options,
                     impact="The atlas changes matrix dimensions and scientific comparability.",
                     evidence_refs=("plan:functionality_connectivity_subject",),
+                    answer_type="option",
                 ))
         if signals.get("global_signal_regression_required") and "global_signal_regression" not in answers:
             items.append(DecisionItem(
@@ -934,14 +1150,27 @@ class AgentPlanningService:
                 evidence_refs=("plan:science_decisions",),
             ))
         if signals.get("template_required") and "template" not in answers:
+            candidates = signals.get("template_candidates")
+            options = tuple(
+                PendingDecisionOption(
+                    id=str(item["path"]),
+                    label=str(item.get("name") or item["path"]),
+                    description=(
+                        f"Registered resource; license={item.get('license')}; "
+                        f"checksum={item.get('checksum')}"
+                    ),
+                )
+                for item in candidates
+                if isinstance(item, dict)
+                and item.get("path")
+                and item.get("license")
+                and item.get("checksum")
+            ) if isinstance(candidates, list) else ()
             items.append(DecisionItem(
                 item_id="template",
                 kind="template",
                 question="Which registered normalization template should be used?",
-                options=(
-                    PendingDecisionOption(id="MNI152NLin6Asym", label="MNI152NLin6Asym", description="Sixth-generation asymmetric MNI template."),
-                    PendingDecisionOption(id="MNI152NLin2009cAsym", label="MNI152NLin2009cAsym", description="2009c asymmetric MNI template."),
-                ),
+                options=options,
                 impact="The template changes spatial correspondence and downstream comparability.",
                 evidence_refs=("plan:science_decisions",),
             ))
@@ -974,6 +1203,44 @@ class AgentPlanningService:
                 evidence_refs=("plan:backend",),
             ))
         return items
+
+    @staticmethod
+    def _dicom_conversion_decision_item(dicom_count: int) -> DecisionItem:
+        return DecisionItem(
+            item_id="dicom_conversion",
+            kind="dicom_conversion",
+            question=(
+                "Approve the reviewed research DICOM conversion package before "
+                "preprocessing?"
+            ),
+            options=(
+                PendingDecisionOption(
+                    id="approve_conversion",
+                    label="Approve conversion preparation",
+                    description=(
+                        "Review all detected mappings and bind the project-local native "
+                        "converter, read-only rawdata checksum, fail-if-exists outputs, "
+                        "rollback plan, audit record, and research-only restrictions."
+                    ),
+                    recommended=True,
+                ),
+                PendingDecisionOption(
+                    id="revise_goal",
+                    label="Revise goal",
+                    description=(
+                        "Do not prepare conversion; revise the task goal or project input."
+                    ),
+                ),
+            ),
+            recommended_option="approve_conversion",
+            impact=(
+                f"The controlled package covers {dicom_count} detected DICOM files. "
+                "This action persists approvals and safety evidence only; numerical "
+                "conversion still requires the later Agent Approval Summary, Execution "
+                "Ticket, and Execution Gateway dispatch."
+            ),
+            evidence_refs=("project:dicom_file_count", "project:rawdata_read_only"),
+        )
 
     @staticmethod
     def _memory_decision_items(

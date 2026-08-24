@@ -28,9 +28,22 @@ export type AgentTaskProgressPhase =
   | "recovery"
   | "complete";
 
+export type AgentTaskCurrentActionCode =
+  | "preparing_context"
+  | "preparing_plan"
+  | "waiting_input"
+  | "waiting_science_decision"
+  | "waiting_approval"
+  | "executing"
+  | "validating"
+  | "recovery"
+  | "completed"
+  | "attention";
+
 export type AgentTaskDecisionKind =
   | "missing_input"
   | "goal_revision"
+  | "dicom_conversion"
   | "subject_id"
   | "atlas"
   | "global_signal_regression"
@@ -151,6 +164,7 @@ export type AgentTaskApprovalSummary = {
   external_tools: string[];
   limitations: string[];
   science_changes: string[];
+  resource_policy?: Record<string, unknown>;
   memory_context_hash?: string | null;
   memory_refs?: Record<string, unknown>[];
   memory_influence_summary?: string[];
@@ -185,6 +199,9 @@ export type AgentTaskResultSummary = {
   limitations: string[];
   recommended_action: string | null;
   artifacts: AgentTaskArtifactSummary[];
+  report_artifact_id?: string | null;
+  report_export_uri?: string | null;
+  export_disabled_reason?: string | null;
 };
 
 export type AgentResultCriterion = {
@@ -355,6 +372,7 @@ export type AgentTaskResponse = {
   outcome: AgentTaskOutcome | null;
   goal_summary: string;
   current_action: string;
+  current_action_code: AgentTaskCurrentActionCode;
   next_action: AgentTaskNextAction;
   automation: AgentTaskAutomation;
   progress: AgentTaskProgress;

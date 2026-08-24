@@ -7,6 +7,7 @@ import type { LocalePreference, ThemePreference } from "../../hooks/useAppState"
 import { useI18n } from "../../i18n/useI18n";
 import styles from "./SettingsEnvironmentWorkspace.module.css";
 import layoutStyles from "./WorkspaceLayout.module.css";
+import { AgentDefaultsPanel } from "../agent/components/AgentDefaultsPanel";
 
 type Translate = ReturnType<typeof useI18n>["t"];
 
@@ -50,6 +51,7 @@ export function SettingsEnvironmentWorkspace({
       <div className="planning-note">{t("settings.planningNote")}</div>
 
       <MemorySettingsPanel baseUrl={baseUrl} projectId={projectId} />
+      {projectId ? <AgentDefaultsPanel baseUrl={baseUrl} projectId={projectId} /> : null}
 
       <nav className={styles.domainNav} aria-label={t("settings.domains")}>
         {settingsDomains.map((item) => (

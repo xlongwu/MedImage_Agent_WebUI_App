@@ -58,6 +58,7 @@ class DecisionItem(BaseModel):
     kind: Literal[
         "missing_input",
         "goal_revision",
+        "dicom_conversion",
         "subject_id",
         "atlas",
         "global_signal_regression",
@@ -196,6 +197,8 @@ class LifecycleCommand(BaseModel):
     actor: str
     reason: str | None = None
     reviewed_plan_id: str | None = None
+    goal_contract_id: str | None = None
+    goal_contract_hash: str | None = None
     execution_ticket_id: str | None = None
     audit_id: str | None = None
     run_id: str | None = None

@@ -182,13 +182,18 @@ def build_release_readiness():
         )
         chk(
             "frontend",
-            "data conversion workspace",
-            Path("src/frontend/src/features/workspaces/DataConversionWorkspace.tsx").is_file(),
+            "agent workspace",
+            Path("src/frontend/src/features/agent/AgentWorkspace.tsx").is_file(),
         )
         chk(
             "frontend",
-            "preprocessing workspace",
-            Path("src/frontend/src/features/workspaces/PreprocessingWorkspace.tsx").is_file(),
+            "runs workspace",
+            Path("src/frontend/src/features/workspaces/RunsWorkspace.tsx").is_file(),
+        )
+        chk(
+            "frontend",
+            "settings workspace",
+            Path("src/frontend/src/features/workspaces/SettingsEnvironmentWorkspace.tsx").is_file(),
         )
         chk("frontend", "electron shell", Path("src/frontend/electron/main.cjs").is_file())
 

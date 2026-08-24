@@ -13,7 +13,7 @@ export interface ProjectDeleteResponse {
 }
 
 export function getProjects(): Promise<ProjectSummary[]> {
-  return getJson<ProjectSummary[]>("/api/projects");
+  return getJson<ProjectSummary[]>("/api/agent/projects");
 }
 
 export function getProject(projectId: string): Promise<ProjectDetail> {

@@ -15,6 +15,8 @@ SPEC.loader.exec_module(probe)
 
 
 class ExitedBootloader:
+    pid = 7000
+
     def poll(self) -> int:
         return 0
 
@@ -31,6 +33,7 @@ def test_cleanup_stops_verified_listener_after_bootloader_exits(monkeypatch, tmp
     backend.touch()
     waits = iter([False, True])
     calls: list[list[str]] = []
+    terminated: list[int] = []
 
     monkeypatch.setattr(probe, "_wait_for_port_closed", lambda _port: next(waits))
     monkeypatch.setattr(
@@ -38,11 +41,13 @@ def test_cleanup_stops_verified_listener_after_bootloader_exits(monkeypatch, tmp
         "_windows_listener_owner",
         lambda _port: (8123, backend),
     )
+    monkeypatch.setattr(probe, "_windows_process_image", lambda _pid: backend)
     monkeypatch.setattr(
         probe.subprocess,
         "run",
         lambda argv, **_kwargs: calls.append(argv),
     )
+    monkeypatch.setattr(probe, "_terminate_verified_windows_pid", terminated.append)
 
     probe._stop_backend_process_tree(
         ExitedBootloader(),
@@ -50,7 +55,11 @@ def test_cleanup_stops_verified_listener_after_bootloader_exits(monkeypatch, tmp
         backend=backend,
     )
 
-    assert calls == [["taskkill", "/pid", "8123", "/t", "/f"]]
+    assert calls == [
+        ["taskkill", "/pid", "8123", "/t", "/f"],
+        ["taskkill", "/pid", "8123", "/t", "/f"],
+    ]
+    assert terminated == [8123]
 
 
 @pytest.mark.skipif(probe.os.name != "nt", reason="Windows process cleanup contract")
@@ -60,6 +69,7 @@ def test_cleanup_refuses_listener_owned_by_another_executable(monkeypatch, tmp_p
     backend.touch()
     other.touch()
     calls: list[list[str]] = []
+    terminated: list[int] = []
 
     monkeypatch.setattr(probe, "_wait_for_port_closed", lambda _port: False)
     monkeypatch.setattr(
@@ -72,6 +82,7 @@ def test_cleanup_refuses_listener_owned_by_another_executable(monkeypatch, tmp_p
         "run",
         lambda argv, **_kwargs: calls.append(argv),
     )
+    monkeypatch.setattr(probe, "_terminate_verified_windows_pid", terminated.append)
 
     with pytest.raises(RuntimeError, match="did not match the built backend"):
         probe._stop_backend_process_tree(
@@ -81,3 +92,37 @@ def test_cleanup_refuses_listener_owned_by_another_executable(monkeypatch, tmp_p
         )
 
     assert calls == []
+    assert terminated == []
+
+
+@pytest.mark.skipif(probe.os.name != "nt", reason="Windows process cleanup contract")
+def test_cleanup_accepts_port_close_race_after_verified_owner_exit(monkeypatch, tmp_path):
+    backend = (tmp_path / "medimage-backend.exe").resolve()
+    backend.touch()
+    owners = iter([(8123, backend), None])
+    waits = iter([False, True])
+    calls: list[list[str]] = []
+    terminated: list[int] = []
+
+    monkeypatch.setattr(probe, "_windows_listener_owner", lambda _port: next(owners))
+    monkeypatch.setattr(probe, "_windows_process_image", lambda _pid: backend)
+    monkeypatch.setattr(
+        probe,
+        "_wait_for_port_closed",
+        lambda _port, **_kwargs: next(waits),
+    )
+    monkeypatch.setattr(
+        probe.subprocess,
+        "run",
+        lambda argv, **_kwargs: calls.append(argv),
+    )
+    monkeypatch.setattr(probe, "_terminate_verified_windows_pid", terminated.append)
+
+    probe._stop_backend_process_tree(
+        ExitedBootloader(),
+        port=54321,
+        backend=backend,
+    )
+
+    assert calls == [["taskkill", "/pid", "8123", "/t", "/f"]]
+    assert terminated == [8123]

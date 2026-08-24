@@ -47,6 +47,35 @@ def test_python_fc_outputs_matrices(tmp_path: Path):
     assert (fcd / "functional_connectivity_provenance.json").exists()
 
 
+def test_python_fc_reads_subject_derivative_from_an_approved_input_root(tmp_path: Path):
+    input_derivatives = tmp_path / "parent-derivatives"
+    output_derivatives = tmp_path / "recovery-derivatives"
+    sid = "sub-003"
+    input_dir = input_derivatives / "rsfmri_preproc" / sid / "func"
+    input_dir.mkdir(parents=True)
+    input_path = input_dir / "filt_smoke_sub-003_bold.nii.gz"
+    data = np.zeros((4, 4, 4, 8), dtype=np.float32)
+    nib.save(nib.Nifti1Image(data, affine=np.eye(4)), str(input_path))
+    atlas_path = input_derivatives / "atlases" / "recovery-atlas.nii.gz"
+    atlas_path.parent.mkdir(parents=True)
+    nib.save(
+        nib.Nifti1Image(np.ones((4, 4, 4), dtype=np.int16), affine=np.eye(4)),
+        str(atlas_path),
+    )
+
+    result = run_python_functional_connectivity_subject(
+        subject_id=sid,
+        derivatives_dir=str(output_derivatives),
+        input_nii=str(input_path),
+        atlas_path=str(atlas_path),
+        allowed_input_roots=(str(input_derivatives),),
+    )
+
+    assert result["ok"] is True, result["errors"]
+    assert result["atlas_grounded"] is True
+    assert Path(result["correlation_matrix_npy"]).is_relative_to(output_derivatives)
+
+
 def test_python_fc_with_real_atlas_outputs_reloadable_grounded_artifacts(tmp_path: Path):
     d = tmp_path / "derivatives"
     sid = "sub-001"

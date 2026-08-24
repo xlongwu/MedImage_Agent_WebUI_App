@@ -5,7 +5,7 @@ import { useI18n } from "../../i18n/useI18n";
 import type { ProjectSummary } from "../../lib/types/project";
 import styles from "./ProjectsPage.module.css";
 
-type ProjectFilter = "all" | "needs_setup" | "pipeline" | "rsfmri" | "mri";
+type ProjectFilter = "all" | "attention" | "active" | "completed" | "rsfmri" | "mri";
 type ProjectSort = "recent" | "name" | "subjects";
 
 export interface ProjectsPageProps {
@@ -38,8 +38,9 @@ export function ProjectsPage({
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const filters: Array<{ id: ProjectFilter; label: string }> = [
     { id: "all", label: t("projects.all") },
-    { id: "needs_setup", label: t("projects.needsSetup") },
-    { id: "pipeline", label: t("projects.pipelineSet") },
+    { id: "attention", label: t("projects.agentAttention") },
+    { id: "active", label: t("projects.agentActive") },
+    { id: "completed", label: t("projects.agentCompleted") },
     { id: "rsfmri", label: "rs-fMRI" },
     { id: "mri", label: "MRI" },
   ];
@@ -48,20 +49,23 @@ export function ProjectsPage({
     const needle = query.trim().toLowerCase();
     return projects
       .filter((project) => {
-        const hasPipeline = hasReviewedPipelineReference(project);
+        const task = project.latest_agent_task;
         const haystack = [
           project.name,
           project.study_id,
           project.modality,
-          project.current_pipeline_id,
+          task?.goal_summary,
+          task?.current_action,
         ]
           .join(" ")
           .toLowerCase();
         return (
           (!needle || haystack.includes(needle)) &&
           (activeFilter === "all" ||
-            (activeFilter === "needs_setup" && !hasPipeline) ||
-            (activeFilter === "pipeline" && hasPipeline) ||
+            (activeFilter === "attention" && task?.requires_user === true) ||
+            (activeFilter === "active" &&
+              (task?.state === "preparing" || task?.state === "running")) ||
+            (activeFilter === "completed" && task?.state === "completed") ||
             (activeFilter === "rsfmri" && project.modality.toLowerCase().includes("rs-fmri")) ||
             (activeFilter === "mri" && project.modality.toLowerCase().includes("mri")))
         );
@@ -180,7 +184,7 @@ export function ProjectsPage({
             <span />
           </div>
           {filteredProjects.map((project) => {
-            const hasPipeline = hasReviewedPipelineReference(project);
+            const task = project.latest_agent_task;
             return (
               <article
                 className={styles.row}
@@ -204,11 +208,18 @@ export function ProjectsPage({
                     <Badge tone="neutral">{project.modality || t("common.unavailable")}</Badge>
                     <small>{t("projects.subjectCount", { count: project.subjects_count })}</small>
                   </span>
-                  <span className={styles.state} data-state={hasPipeline ? "ready" : "setup"}>
-                    <i aria-hidden="true" />
-                    {hasPipeline ? t("projects.pipelineSet") : t("projects.needsSetup")}
+                  <span className={styles.taskStatus} title={task?.goal_summary}>
+                    <span className={styles.state} data-state={task?.state ?? "not-started"}>
+                      <i aria-hidden="true" />
+                      {task
+                        ? t(`agent.currentAction.${task.current_action_code}`)
+                        : t("projects.agentNotStarted")}
+                    </span>
+                    {task?.result_title ? <small>{task.result_title}</small> : null}
                   </span>
-                  <time>{project.created_date || t("common.unavailable")}</time>
+                  <time>
+                    {task?.updated_at ?? (project.created_date || t("common.unavailable"))}
+                  </time>
                 </button>
                 <div className={styles.rowActions}>
                   <Button
@@ -264,9 +275,4 @@ export function ProjectsPage({
       />
     </section>
   );
-}
-
-function hasReviewedPipelineReference(project: ProjectSummary): boolean {
-  const value = project.current_pipeline_id?.trim().toLowerCase();
-  return Boolean(value && value !== "none" && value !== "not-selected");
 }

@@ -330,9 +330,24 @@ def test_lifecycle_api_is_project_scoped_and_queryable(tmp_path):
         )
         assert advanced.status_code == 200
         assert advanced.json()["lifecycle"]["state"] == "CONTEXT_READY"
+        drafted = client.post(
+            f"/api/projects/project-1/agent-lifecycles/{lifecycle_id}/commands",
+            json={
+                "command_id": "api-draft",
+                "action": "plan_drafted",
+                "actor": "user",
+                "reviewed_plan_id": "reviewed-1",
+                "goal_contract_id": "goal-1",
+                "goal_contract_hash": "goal-hash-1",
+            },
+        )
+        assert drafted.status_code == 200
+        assert drafted.json()["lifecycle"]["state"] == "PLAN_DRAFTED"
+        assert drafted.json()["lifecycle"]["goal_contract_id"] == "goal-1"
+        assert drafted.json()["lifecycle"]["goal_contract_hash"] == "goal-hash-1"
         queried = client.get(f"/api/projects/project-1/agent-lifecycles/{lifecycle_id}")
         assert queried.status_code == 200
-        assert len(queried.json()["events"]) == 2
+        assert len(queried.json()["events"]) == 3
         assert (
             client.get(f"/api/projects/project-2/agent-lifecycles/{lifecycle_id}").status_code
             == 404

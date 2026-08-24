@@ -84,18 +84,6 @@ export function NextActionCard({
                 : t("agent.safetyUnavailable")}
             </strong>
           </div>
-          {task.technical_details?.backend?.selected ? (
-            <div>
-              <span>{t("agent.approvalBackend")}</span>
-              <strong>{task.technical_details.backend.selected}</strong>
-            </div>
-          ) : null}
-          {task.technical_details?.node_ids.length ? (
-            <div>
-              <span>{t("agent.approvalNodes")}</span>
-              <strong>{task.technical_details.node_ids.join(" · ")}</strong>
-            </div>
-          ) : null}
           {task.approval_summary.revision_no ? (
             <div>
               <span>{t("agent.approvalPlanRevision")}</span>
@@ -144,6 +132,7 @@ export function NextActionCard({
           ) : null}
           {showPrimary ? (
             <Button
+              data-agent-action={isApproval ? "reopen_approve_execution" : undefined}
               data-primary-action="true"
               disabled={mutating || Boolean(task.next_action.disabled_reason)}
               onClick={isApproval ? onReopenAttention : onOpenRuns}

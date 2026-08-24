@@ -169,16 +169,6 @@ function getSuggestedPrompts(
       { kind: kinds.summary, text: t("assistant.prompt.agentSummary") },
       { kind: kinds.draft, text: t("assistant.prompt.agentDraft") },
     ],
-    qc: [
-      { kind: kinds.explanation, text: t("assistant.prompt.qcExplain") },
-      { kind: kinds.summary, text: t("assistant.prompt.qcSummary") },
-      { kind: kinds.draft, text: t("assistant.prompt.qcDraft") },
-    ],
-    results: [
-      { kind: kinds.explanation, text: t("assistant.prompt.resultsExplain") },
-      { kind: kinds.summary, text: t("assistant.prompt.resultsSummary") },
-      { kind: kinds.draft, text: t("assistant.prompt.resultsDraft") },
-    ],
     settings: [
       { kind: kinds.explanation, text: t("assistant.prompt.settingsExplain") },
       { kind: kinds.summary, text: t("assistant.prompt.settingsSummary") },
@@ -189,18 +179,9 @@ function getSuggestedPrompts(
       { kind: kinds.summary, text: t("assistant.prompt.runsSummary") },
       { kind: kinds.draft, text: t("assistant.prompt.runsDraft") },
     ],
-    plan: [
-      { kind: kinds.explanation, text: t("assistant.prompt.planExplain") },
-      { kind: kinds.summary, text: t("assistant.prompt.planSummary") },
-      { kind: kinds.draft, text: t("assistant.prompt.planDraft") },
-    ],
   };
 
   if (activePageLabel === t("nav.agent") || activePageLabel === "Agent") return promptSets.agent;
-  if (activePageLabel === t("nav.qc") || activePageLabel === "QC") return promptSets.qc;
-  if (activePageLabel === t("nav.results") || activePageLabel === "Results") {
-    return promptSets.results;
-  }
   if (
     activePageLabel === t("nav.settings") ||
     activePageLabel === "Settings / Environment" ||
@@ -209,6 +190,5 @@ function getSuggestedPrompts(
     return promptSets.settings;
   }
   if (activePageLabel === t("nav.runs") || activePageLabel === "Runs") return promptSets.runs;
-  if (activePageLabel === t("nav.plan") || activePageLabel === "Plan") return promptSets.plan;
   return promptSets.default;
 }

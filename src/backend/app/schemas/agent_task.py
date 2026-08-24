@@ -52,6 +52,11 @@ AgentTaskProgressPhase = Literal[
     "recovery",
     "complete",
 ]
+AgentTaskCurrentActionCode = Literal[
+    "preparing_context", "preparing_plan", "waiting_input",
+    "waiting_science_decision", "waiting_approval", "executing",
+    "validating", "recovery", "completed", "attention",
+]
 AgentTaskEvidenceType = Literal[
     "task_details",
     "reviewed_plan",
@@ -127,6 +132,7 @@ class AgentTaskDecision(BaseModel):
     kind: Literal[
         "missing_input",
         "goal_revision",
+        "dicom_conversion",
         "subject_id",
         "atlas",
         "global_signal_regression",
@@ -183,6 +189,7 @@ class AgentTaskApprovalSummary(BaseModel):
     external_tools: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
     science_changes: tuple[str, ...] = ()
+    resource_policy: dict[str, object] = Field(default_factory=dict)
     memory_context_hash: str | None = None
     memory_refs: tuple[dict[str, object], ...] = ()
     memory_influence_summary: tuple[str, ...] = ()
@@ -221,6 +228,9 @@ class AgentTaskResultSummary(BaseModel):
     limitations: tuple[str, ...] = ()
     recommended_action: str | None = None
     artifacts: tuple[AgentTaskArtifactSummary, ...] = ()
+    report_artifact_id: str | None = None
+    report_export_uri: str | None = None
+    export_disabled_reason: str | None = None
 
 
 class AgentResultCriterion(BaseModel):
@@ -325,6 +335,7 @@ class AgentTaskResponse(BaseModel):
     outcome: AgentTaskOutcome | None = None
     goal_summary: str
     current_action: str
+    current_action_code: AgentTaskCurrentActionCode
     next_action: AgentTaskNextAction
     automation: AgentTaskAutomation
     progress: AgentTaskProgress

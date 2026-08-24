@@ -75,6 +75,19 @@ def _windows_process_image(pid: int) -> Path | None:
         ctypes.windll.kernel32.CloseHandle(handle)
 
 
+def _terminate_verified_windows_pid(pid: int) -> None:
+    if os.name != "nt":
+        return
+    process_terminate = 0x0001
+    handle = ctypes.windll.kernel32.OpenProcess(process_terminate, False, pid)
+    if not handle:
+        return
+    try:
+        ctypes.windll.kernel32.TerminateProcess(handle, 1)
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+
 def _windows_listener_owner(port: int) -> tuple[int, Path | None] | None:
     if os.name != "nt":
         return None
@@ -132,6 +145,19 @@ def _stop_backend_process_tree(
     backend: Path,
 ) -> None:
     """Stop the PyInstaller bootloader and its extracted backend child."""
+    listener_pid: int | None = None
+    if os.name == "nt":
+        owner = _windows_listener_owner(port)
+        if owner is not None:
+            candidate_pid, listener_image = owner
+            expected_image = backend.resolve()
+            if listener_image is None or listener_image != expected_image:
+                actual = str(listener_image) if listener_image else "unavailable"
+                raise RuntimeError(
+                    "Probe port owner did not match the built backend before cleanup "
+                    f"(pid={candidate_pid}, image={actual})"
+                )
+            listener_pid = candidate_pid
     if os.name == "nt" and proc.poll() is None:
         subprocess.run(
             ["taskkill", "/pid", str(proc.pid), "/t", "/f"],
@@ -140,6 +166,16 @@ def _stop_backend_process_tree(
             stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+    if os.name == "nt" and listener_pid is not None and listener_pid != proc.pid:
+        subprocess.run(
+            ["taskkill", "/pid", str(listener_pid), "/t", "/f"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if _windows_process_image(listener_pid) == backend.resolve():
+            _terminate_verified_windows_pid(listener_pid)
     if proc.poll() is None:
         proc.kill()
     try:
@@ -152,6 +188,8 @@ def _stop_backend_process_tree(
 
     if os.name == "nt":
         owner = _windows_listener_owner(port)
+        if owner is None and _wait_for_port_closed(port, timeout=1.0):
+            return
         if owner is not None:
             listener_pid, listener_image = owner
             expected_image = backend.resolve()

@@ -141,6 +141,12 @@ class AgentApprovalExecutionService:
             actor=actor, lifecycle_id=lifecycle_id, command_id=command_id,
         ))
         if not result.get("ok"):
+            current = self.orchestrator.get(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+            )
+            if current.state == "RECOVERY_PROPOSED":
+                return current
             details = {"blocked_status": str(result.get("status") or "UNKNOWN")}
             if result.get("recovery") is not None:
                 details["recovery"] = result["recovery"]

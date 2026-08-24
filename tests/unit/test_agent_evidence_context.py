@@ -43,6 +43,7 @@ def test_context_evidence_is_purpose_scoped_and_registered(tmp_path) -> None:
     assert {fact.key for fact in selected.facts} <= {
         "dataset_type", "subject_count", "dataset_health", "dataset_subject_count",
         "registered_input_count", "reviewed_plan_count", "planner_provider", "memory_suggestion_count",
+        "unfinished_run_count", "registered_atlas_count", "bold_sidecar_count",
     }
     assert all(reference.source_hash for reference in selected.source_refs)
 

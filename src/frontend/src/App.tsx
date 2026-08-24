@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useDatasetSummary } from "./hooks/useDatasetSummary";
 import { useModelStatus } from "./hooks/useModelStatus";
@@ -242,14 +242,11 @@ export default function App() {
         navigation={navigation}
         project={{ ...project, data: effectiveProject }}
         projectInventory={projectInventory}
-        bidsValidation={bidsValidation}
         projectController={projectController}
-        taskController={taskController}
         taskStream={taskStream}
         app={app}
         agentTaskController={agentTaskController}
         appState={appState}
-        image={image}
         assistant={{
           input: assistantInput,
           setInput: setAssistantInput,
@@ -270,9 +267,6 @@ export default function App() {
         selectedRunId={selectedRunId}
         setSelectedRunId={setSelectedRunId}
         selectionContext={selectionContext}
-        onSelectedArtifactChange={setSelectedArtifact}
-        onSelectedDataSeriesChange={setSelectedDataSeries}
-        onSelectedPlanNodeChange={setSelectedPlanNode}
       />
     </I18nProvider>
   );

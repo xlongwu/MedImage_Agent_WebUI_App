@@ -109,6 +109,22 @@ class ApprovalSummaryService:
         acpc_limitations = (
             "AC/PC coordinates are template-back-projected estimates, not manually detected anatomical landmarks; independent manual-reference validation is pending.",
         ) if acpc_node else ()
+        native_node = next(
+            (
+                node for node in plan.get("nodes", [])
+                if isinstance(node, dict) and node.get("id") == "native_preproc_full_execute"
+            ),
+            None,
+        )
+        native_params = (
+            native_node.get("params", {})
+            if isinstance(native_node, dict) and isinstance(native_node.get("params"), dict)
+            else {}
+        )
+        resource_policy = {
+            "cpu_policy": dict(native_params.get("cpu_policy") or {}),
+            "compute_policy": dict(native_params.get("compute_policy") or {}),
+        } if native_node else {}
         confirmations = self._confirmations(plan=plan, node_ids=nodes, backend_ids=backends)
         memory_context = (
             payload.get("memory_context")
@@ -132,7 +148,7 @@ class ApprovalSummaryService:
         )
         expires = issued + timedelta(minutes=max(1, ttl_minutes))
         base: dict[str, Any] = {
-            "schema_version": 3,
+            "schema_version": 4,
             "project_id": reviewed_plan.project_id,
             "reviewed_plan_id": reviewed_plan.reviewed_plan_id,
             "plan_hash": reviewed_plan.plan_hash,
@@ -181,6 +197,7 @@ class ApprovalSummaryService:
                 if selected_subjects
                 else ()
             ),
+            "resource_policy": resource_policy,
             "sections": (
                 ApprovalSummarySection(
                     id="scope",
@@ -194,6 +211,20 @@ class ApprovalSummaryService:
                     id="safety",
                     title="Safety boundary",
                     summary="Source rawdata remains read-only; writes are limited to the listed project roots.",
+                ),
+                *(
+                    (
+                        ApprovalSummarySection(
+                            id="resource-policy",
+                            title="Automatic resource policy",
+                            summary=(
+                                "CPU scheduler and scientific compute backend are selected at runtime "
+                                "within the reviewed auto/auto policy; the actual choice is recorded in provenance."
+                            ),
+                        ),
+                    )
+                    if native_node
+                    else ()
                 ),
                 ApprovalSummarySection(
                     id="environment",

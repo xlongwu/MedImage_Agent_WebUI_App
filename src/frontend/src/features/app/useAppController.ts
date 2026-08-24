@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PresetPlanDraft } from "../../types";
 import { DEFAULT_API_BASE, getApiBaseUrl, getHealth, sendAssistantMessage } from "../../lib/api";
-import { useTasks } from "../../hooks/useTasks";
 import packageMetadata from "../../../package.json";
 
 export interface AppController {
@@ -42,7 +41,6 @@ export function useAppController(): AppController {
   const [notice, setNotice] = useState("");
   const [presetPlanDraft, setPresetPlanDraft] = useState<PresetPlanDraft | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const tasks = useTasks();
 
   const checkHealth = useCallback(async () => {
     setApiError("");

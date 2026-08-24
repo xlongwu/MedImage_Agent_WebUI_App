@@ -21,7 +21,8 @@ def test_functional_connectivity_outputs_reloadable_fc_and_fisher_z(tmp_path: Pa
 
     result = run_functional_connectivity(tsv, tmp_path / "native")
 
-    assert result.status == "succeeded"
+    assert result.status == "warning"
+    assert any(warning.startswith("gpu_fallback:") for warning in result.warnings)
     assert validate_stage_result_artifacts(result) == []
     corr = np.load(result.output_artifacts[0].path)
     fisher_z = np.load(result.output_artifacts[1].path)

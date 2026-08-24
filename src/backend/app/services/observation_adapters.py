@@ -195,17 +195,33 @@ def _redact(message: object) -> tuple[str, tuple[str, ...]]:
     return text, tuple(flags)
 
 
-def _status_counts(nodes: list[NodeObservation]) -> tuple[int, int, int]:
-    succeeded = sum(node.status.upper() in {"SUCCESS", "COMPLETED", "PASSED"} for node in nodes)
-    failed = sum(node.status.upper() in {"FAILED", "ERROR"} for node in nodes)
-    skipped = sum(node.status.upper() in {"SKIPPED", "CANCELLED"} for node in nodes)
-    return succeeded, failed, skipped
+def _logical_node_status_counts(
+    nodes: list[NodeObservation],
+) -> tuple[int, int, int, int]:
+    """Aggregate subject instances to the logical node counts in run summaries."""
+    grouped: dict[str, list[str]] = {}
+    for node in nodes:
+        grouped.setdefault(node.node_id, []).append(node.status.upper())
+
+    succeeded = failed = skipped = 0
+    for statuses in grouped.values():
+        if any(status in {"FAILED", "ERROR"} for status in statuses):
+            failed += 1
+        elif statuses and all(status in {"SKIPPED", "CANCELLED"} for status in statuses):
+            skipped += 1
+        elif statuses and all(
+            status in {"SUCCESS", "COMPLETED", "PASSED", "SKIPPED", "CANCELLED"}
+            for status in statuses
+        ):
+            succeeded += 1
+    return len(grouped), succeeded, failed, skipped
 
 
 def _artifact_type_from_path(path: Path) -> str:
     name = path.name.lower()
     mappings = (
         ("fisher", "fisher_z_matrix"),
+        ("correlation_matrix", "fc_matrix"),
         ("fc", "fc_matrix"),
         ("falff", "falff_map"),
         ("alff", "alff_map"),
@@ -225,6 +241,17 @@ def _artifact_type_from_path(path: Path) -> str:
     if name.endswith((".tsv", ".csv")):
         return "table"
     return "file"
+
+
+def _subject_id_from_path(path: Path) -> str | None:
+    return next(
+        (
+            part
+            for part in reversed(path.parts)
+            if re.fullmatch(r"sub-[A-Za-z0-9][A-Za-z0-9_-]*", part)
+        ),
+        None,
+    )
 
 
 def _inspect_reload(path: Path, artifact_type: str) -> tuple[str, str | None, tuple[int, ...], str | None]:
@@ -477,9 +504,11 @@ def adapt_observation_sources(
                 )
 
     if facts.nodes:
-        succeeded, failed, skipped = _status_counts(facts.nodes)
+        logical_total, succeeded, failed, skipped = _logical_node_status_counts(
+            facts.nodes
+        )
         expected = facts.pipeline.nodes_total
-        consistent = expected is None or expected == len(facts.nodes)
+        consistent = expected is None or expected == logical_total
         if facts.pipeline.nodes_succeeded is not None:
             consistent = consistent and facts.pipeline.nodes_succeeded == succeeded
         if facts.pipeline.nodes_failed is not None:
@@ -488,7 +517,7 @@ def adapt_observation_sources(
             facts.conflicts.append("PIPELINE_NODE_STATE_COUNT_CONFLICT")
         facts.pipeline = facts.pipeline.model_copy(
             update={
-                "nodes_total": expected if expected is not None else len(facts.nodes),
+                "nodes_total": expected if expected is not None else logical_total,
                 "nodes_succeeded": facts.pipeline.nodes_succeeded if facts.pipeline.nodes_succeeded is not None else succeeded,
                 "nodes_failed": facts.pipeline.nodes_failed if facts.pipeline.nodes_failed is not None else failed,
                 "nodes_skipped": facts.pipeline.nodes_skipped if facts.pipeline.nodes_skipped is not None else skipped,
@@ -759,6 +788,8 @@ def adapt_observation_sources(
                 subject_id=str(
                     (registry_item or {}).get("subject_id")
                     or (registry_item or {}).get("subject")
+                    or (discovered_item or {}).get("subject_id")
+                    or _subject_id_from_path(path)
                     or ""
                 )
                 or None,

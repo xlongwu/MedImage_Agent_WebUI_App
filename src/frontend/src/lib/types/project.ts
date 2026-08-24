@@ -6,6 +6,18 @@ export interface ProjectSummary {
   created_date: string;
   subjects_count: number;
   current_pipeline_id: string;
+  latest_agent_task?: {
+    task_id: string;
+    state: "preparing" | "waiting_for_user" | "running" | "needs_attention" | "completed";
+    outcome: "succeeded" | "partial" | "failed" | "canceled" | "indeterminate" | null;
+    goal_summary: string;
+    current_action: string;
+    current_action_code: import("./agentTask").AgentTaskCurrentActionCode;
+    requires_user: boolean;
+    result_title: string | null;
+    recent_activity: string;
+    updated_at: string;
+  } | null;
 }
 
 export interface ProjectDetail extends ProjectSummary {

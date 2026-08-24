@@ -37,6 +37,7 @@ function task(
     outcome: null,
     goal_summary: "Run preprocessing and FC",
     current_action: "Preparing a reviewed plan",
+    current_action_code: "preparing_plan",
     next_action: {
       type: "none",
       title: "No action needed",

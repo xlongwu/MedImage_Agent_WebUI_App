@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+/* eslint-disable react-refresh/only-export-components */
+import { useMemo, useState } from "react";
 
 import { Dialog } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
@@ -25,28 +26,20 @@ export function useAgentAttentionDialog(
     () => (controller.task?.project_id === projectId ? attentionActionFor(controller.task) : null),
     [controller.task, projectId],
   );
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-  const [openKey, setOpenKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    setDismissedKey(null);
-    setOpenKey(action?.key ?? null);
-  }, [action?.key, projectId]);
-
-  const isOpen = action !== null && dismissedKey !== action.key && openKey === action.key;
+  const [dismissedIdentity, setDismissedIdentity] = useState<string | null>(null);
+  const actionIdentity = action ? `${projectId ?? ""}:${action.key}` : null;
+  const isOpen = actionIdentity !== null && dismissedIdentity !== actionIdentity;
   return {
     action,
     dismiss: () => {
       if (!action) return;
-      setDismissedKey(action.key);
-      setOpenKey(null);
+      setDismissedIdentity(actionIdentity);
     },
     hasAttention: action !== null,
     open: isOpen,
     reopen: () => {
       if (action) {
-        setDismissedKey(null);
-        setOpenKey(action.key);
+        setDismissedIdentity(null);
       }
     },
   };

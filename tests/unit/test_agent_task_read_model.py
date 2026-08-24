@@ -184,6 +184,42 @@ def test_projection_is_stable_portable_and_read_only() -> None:
     assert all(link.uri.startswith("project://project-1/") for link in first.evidence_links)
 
 
+def test_recovery_projection_exposes_affected_and_untouched_reviewed_subjects() -> None:
+    plan = _plan().model_copy(
+        update={
+            "payload": {
+                **_plan().payload,
+                "plan": {
+                    "metadata": {
+                        "subject_ids": ["sub-001", "sub-002", "sub-003"]
+                    }
+                },
+            }
+        }
+    )
+    candidate = SimpleNamespace(
+        candidate_id="candidate-1",
+        eligible=True,
+        target_subject_ids=("sub-003",),
+        action="RETRY_FAILED_SUBJECTS",
+        changes_reviewed_plan=False,
+    )
+    proposal = SimpleNamespace(
+        recovery_proposal_id="proposal-1",
+        recommended_candidate_id="candidate-1",
+        candidates=(candidate,),
+    )
+    diagnosis = SimpleNamespace(root_cause_status="known", facts=(object(),))
+
+    summary = AgentTaskReadModel._recovery_summary(
+        proposal, diagnosis, None, plan
+    )
+
+    assert summary is not None
+    assert summary.affected_subjects == ("sub-003",)
+    assert summary.untouched_scope == ("sub-001", "sub-002")
+
+
 def test_projection_exposes_frozen_memory_consent_and_provenance_without_mutation() -> None:
     lifecycle = _lifecycle().model_copy(
         update={
@@ -465,14 +501,16 @@ def test_goal_revision_is_not_project_input_and_exposes_decision_batch_id() -> N
     assert projected.decision_batch.items[0].kind == "goal_revision"
 
 
-def test_canceled_task_projects_as_terminal_without_attention() -> None:
+def test_canceled_task_projects_as_canceled_attention_not_success() -> None:
     projected = AgentTaskReadModel(ReadOnlyStore(_lifecycle("CANCELED"))).get(
         project_id="project-1", task_id="task-1"
     )
 
-    assert projected.state == "completed"
+    assert projected.state == "needs_attention"
     assert projected.outcome == "canceled"
     assert projected.next_action.type == "none"
+    assert projected.current_action_code == "attention"
+    assert projected.automation.requires_user is True
 
 
 def test_plan_only_completion_has_truthful_metadata_result_without_run() -> None:

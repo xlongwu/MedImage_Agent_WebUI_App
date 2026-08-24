@@ -1,7 +1,6 @@
 import { Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentHarnessActivityPage, AgentTaskResponse } from "../../../lib/types/agentTask";
-import type { LegacyWorkspace } from "../../navigation/workspaceModel";
 import styles from "../AgentWorkspace.module.css";
 import { TechnicalEvidence } from "./TechnicalEvidence";
 
@@ -9,21 +8,16 @@ export function TaskDetails({
   advancedMode,
   harnessActivity,
   onLoadHarnessActivity,
-  onOpenLegacyWorkspace,
-  onOpenReviewedPlan,
   onOpenRuns,
   task,
 }: {
   advancedMode: boolean;
   harnessActivity: AgentHarnessActivityPage | null;
   onLoadHarnessActivity: () => Promise<void>;
-  onOpenLegacyWorkspace: (workspace: LegacyWorkspace) => void;
-  onOpenReviewedPlan: (reviewedPlanId: string) => void;
   onOpenRuns: () => void;
   task: AgentTaskResponse;
 }) {
   const { t } = useI18n();
-  const reviewedPlanId = task.technical_details?.reviewed_plan_id ?? null;
   return (
     <details
       className={styles.taskDetails}
@@ -53,29 +47,6 @@ export function TaskDetails({
           <div className={styles.detailActions}>
             <Button onClick={onOpenRuns} variant="secondary">
               {t("agent.openRuns")}
-            </Button>
-            <Button onClick={() => onOpenLegacyWorkspace("overview")} variant="ghost">
-              {t("agent.compatOverview")}
-            </Button>
-            <Button onClick={() => onOpenLegacyWorkspace("data")} variant="ghost">
-              {t("agent.compatData")}
-            </Button>
-            <Button
-              onClick={() =>
-                reviewedPlanId ? onOpenReviewedPlan(reviewedPlanId) : onOpenLegacyWorkspace("plan")
-              }
-              variant="ghost"
-            >
-              {t("agent.compatPlan")}
-            </Button>
-            <Button onClick={() => onOpenLegacyWorkspace("preprocessing")} variant="ghost">
-              {t("agent.compatPreprocessing")}
-            </Button>
-            <Button onClick={() => onOpenLegacyWorkspace("qc")} variant="ghost">
-              {t("agent.compatQc")}
-            </Button>
-            <Button onClick={() => onOpenLegacyWorkspace("results")} variant="ghost">
-              {t("agent.compatResults")}
             </Button>
           </div>
         </section>

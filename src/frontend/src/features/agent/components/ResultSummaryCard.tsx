@@ -5,10 +5,12 @@ import styles from "../AgentWorkspace.module.css";
 import { getAgentResultMessageKey } from "./agentTaskMessages";
 
 export function ResultSummaryCard({
+  baseUrl,
   onOpenRuns,
   result,
   explanation,
 }: {
+  baseUrl: string;
   onOpenRuns: () => void;
   result: AgentTaskResultSummary;
   explanation?: AgentResultExplanation | null;
@@ -69,10 +71,28 @@ export function ResultSummaryCard({
           <>
             <span>{t("agent.completedSubjects", { count: result.completed_subjects ?? 0 })}</span>
             <span>{t("agent.failedSubjects", { count: result.failed_subjects ?? 0 })}</span>
-            <span>{t("agent.artifactCount", { count: result.artifacts.length })}</span>
+            <span>{t("agent.excludedSubjects", { count: result.excluded_subjects ?? 0 })}</span>
+            <span>{t("agent.totalSubjects", { count: result.total_subjects ?? 0 })}</span>
           </>
         )}
       </div>
+      {result.qc_summary ? (
+        <p>
+          <strong>{t("agent.qcSummary")}</strong> {localizeResultText(result.qc_summary)}
+        </p>
+      ) : null}
+      {result.artifacts.length ? (
+        <div className={styles.limitations}>
+          <strong>{t("agent.artifacts")}</strong>
+          <ul>
+            {result.artifacts.map((artifact) => (
+              <li key={artifact.artifact_id}>
+                {artifact.label} · {artifact.reload_status}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {limitations.length ? (
         <div className={styles.limitations}>
           <strong>{t("agent.limitations")}</strong>
@@ -83,9 +103,29 @@ export function ResultSummaryCard({
           </ul>
         </div>
       ) : null}
-      <Button onClick={onOpenRuns} variant="secondary">
-        {t("agent.openEvidence")}
-      </Button>
+      {result.recommended_action ? (
+        <p>
+          <strong>{t("agent.recommendedAction")}</strong>{" "}
+          {localizeResultText(result.recommended_action)}
+        </p>
+      ) : null}
+      <div className={styles.detailActions}>
+        <Button onClick={onOpenRuns} variant="primary">
+          {t("agent.viewResults")}
+        </Button>
+        {result.report_export_uri ? (
+          <a className={styles.exportLink} href={`${baseUrl}${result.report_export_uri}`} download>
+            {t("agent.exportReport")}
+          </a>
+        ) : (
+          <button disabled title={result.export_disabled_reason ?? undefined} type="button">
+            {t("agent.exportReport")}
+          </button>
+        )}
+      </div>
+      {!result.report_export_uri && result.export_disabled_reason ? (
+        <small>{result.export_disabled_reason}</small>
+      ) : null}
     </Card>
   );
 }

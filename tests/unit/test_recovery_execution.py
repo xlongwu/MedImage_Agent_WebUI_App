@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -14,6 +15,7 @@ from src.backend.app.main import app
 from src.backend.app.runtime.execution_gateway import current_allowlist_hash
 from src.backend.app.services.execution_ticket_service import (
     ExecutionTicketService,
+    _expected_recovery_output_roots,
     calculate_ticket_hash,
 )
 from src.backend.app.services.recovery_execution_service import RecoveryExecutionService
@@ -75,6 +77,31 @@ def _approve(fixture, service: RecoveryExecutionService):
         command_id="approve-recovery",
         actor="local-reviewer",
     )
+
+
+def test_recovery_child_prefers_an_approved_project_root_over_an_external_root(tmp_path):
+    fixture = build_recovery_fixture(tmp_path)
+    external = tmp_path / "external-output"
+    external.mkdir()
+    parent = fixture.parent.model_copy(
+        update={"output_roots": (str(external), str(fixture.outputs))}
+    )
+
+    root, config_path, pipeline_path = RecoveryExecutionService._safe_child_paths(
+        parent,
+        SimpleNamespace(recovery_attempt_id="recovery-attempt-1"),
+    )
+
+    assert root.is_relative_to(fixture.project_root)
+    assert root.is_relative_to(fixture.outputs)
+    assert config_path == root / "control" / "project_config.yaml"
+    assert pipeline_path == root / "control" / "pipeline.yaml"
+
+    expected_roots = _expected_recovery_output_roots(
+        parent.output_roots,
+        "recovery_attempts/recovery-attempt-1",
+    )
+    assert str(root) in expected_roots
 
 
 def test_recovery_child_executes_once_in_isolated_output_and_closes_goal_loop(tmp_path):

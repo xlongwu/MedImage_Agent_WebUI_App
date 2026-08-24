@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ApprovalSummarySection(BaseModel):
@@ -19,7 +19,7 @@ class ApprovalSummarySection(BaseModel):
 class ApprovalSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: int = 3
+    schema_version: int = 4
     summary_hash: str
     project_id: str
     reviewed_plan_id: str
@@ -56,6 +56,7 @@ class ApprovalSummary(BaseModel):
     external_tools: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
     science_changes: tuple[str, ...] = ()
+    resource_policy: dict[str, object] = Field(default_factory=dict)
     sections: tuple[ApprovalSummarySection, ...] = ()
     confirmations: dict[str, object]
     issued_at: datetime

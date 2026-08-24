@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
+import json
 from typing import Any
 
 import yaml
@@ -55,6 +57,28 @@ def _same_path(first: Path | None, second: Path | None) -> bool:
     return first is not None and second is not None and first == second
 
 
+def _verified_project_resource(value: Any, project_dir: Path | None) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or project_dir is None:
+        return None
+    path = _path(value.get("path"))
+    expected = str(value.get("checksum") or "")
+    if (
+        path is None
+        or not path.is_file()
+        or not path.is_relative_to((project_dir / "resources").resolve())
+        or not str(value.get("license") or "").strip()
+        or not expected.startswith("sha256:")
+    ):
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if f"sha256:{digest.hexdigest()}" != expected:
+        return None
+    return dict(value)
+
+
 def _is_example_config(path: Path) -> bool:
     try:
         path.relative_to(Path("examples").resolve())
@@ -81,6 +105,33 @@ def _bids_subjects_from_nifti_files(nifti_files: list[Path]) -> list[str]:
                 subjects.add(part)
                 break
     return sorted(subjects)
+
+
+def _bold_sidecar_facts(nifti_files: list[Path]) -> dict[str, Any]:
+    """Read bounded BIDS JSON metadata only; source image payloads remain unopened."""
+
+    sidecars: list[str] = []
+    tr_values: list[float] = []
+    for bold in (path for path in nifti_files if "_bold" in path.name):
+        sidecar = bold.with_suffix("") if bold.suffix == ".gz" else bold
+        sidecar = sidecar.with_suffix(".json")
+        if not sidecar.is_file():
+            continue
+        sidecars.append(str(sidecar))
+        if len(sidecars) > 128:
+            break
+        try:
+            payload = json.loads(sidecar.read_text(encoding="utf-8"))
+            value = payload.get("RepetitionTime") if isinstance(payload, dict) else None
+            if isinstance(value, int | float) and value > 0:
+                tr_values.append(float(value))
+        except (OSError, ValueError):
+            continue
+    return {
+        "bold_sidecar_count": len(sidecars),
+        "bold_sidecars_complete": len(sidecars) == sum(1 for path in nifti_files if "_bold" in path.name),
+        "bids_repetition_times": sorted(set(tr_values)),
+    }
 
 
 def _augment_diagnostics_with_registered_outputs(
@@ -119,6 +170,7 @@ def _augment_diagnostics_with_registered_outputs(
                     "t1w_nifti_count": t1w_count,
                     "subjects_total": len(subjects) or enriched.get("subjects_total", 0),
                     "subject_candidates": subjects or enriched.get("subject_candidates", []),
+                    **_bold_sidecar_facts(nifti_files),
                 }
             )
 
@@ -150,6 +202,7 @@ def _augment_diagnostics_with_registered_outputs(
                     or enriched.get("subjects_total", 0),
                     "subject_candidates": subjects
                     or enriched.get("subject_candidates", []),
+                    **_bold_sidecar_facts(nifti_files),
                 }
             )
 
@@ -164,6 +217,23 @@ def _augment_diagnostics_with_registered_outputs(
         value = metadata.get(key)
         if value:
             enriched[key] = value
+
+    agent_defaults = metadata.get("agent_defaults")
+    if isinstance(agent_defaults, dict):
+        atlas = _verified_project_resource(agent_defaults.get("default_atlas"), project_dir)
+        template = _verified_project_resource(agent_defaults.get("default_template"), project_dir)
+        if atlas is not None:
+            enriched["registered_atlas_resources"] = [atlas]
+        elif agent_defaults.get("default_atlas") is not None:
+            enriched.setdefault("registered_resource_drift", []).append("default_atlas")
+        if template is not None:
+            enriched["registered_template_resources"] = [template]
+        elif agent_defaults.get("default_template") is not None:
+            enriched.setdefault("registered_resource_drift", []).append("default_template")
+        enriched["agent_resource_policy"] = {
+            "cpu": str(agent_defaults.get("cpu_policy") or "auto"),
+            "compute": str(agent_defaults.get("compute_policy") or "auto"),
+        }
 
     if (
         enriched.get("agent_conversion_execution_ready") is True
@@ -325,6 +395,25 @@ def load_project_context(
         project_dir,
         rawdata_dir,
     )
+    tr_values = diagnostics.get("bids_repetition_times")
+    configured_tr = stored_metadata.get("repetition_time")
+    if isinstance(tr_values, list) and tr_values:
+        if len(tr_values) > 1:
+            diagnostics["tr_conflict"] = {
+                f"bids_{index + 1}": value for index, value in enumerate(tr_values)
+            }
+        elif isinstance(configured_tr, int | float) and float(configured_tr) != float(tr_values[0]):
+            diagnostics["tr_conflict"] = {"bids": tr_values[0], "project": float(configured_tr)}
+    if resolved_project_id and hasattr(project_store, "list_run_links"):
+        runs = project_store.list_run_links(resolved_project_id)
+        diagnostics["unfinished_run_count"] = sum(
+            str(run.status).lower() not in {"succeeded", "failed", "cancelled", "canceled"}
+            for run in runs
+        )
+        diagnostics["existing_run_conflict"] = any(
+            str(run.status).lower() in {"running", "queued", "succeeded", "partial"}
+            for run in runs
+        )
 
     if source == "created":
         if rawdata_dir is None or not rawdata_dir.exists() or not rawdata_dir.is_dir():

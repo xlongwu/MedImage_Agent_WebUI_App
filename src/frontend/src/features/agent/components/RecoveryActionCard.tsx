@@ -63,6 +63,7 @@ export function RecoveryActionCard({
             {t("agent.recovery.abandon")}
           </Button>
           <Button
+            data-agent-action="reopen_approve_recovery"
             data-primary-action="true"
             disabled={mutating}
             onClick={onReopenAttention}

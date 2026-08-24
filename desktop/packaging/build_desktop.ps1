@@ -3,7 +3,10 @@ param(
     [string]$ElectronRuntimeZip,
     [string]$NsisArchive,
     [string]$NsisResourcesArchive,
-    [switch]$DirOnly
+    [switch]$DirOnly,
+    [string]$PythonExe,
+    [string]$ExpectedGitSha,
+    [switch]$RequireCleanWorktree
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +18,11 @@ $BackendDist = Join-Path $RepoRoot "desktop\packaging\dist\backend"
 $BackendExe = Join-Path $BackendDist "medimage-backend.exe"
 $BackendPayloadDir = Join-Path $RepoRoot "desktop\packaging\dist\backend_payload"
 $BackendPayload = Join-Path $BackendPayloadDir "medimage-backend.bin"
+$ReleaseMetadataDir = Join-Path $RepoRoot "desktop\packaging\dist\release_metadata"
+$BuildProvenance = Join-Path $ReleaseMetadataDir "build-provenance.json"
+$ReleaseArtifacts = Join-Path $ReleaseMetadataDir "release-artifacts.json"
+$ProvenanceWriter = Join-Path $RepoRoot "desktop\packaging\write_release_provenance.py"
+$ProvenancePython = if ($PythonExe) { $PythonExe } else { "python" }
 
 function Invoke-NpmChecked {
     param(
@@ -58,6 +66,23 @@ try {
     New-Item -ItemType Directory -Force -Path $BackendPayloadDir | Out-Null
     Copy-Item -LiteralPath $BackendExe -Destination $BackendPayload -Force
 
+    $EffectiveRequireClean = $RequireCleanWorktree -or [bool]$ExpectedGitSha
+    $ProvenanceArgs = @(
+        $ProvenanceWriter,
+        "--repo-root", $RepoRoot.Path,
+        "--output", $BuildProvenance
+    )
+    if ($ExpectedGitSha) {
+        $ProvenanceArgs += @("--expected-sha", $ExpectedGitSha)
+    }
+    if ($EffectiveRequireClean) {
+        $ProvenanceArgs += "--require-clean"
+    }
+    & $ProvenancePython @ProvenanceArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Release build provenance generation failed with exit code $LASTEXITCODE"
+    }
+
     if (Test-Path -LiteralPath $ElectronDist) {
         $ResolvedElectronRoot = Resolve-Path -LiteralPath $ElectronRoot
         $ResolvedElectronDist = Resolve-Path -LiteralPath $ElectronDist
@@ -97,6 +122,15 @@ try {
         $env:MEDIMAGE_ELECTRON_RUNTIME_ZIP = $PreviousRuntimeZip
         $env:MEDIMAGE_ELECTRON_NSIS_ARCHIVE = $PreviousNsisArchive
         $env:MEDIMAGE_ELECTRON_NSIS_RESOURCES_ARCHIVE = $PreviousNsisResourcesArchive
+    }
+
+    & $ProvenancePython $ProvenanceWriter `
+        --repo-root $RepoRoot.Path `
+        --output $BuildProvenance `
+        --artifact-root $ElectronDist `
+        --artifact-output $ReleaseArtifacts
+    if ($LASTEXITCODE -ne 0) {
+        throw "Release artifact manifest generation failed with exit code $LASTEXITCODE"
     }
 
     $DistPath = Join-Path $ElectronRoot "dist"

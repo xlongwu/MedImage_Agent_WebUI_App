@@ -1,35 +1,19 @@
 import { Icon } from "../../components/ui";
 import { useI18n } from "../../i18n/useI18n";
 import type { MessageKey } from "../../i18n/messages/en";
-import type { AppLocation, LegacyWorkspace, ProjectWorkspace } from "./workspaceModel";
+import type { AppLocation, ProjectWorkspace } from "./workspaceModel";
 import styles from "./GlobalNavigationRail.module.css";
 
 type RailItem = {
-  icon:
-    | "folder"
-    | "spark"
-    | "overview"
-    | "data"
-    | "plan"
-    | "preprocessing"
-    | "runs"
-    | "qc"
-    | "results"
-    | "settings";
+  icon: "folder" | "spark" | "runs" | "settings";
   key: MessageKey;
-  workspace?: LegacyWorkspace | ProjectWorkspace;
+  workspace?: ProjectWorkspace;
 };
 
 const items: RailItem[] = [
   { icon: "folder", key: "nav.projects" },
   { icon: "spark", key: "nav.agent", workspace: "agent" },
-  { icon: "overview", key: "nav.overview", workspace: "overview" },
-  { icon: "data", key: "nav.data", workspace: "data" },
-  { icon: "plan", key: "nav.plan", workspace: "plan" },
-  { icon: "preprocessing", key: "nav.preprocessing", workspace: "preprocessing" },
   { icon: "runs", key: "nav.runs", workspace: "runs" },
-  { icon: "qc", key: "nav.qc", workspace: "qc" },
-  { icon: "results", key: "nav.results", workspace: "results" },
   { icon: "settings", key: "nav.settings", workspace: "settings" },
 ];
 
@@ -37,13 +21,11 @@ export function GlobalNavigationRail({
   location,
   projectId,
   onOpenProjects,
-  onOpenLegacyWorkspace,
   onOpenWorkspace,
 }: {
   location: AppLocation;
   projectId: string | null;
   onOpenProjects: () => void;
-  onOpenLegacyWorkspace: (projectId: string, workspace: LegacyWorkspace) => void;
   onOpenWorkspace: (projectId: string, workspace: ProjectWorkspace) => void;
 }) {
   const { t } = useI18n();
@@ -71,15 +53,7 @@ export function GlobalNavigationRail({
                   return;
                 }
                 if (!projectId || !item.workspace) return;
-                if (
-                  item.workspace === "agent" ||
-                  item.workspace === "runs" ||
-                  item.workspace === "settings"
-                ) {
-                  onOpenWorkspace(projectId, item.workspace);
-                } else {
-                  onOpenLegacyWorkspace(projectId, item.workspace);
-                }
+                onOpenWorkspace(projectId, item.workspace);
               }}
               title={disabled ? t("nav.selectProjectFirst") : t(item.key)}
               type="button"

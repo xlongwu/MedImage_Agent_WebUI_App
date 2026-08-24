@@ -23,6 +23,7 @@ from src.backend.app.schemas.observation import (
     ObservationSourceRef,
     ScientificObservation,
 )
+from src.backend.app.schemas.recovery_attempt import RecoveryAttemptRecord
 from src.backend.app.services.observation_adapters import adapt_observation_sources
 
 
@@ -41,6 +42,10 @@ class ObservationStore(Protocol):
         lifecycle_id: str | None = None,
         run_id: str | None = None,
     ) -> list[ObservationRecord]: ...
+    def get_recovery_attempt(
+        self, recovery_attempt_id: str
+    ) -> RecoveryAttemptRecord | None: ...
+    def get_gateway_dispatch_by_ticket(self, execution_ticket_id: str): ...
 
 
 _CAPABILITY_ORDER: tuple[CapabilityLevel, ...] = (
@@ -81,6 +86,81 @@ def calculate_observation_hash(record: ObservationRecord | dict[str, object]) ->
     )
     payload.pop("observation_hash", None)
     return stable_hash(payload)
+
+
+def _merge_recovery_evidence(
+    facts,
+    previous: ObservationRecord,
+    *,
+    target_subjects: set[str],
+) -> None:
+    """Carry forward untouched parent evidence and replace only retry targets."""
+    facts.sources = list(
+        {
+            source.source_id: source
+            for source in (*previous.sources, *facts.sources)
+        }.values()
+    )
+
+    prior_nodes = [
+        node
+        for node in previous.nodes
+        if not node.subject_id or node.subject_id not in target_subjects
+    ]
+    facts.nodes = list(
+        {
+            (node.node_id, node.subject_id, node.session_id): node
+            for node in (*prior_nodes, *facts.nodes)
+        }.values()
+    )
+
+    prior_artifacts = [
+        artifact
+        for artifact in previous.artifacts
+        if not artifact.subject_id or artifact.subject_id not in target_subjects
+    ]
+    facts.artifacts = list(
+        {
+            artifact.artifact_id: artifact
+            for artifact in (*prior_artifacts, *facts.artifacts)
+        }.values()
+    )
+    facts.validations = list(
+        {
+            validation.validation_id: validation
+            for validation in (*previous.validations, *facts.validations)
+        }.values()
+    )
+    prior_log_facts = [
+        fact
+        for fact in previous.log_facts
+        if not fact.subject_id or fact.subject_id not in target_subjects
+    ]
+    facts.log_facts = list(
+        {
+            fact.fact_id: fact
+            for fact in (*prior_log_facts, *facts.log_facts)
+        }.values()
+    )
+
+    available_source_types = {
+        source.source_type
+        for source in facts.sources
+        if source.read_status == "ok"
+    }
+    missing_source_types = {
+        "artifacts": {"artifact_discovery", "artifact_registry"},
+        "node_states": {"node_state", "node_states"},
+        "validations": {"validation"},
+    }
+    facts.missing_sources = [
+        item
+        for item in facts.missing_sources
+        if not (
+            item in missing_source_types
+            and missing_source_types[item] & available_source_types
+        )
+    ]
 
 
 class ObservationCollector:
@@ -367,6 +447,36 @@ class ObservationCollector:
         facts.conflicts.extend(contract_conflicts)
         if not contract_sources:
             facts.missing_sources.append("node_contracts")
+        prior = previous_observation_id
+        previous = None
+        if prior is not None:
+            previous = self.store.get_observation(prior)
+            if (
+                previous is None
+                or previous.bindings.project_id != project_id
+                or previous.bindings.lifecycle_id != lifecycle_id
+            ):
+                raise SafetyError(
+                    "OBSERVATION_PREVIOUS_BINDING_MISMATCH",
+                    code="OBSERVATION_PREVIOUS_BINDING_MISMATCH",
+                )
+        if recovery_attempt_id is not None:
+            attempt = self.store.get_recovery_attempt(recovery_attempt_id)
+            if (
+                previous is None
+                or attempt is None
+                or attempt.project_id != project_id
+                or attempt.lifecycle_id != lifecycle_id
+            ):
+                raise SafetyError(
+                    "OBSERVATION_RECOVERY_EVIDENCE_BINDING_MISMATCH",
+                    code="OBSERVATION_RECOVERY_EVIDENCE_BINDING_MISMATCH",
+                )
+            _merge_recovery_evidence(
+                facts,
+                previous,
+                target_subjects=set(attempt.target_subject_ids),
+            )
         if facts.pipeline.nodes_total == 0 and not facts.nodes and facts.pipeline.status != "UNKNOWN":
             facts.pipeline = facts.pipeline.model_copy(update={"summary_consistent": True, "active_nodes": 0})
         capability, scientific = self._capability(
@@ -382,12 +492,7 @@ class ObservationCollector:
             completeness_status = "partial"
         else:
             completeness_status = "complete"
-        prior = previous_observation_id
-        if prior is not None:
-            previous = self.store.get_observation(prior)
-            if previous is None or previous.bindings.project_id != project_id or previous.bindings.lifecycle_id != lifecycle_id:
-                raise SafetyError("OBSERVATION_PREVIOUS_BINDING_MISMATCH", code="OBSERVATION_PREVIOUS_BINDING_MISMATCH")
-        else:
+        if prior is None:
             existing = self.store.list_observations(
                 project_id,
                 lifecycle_id=lifecycle_id,

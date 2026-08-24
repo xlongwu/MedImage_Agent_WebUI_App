@@ -111,6 +111,19 @@ _NATIVE_FULL_GOAL_TERMS = (
     "全流程",
 )
 
+_FC_GOAL_TERMS = (
+    "functional connectivity",
+    "fc analysis",
+    "fc pipeline",
+    "generate fc",
+    "compute fc",
+    "run fc",
+    "生成 fc",
+    "计算 fc",
+    "运行 fc",
+    "功能连接",
+)
+
 _NATIVE_FULL_CONFIRMATIONS: dict[str, bool] = {
     "confirm_reviewed_native_execution": True,
     "confirm_rawdata_readonly": True,
@@ -403,6 +416,11 @@ def _matches_native_full_goal(goal_lower: str) -> bool:
     )
 
 
+def _matches_native_fc_goal(goal_lower: str) -> bool:
+    normalized = re.sub(r"\s+", " ", goal_lower).strip()
+    return any(term in normalized for term in _FC_GOAL_TERMS)
+
+
 def _matches_plan_only_preprocessing_goal(goal_lower: str) -> bool:
     return any(term in goal_lower for term in _PLAN_ONLY_TERMS) and any(
         term in goal_lower for term in _PREPROCESSING_PLAN_TERMS
@@ -554,6 +572,19 @@ def _build_native_full_preprocessing_plan(
         "conversion_run_id": conversion_run_id,
         "confirmations": dict(_NATIVE_FULL_CONFIRMATIONS),
         "stage_overrides": {},
+        "cpu_policy": {
+            "mode": str(
+                (_diagnostics_from_context(project_context).get("agent_resource_policy") or {}).get("cpu")
+                or "auto"
+            )
+        },
+        "compute_policy": {
+            "backend": str(
+                (_diagnostics_from_context(project_context).get("agent_resource_policy") or {}).get("compute")
+                or "auto"
+            ),
+            "allow_cpu_fallback": True,
+        },
     }
     if selected_subject:
         native_params["subject_id"] = selected_subject
@@ -568,6 +599,16 @@ def _build_native_full_preprocessing_plan(
     )
     if registered_bids_dir:
         native_params["input_bids_dir"] = registered_bids_dir
+    registered_templates = diagnostics.get("registered_template_resources")
+    default_template = next(
+        (
+            item for item in registered_templates
+            if isinstance(item, dict) and item.get("path") and item.get("license") and item.get("checksum")
+        ),
+        None,
+    ) if isinstance(registered_templates, list) else None
+    if default_template is not None:
+        native_params["template"] = str(default_template["path"])
     conversion_nodes: list[dict[str, Any]] = []
     if prepared_conversion_run_id:
         conversion_nodes.append(
@@ -598,18 +639,34 @@ def _build_native_full_preprocessing_plan(
         "native_preprocessing": True,
         "native_dicom_conversion": bool(conversion_nodes),
     }
+    science_decisions: dict[str, Any] = {}
+    if default_template is None:
+        science_decisions.update(
+            {
+                "template_required": True,
+                "template_candidates": (
+                    registered_templates if isinstance(registered_templates, list) else []
+                ),
+            }
+        )
+    if diagnostics.get("existing_run_conflict"):
+        science_decisions["existing_run_conflict"] = True
     if selected_subject:
         metadata["subject_scope"] = [selected_subject]
     if subject_selection_required:
-        metadata["science_decisions"] = {
-            "subject_selection_required": True,
-            "subject_candidates": candidates,
-            **(
-                {"requested_subject_id": requested_subject}
-                if requested_subject
-                else {}
-            ),
-        }
+        science_decisions.update(
+            {
+                "subject_selection_required": True,
+                "subject_candidates": candidates,
+                **(
+                    {"requested_subject_id": requested_subject}
+                    if requested_subject
+                    else {}
+                ),
+            }
+        )
+    if science_decisions:
+        metadata["science_decisions"] = science_decisions
     if minimal_preprocessing:
         metadata.update(
             {
@@ -704,6 +761,97 @@ def _build_native_reho_plan(
                 "detrending",
                 "temporal_filtering",
             ],
+        }
+    )
+    return plan
+
+
+def _build_native_fc_plan(
+    *,
+    goal: str,
+    provider: str,
+    project_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the single canonical native preprocessing-to-FC execution plan."""
+
+    plan = _build_native_full_preprocessing_plan(
+        goal=goal,
+        provider=provider,
+        project_context=project_context,
+    )
+    plan["pipeline_id"] = "native_functional_connectivity"
+    native_node = next(
+        node for node in plan["nodes"] if node["id"] == "native_preproc_full_execute"
+    )
+    native_node["params"].update(
+        {
+            "stage_overrides": {
+                "dicom_to_nifti": False,
+                "input_validation": True,
+                "bids_sidecar_validation": True,
+                "dummy_scan_removal": True,
+                "slice_timing": False,
+                "realignment": True,
+                "motion_qc": True,
+                "coregistration": False,
+                "segmentation": False,
+                "normalization": False,
+                "smoothing": False,
+                "nuisance_regression": True,
+                "detrending": True,
+                "temporal_filtering": True,
+                "alff": False,
+                "falff": False,
+                "reho": False,
+                "atlas_resampling": True,
+                "roi_timeseries": True,
+                "functional_connectivity": True,
+                "subject_qc": True,
+                "group_summary": True,
+                "validation_report": True,
+                "final_report": True,
+            },
+        }
+    )
+    diagnostics = _diagnostics_from_context(project_context)
+    registered_atlases = diagnostics.get("registered_atlas_resources")
+    atlas_candidates = registered_atlases if isinstance(registered_atlases, list) else []
+    default_atlas = next(
+        (
+            item for item in atlas_candidates
+            if isinstance(item, dict)
+            and item.get("path")
+            and item.get("license")
+            and item.get("checksum")
+        ),
+        None,
+    )
+    if default_atlas is not None:
+        native_node["params"]["atlas"] = str(default_atlas["path"])
+    plan["metadata"].update(
+        {
+            "goal_kind": "functional_connectivity",
+            "goal_artifact_types": ["fc_matrix", "roi_timeseries"],
+            "required_preprocessing_stages": [
+                "realignment",
+                "motion_qc",
+                "nuisance_regression",
+                "detrending",
+                "temporal_filtering",
+                "atlas_resampling",
+                "roi_timeseries",
+            ],
+            "science_decisions": {
+                "atlas_required": default_atlas is None,
+                "atlas_candidates": atlas_candidates,
+                "global_signal_regression_required": True,
+                "tr_conflict": diagnostics.get("tr_conflict"),
+                "existing_run_conflict": bool(diagnostics.get("existing_run_conflict")),
+            },
+            "resource_policy": {
+                "cpu": dict(native_node["params"].get("cpu_policy") or {}),
+                "compute": dict(native_node["params"].get("compute_policy") or {}),
+            },
         }
     )
     return plan
@@ -939,6 +1087,68 @@ def generate_plan_from_goal(
             errors=([] if goal_contract.ok else [goal_contract.reason or "GOAL_CONTRACT_INVALID"]),
             confidence=1.0,
             clarification_required=goal_contract.clarification_required,
+            goal_contract_candidate=goal_contract.semantics,
+        )
+    if _matches_native_fc_goal(goal_lower) and not (
+        _has_registered_nifti_evidence(project_context)
+        or _has_prepared_conversion_evidence(project_context)
+    ):
+        missing = [
+            "REGISTERED_FUNCTIONAL_INPUT_REQUIRED: register BIDS/NIfTI functional input or prepare the reviewed DICOM conversion package."
+        ]
+        return response(
+            ok=False,
+            provider=provider,
+            goal=goal,
+            plan={},
+            validation={},
+            messages=[
+                "Functional-connectivity intent is supported, but project input evidence is missing."
+            ],
+            warnings=["No executable plan was created before the missing input is resolved."],
+            errors=missing,
+            missing_prerequisites=missing,
+            clarification_required=True,
+        )
+    if (
+        _has_registered_nifti_evidence(project_context)
+        or _has_prepared_conversion_evidence(project_context)
+    ) and _matches_native_fc_goal(goal_lower):
+        plan = _build_native_fc_plan(
+            goal=stripped,
+            provider=provider,
+            project_context=project_context,
+        )
+        science_decisions = plan.get("metadata", {}).get("science_decisions", {})
+        if science_decisions.get("atlas_required"):
+            missing = [
+                "REGISTERED_ATLAS_REQUIRED: register a licensed atlas with a verified checksum in Agent Settings before planning functional connectivity."
+            ]
+            return response(
+                ok=False,
+                provider=provider,
+                goal=goal,
+                plan={},
+                validation={},
+                messages=["Functional-connectivity planning stopped before creating an executable plan."],
+                warnings=["Arbitrary atlas paths are not accepted as planning answers."],
+                errors=missing,
+                missing_prerequisites=missing,
+                clarification_required=True,
+            )
+        validation = validate_plan(plan)
+        goal_contract = build_goal_contract_semantics(plan, goal)
+        return response(
+            ok=validation.ok and goal_contract.ok,
+            provider=provider,
+            goal=goal,
+            plan=plan,
+            validation=validation.to_dict(),
+            messages=["Matched functional-connectivity intent to the native reviewed chain."],
+            warnings=["Atlas and global-signal-regression semantics require explicit review."],
+            errors=([] if goal_contract.ok else [goal_contract.reason or "GOAL_CONTRACT_INVALID"]),
+            confidence=1.0,
+            clarification_required=True,
             goal_contract_candidate=goal_contract.semantics,
         )
     if (

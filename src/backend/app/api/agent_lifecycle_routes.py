@@ -160,6 +160,8 @@ def apply_lifecycle_command(
         key: value
         for key, value in {
             "reviewed_plan_id": command.reviewed_plan_id,
+            "goal_contract_id": command.goal_contract_id,
+            "goal_contract_hash": command.goal_contract_hash,
             "execution_ticket_id": command.execution_ticket_id,
             "audit_id": command.audit_id,
             "run_id": command.run_id,

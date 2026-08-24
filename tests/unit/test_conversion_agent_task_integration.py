@@ -50,6 +50,14 @@ def test_prepared_conversion_evidence_selects_conversion_dependency() -> None:
                     "conversion_run_id": "conv-reviewed-1",
                     "agent_conversion_output_root": "C:/project/converted_bids",
                     "converted_bids_dir": "C:/project/converted_bids",
+                    "registered_atlas_resources": [
+                        {
+                            "name": "Reviewed atlas",
+                            "path": "C:/project/resources/atlases/reviewed.nii.gz",
+                            "license": "CC-BY-4.0",
+                            "checksum": "a" * 64,
+                        }
+                    ],
                 },
             }
         },

@@ -23,6 +23,10 @@ class AgentTaskResultSummaryService:
         self._validate_bindings(lifecycle=lifecycle, observation=observation, evaluation=evaluation)
         completed, failed, excluded, total = self._subject_counts(observation)
         capability = observation.capability.defensible_level
+        registered_artifacts = tuple(
+            item for item in observation.artifacts
+            if item.exists and item.registration_status == "registered"
+        )
         artifacts = tuple(
             AgentTaskArtifactSummary(
                 artifact_id=item.artifact_id,
@@ -38,8 +42,11 @@ class AgentTaskResultSummaryService:
                     else "unavailable"
                 ),
             )
-            for item in observation.artifacts
-            if item.exists
+            for item in registered_artifacts
+        )
+        report = next(
+            (item for item in registered_artifacts if "report" in item.artifact_type.casefold()),
+            None,
         )
         defensible = any(
             item.exists
@@ -92,6 +99,18 @@ class AgentTaskResultSummaryService:
             limitations=limitations,
             recommended_action=None if complete else "Review technical evidence and the bounded recovery proposal.",
             artifacts=artifacts,
+            report_artifact_id=report.artifact_id if report else None,
+            report_export_uri=(
+                f"/api/projects/{lifecycle.project_id}/preprocessing/runs/"
+                f"{lifecycle.run_id}/artifacts/{report.artifact_id}/file"
+                if report is not None and lifecycle.run_id
+                else None
+            ),
+            export_disabled_reason=(
+                None
+                if report is not None and lifecycle.run_id
+                else "No registered report artifact is available for this task."
+            ),
         )
 
     def build_explanation(

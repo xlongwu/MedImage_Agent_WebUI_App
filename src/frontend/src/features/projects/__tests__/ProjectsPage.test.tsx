@@ -36,9 +36,20 @@ function renderPage(overrides: Partial<ComponentProps<typeof ProjectsPage>> = {}
     projects: [
       project("p1", "Raw Study"),
       project("p2", "QC Cohort", {
-        current_pipeline_id: "stroke-qc",
         modality: "MRI / DWI",
         subjects_count: 8,
+        latest_agent_task: {
+          task_id: "task-2",
+          state: "completed",
+          outcome: "succeeded",
+          goal_summary: "Run FC",
+          current_action: "Task completed",
+          current_action_code: "completed",
+          requires_user: false,
+          result_title: "FC outputs are ready",
+          recent_activity: "Task completed",
+          updated_at: "2026-06-14T10:00:00Z",
+        },
       }),
     ],
     selectedProjectId: "p1",
@@ -62,10 +73,10 @@ describe("ProjectsPage", () => {
     expect(screen.getByRole("heading", { name: /raw study/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /qc cohort/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Needs setup" }));
+    await user.click(screen.getByRole("button", { name: "Completed" }));
 
-    expect(screen.getByRole("heading", { name: /raw study/i })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /qc cohort/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /raw study/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /qc cohort/i })).toBeInTheDocument();
 
     await user.clear(screen.getByRole("searchbox", { name: /search projects/i }));
     await user.type(screen.getByRole("searchbox", { name: /search projects/i }), "nothing");
@@ -82,6 +93,32 @@ describe("ProjectsPage", () => {
 
     expect(props.onSelectProject).toHaveBeenCalledWith("p2");
     expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the backend attention flag and shows the latest result summary", async () => {
+    const user = userEvent.setup();
+    renderPage({
+      projects: [
+        project("p-canceled", "Canceled cohort", {
+          latest_agent_task: {
+            task_id: "task-canceled",
+            state: "needs_attention",
+            outcome: "canceled",
+            goal_summary: "Run preprocessing",
+            current_action: "Task canceled",
+            current_action_code: "attention",
+            requires_user: true,
+            result_title: "Execution was canceled",
+            recent_activity: "Task canceled",
+            updated_at: "2026-06-15T10:00:00Z",
+          },
+        }),
+      ],
+    });
+
+    expect(screen.getByText("Execution was canceled")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Needs attention" }));
+    expect(screen.getByRole("heading", { name: /canceled cohort/i })).toBeInTheDocument();
   });
 
   it("requires confirmation before removing a project listing", async () => {
@@ -134,14 +171,25 @@ describe("ProjectsPage", () => {
       error: "partial timeout",
       projects: [
         project("p1", "Verified Study", {
-          current_pipeline_id: "custom-lab-pipeline",
+          latest_agent_task: {
+            task_id: "task-1",
+            state: "running",
+            outcome: null,
+            goal_summary: "Run preprocessing",
+            current_action: "Executing processing",
+            current_action_code: "executing",
+            requires_user: false,
+            result_title: null,
+            recent_activity: "Executing processing",
+            updated_at: "2026-06-14T10:00:00Z",
+          },
         }),
       ],
     });
 
     expect(screen.getByRole("status")).toHaveTextContent("partial timeout");
     expect(screen.getByRole("heading", { name: /verified study/i })).toBeInTheDocument();
-    expect(screen.getAllByText("Pipeline set")).toHaveLength(2);
+    expect(screen.getByText("Executing the approved workflow")).toBeInTheDocument();
     expect(screen.queryByText("Raw Study")).not.toBeInTheDocument();
     expect(screen.queryByText("QC Cohort")).not.toBeInTheDocument();
   });
