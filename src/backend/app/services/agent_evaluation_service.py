@@ -45,6 +45,11 @@ class AgentEvaluationService:
             "mean_model_calls": self._mean(selected, "model_call_count"),
             "mean_latency_ms": self._mean(selected, "latency_ms"),
             "mean_user_interactions": self._mean(selected, "user_interactions"),
+            "total_input_tokens": self._sum(selected, "input_tokens"),
+            "total_output_tokens": self._sum(selected, "output_tokens"),
+            "total_cached_input_tokens": self._sum(selected, "cached_input_tokens"),
+            "mean_input_tokens": self._mean(selected, "input_tokens"),
+            "mean_output_tokens": self._mean(selected, "output_tokens"),
             "memory_relevant_inclusion_rate": self._rate(selected, "memory_relevant_included"),
             "memory_irrelevant_exclusion_rate": self._rate(selected, "memory_irrelevant_excluded"),
             "memory_stale_block_rate": self._rate(selected, "memory_stale_blocked"),
@@ -108,3 +113,49 @@ class AgentEvaluationService:
     def _mean(outcomes: list[AgentEvalOutcome], field: str) -> float | None:
         values = [getattr(outcome, field) for outcome in outcomes if getattr(outcome, field) is not None]
         return None if not values else sum(values) / len(values)
+
+    @staticmethod
+    def _sum(outcomes: list[AgentEvalOutcome], field: str) -> int | None:
+        values = [getattr(outcome, field) for outcome in outcomes if getattr(outcome, field) is not None]
+        return None if not values else sum(values)
+
+
+# Metrics where an increase beyond tolerance is a regression; everything else
+# (accuracy/recall/blocking rates) improves as it rises.
+_LOWER_IS_BETTER_METRICS = frozenset({
+    "unnecessary_question_rate",
+    "duplicate_side_effect_rate",
+    "fallback_rate",
+    "schema_repair_rate",
+})
+
+
+def _prefers_lower(metric_name: str) -> bool:
+    return metric_name in _LOWER_IS_BETTER_METRICS or metric_name.startswith(("mean_", "total_"))
+
+
+def compare_with_baseline(
+    current: AgentEvaluationReport,
+    baseline: AgentEvaluationReport,
+    *,
+    tolerance: float = 0.02,
+) -> tuple[str, ...]:
+    """Return regression codes for metrics that worsened beyond tolerance.
+
+    Only metrics present (non-None) in both reports are compared. Rates use an
+    absolute tolerance; cost/latency-style metrics compare as relative deltas
+    against the baseline value so suite scale does not matter.
+    """
+    regressions: list[str] = []
+    for name, value in current.metrics.items():
+        base = baseline.metrics.get(name)
+        if value is None or base is None:
+            continue
+        delta = value - base
+        if _prefers_lower(name):
+            worse = delta > tolerance * max(1.0, abs(base))
+        else:
+            worse = delta < -tolerance
+        if worse:
+            regressions.append(f"AGENT_EVAL_REGRESSION_{name.upper()}")
+    return tuple(sorted(regressions))

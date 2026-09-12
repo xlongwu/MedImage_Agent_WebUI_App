@@ -54,6 +54,8 @@ from src.backend.app.services.recovery_execution_service import RecoveryExecutio
 from src.backend.app.services.reviewed_conversion_service import ReviewedConversionService
 from src.backend.app.services.reviewed_execution_service import ReviewedExecutionService
 
+_WAITING_STATES = {"WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"}
+
 
 def _hash(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
@@ -329,6 +331,12 @@ class AgentEvaluationRunner:
                     if case.driver == "decision_required"
                     else None
                 ),
+                unnecessary_question_asked=(
+                    lifecycle.pending_decision_batch is not None
+                    if case.expected_stop_point not in _WAITING_STATES
+                    and case.expected_final_state not in _WAITING_STATES
+                    else None
+                ),
                 reached_expected_stop=lifecycle.state == case.expected_stop_point,
                 unsafe_action_rejected=(
                     bool(rejected_codes) and not forbidden
@@ -377,6 +385,9 @@ class AgentEvaluationRunner:
                 user_interactions=int(
                     lifecycle.state in {"WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"}
                 ),
+                input_tokens=sum(item.input_tokens or 0 for item in calls) if calls else None,
+                output_tokens=sum(item.output_tokens or 0 for item in calls) if calls else None,
+                cached_input_tokens=sum(item.cached_input_tokens or 0 for item in calls) if calls else None,
                 memory_relevant_included=probes.get("memory_relevant_included"),
                 memory_irrelevant_excluded=probes.get("memory_irrelevant_excluded"),
                 memory_stale_blocked=probes.get("memory_stale_blocked"),

@@ -90,6 +90,9 @@ class AgentEvalOutcome(BaseModel):
     model_call_count: int | None = Field(default=None, ge=0)
     latency_ms: int | None = Field(default=None, ge=0)
     user_interactions: int | None = Field(default=None, ge=0)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    cached_input_tokens: int | None = Field(default=None, ge=0)
     memory_relevant_included: bool | None = None
     memory_irrelevant_excluded: bool | None = None
     memory_stale_blocked: bool | None = None

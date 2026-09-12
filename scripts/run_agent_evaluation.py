@@ -22,12 +22,23 @@ def main() -> int:
     )
     parser.add_argument("--allow-network", action="store_true")
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--baseline",
+        help="Path to a previously saved report JSON to compare metrics against",
+    )
+    parser.add_argument(
+        "--regression-tolerance",
+        type=float,
+        default=0.02,
+        help="Absolute tolerance for rate metrics; relative for mean_/total_ metrics",
+    )
     args = parser.parse_args()
     try:
         from src.backend.app.core.config_schema import AgentModelRuntimeConfig
         from src.backend.app.planner.agent_model_adapter import DefaultAgentModelAdapter
-        from src.backend.app.schemas.agent_eval import AgentEvalManifest
+        from src.backend.app.schemas.agent_eval import AgentEvalManifest, AgentEvaluationReport
         from src.backend.app.services.agent_evaluation_runner import AgentEvaluationRunner
+        from src.backend.app.services.agent_evaluation_service import compare_with_baseline
 
         if args.provider == "openai_compatible" and not args.allow_network:
             print(json.dumps({"error_code": "AGENT_EVAL_NETWORK_NOT_ALLOWED"}))
@@ -55,6 +66,14 @@ def main() -> int:
             ),
             encoding="utf-8",
         )
+        regressions: list[str] = []
+        if args.baseline:
+            baseline = AgentEvaluationReport.model_validate_json(
+                Path(args.baseline).read_text(encoding="utf-8")
+            )
+            regressions = list(
+                compare_with_baseline(report, baseline, tolerance=args.regression_tolerance)
+            )
     except (OSError, ValueError) as exc:
         print(json.dumps({"error_code": type(exc).__name__}, ensure_ascii=False))
         return 2
@@ -65,12 +84,17 @@ def main() -> int:
                 "failed_case_ids": [item.case_id for item in report.results if not item.passed],
                 "gate_failures": list(report.gate_failures),
                 "gate_passed": report.gate_passed,
+                "baseline_regressions": regressions,
                 "report": str(output),
             },
             ensure_ascii=False,
         )
     )
-    return 0 if report.gate_passed else 1
+    if not report.gate_passed:
+        return 1
+    if regressions:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
