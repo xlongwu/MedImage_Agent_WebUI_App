@@ -213,21 +213,16 @@ def check_approval_gate(
     approved_backends: list[str] = list(appr_dict.get("approved_backends") or [])
     is_wildcard = "*" in approved_nodes
 
-    # ── 7. rejected nodes block execution ──
+    # ── 7-13. Collect every violated requirement so a reviewer can fix all
+    # of them in one approval round trip instead of one error per attempt ──
+    missing_approval_nodes = [n for n in approval_required_nodes if n not in approved_nodes]
+
     if rejected_nodes:
         errors.append(ApprovalGateIssue(
             "APPROVAL_REJECTED_NODE",
             f"Plan contains rejected nodes: {', '.join(rejected_nodes)}",
         ))
-        return ApprovalGateResult(
-            ok=False, execution_allowed=False,
-            approval_required=True, approved=True,
-            rejected_nodes=rejected_nodes,
-            missing_approval_nodes=list(approval_required_nodes),
-            errors=errors,
-        )
 
-    # ── 8. M6-T003: High-risk backend nodes require explicit approval ──
     if high_risk_backend_nodes and is_wildcard:
         errors.append(ApprovalGateIssue(
             "WILDCARD_APPROVAL_NOT_ALLOWED_FOR_HIGH_RISK_BACKEND",
@@ -235,15 +230,7 @@ def check_approval_gate(
             f"{', '.join(sorted(high_risk_backend_nodes))}. "
             f"Add them to approved_nodes and include approved_backends.",
         ))
-        return ApprovalGateResult(
-            ok=False, execution_allowed=False,
-            approval_required=True, approved=True,
-            missing_approval_nodes=list(approval_required_nodes),
-            errors=errors,
-        )
-
-    # ── 9. M6-T003: High-risk backend nodes must be explicitly listed ──
-    if high_risk_backend_nodes and not is_wildcard:
+    elif high_risk_backend_nodes:
         missing_hr = [n for n in high_risk_backend_nodes if n not in approved_nodes]
         if missing_hr:
             errors.append(ApprovalGateIssue(
@@ -251,14 +238,7 @@ def check_approval_gate(
                 f"High-risk backend nodes must be explicitly approved: "
                 f"{', '.join(missing_hr)}",
             ))
-            return ApprovalGateResult(
-                ok=False, execution_allowed=False,
-                approval_required=True, approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
-    # ── 10. M6-T003: High-risk backends require approved_backends ──
     if high_risk_backend_nodes:
         # Determine which backends are used by high-risk nodes
         nodes = plan.get("nodes", []) or []
@@ -278,29 +258,13 @@ def check_approval_gate(
                 f"High-risk backends must be listed in approved_backends: "
                 f"{', '.join(sorted(missing_backends))}",
             ))
-            return ApprovalGateResult(
-                ok=False, execution_allowed=False,
-                approval_required=True, approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
-    # ── 11. approved_nodes must cover required nodes ──
-    if not is_wildcard:
-        missing = [n for n in approval_required_nodes if n not in approved_nodes]
-        if missing:
-            errors.append(ApprovalGateIssue(
-                "APPROVAL_NODE_MISSING",
-                f"Required nodes not individually approved: {', '.join(missing)}",
-            ))
-            return ApprovalGateResult(
-                ok=False, execution_allowed=False,
-                approval_required=True, approved=True,
-                missing_approval_nodes=missing,
-                errors=errors,
-            )
+    if not is_wildcard and missing_approval_nodes:
+        errors.append(ApprovalGateIssue(
+            "APPROVAL_NODE_MISSING",
+            f"Required nodes not individually approved: {', '.join(missing_approval_nodes)}",
+        ))
 
-    # ── 12. Native full preprocessing requires explicit safety acknowledgements ──
     native_full_execute_nodes = _native_full_execute_node_ids_from_plan(plan)
     if native_full_execute_nodes:
         native_ack = appr_dict.get("native_preprocessing_acknowledgement")
@@ -309,14 +273,6 @@ def check_approval_gate(
                 "NATIVE_PREPROC_ACKNOWLEDGEMENT_REQUIRED",
                 "native_preproc_full_execute requires native_preprocessing_acknowledgement=true.",
             ))
-            return ApprovalGateResult(
-                ok=False,
-                execution_allowed=False,
-                approval_required=True,
-                approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
         no_external_tools = appr_dict.get("no_external_tools_confirmed")
         if no_external_tools is not True:
@@ -324,14 +280,6 @@ def check_approval_gate(
                 "NATIVE_PREPROC_NO_EXTERNAL_TOOLS_CONFIRMATION_REQUIRED",
                 "native_preproc_full_execute requires no_external_tools_confirmed=true.",
             ))
-            return ApprovalGateResult(
-                ok=False,
-                execution_allowed=False,
-                approval_required=True,
-                approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
         rawdata_confirm = appr_dict.get("rawdata_read_only_confirmed")
         if rawdata_confirm is not True:
@@ -339,14 +287,6 @@ def check_approval_gate(
                 "NATIVE_PREPROC_RAWDATA_READ_ONLY_CONFIRMATION_REQUIRED",
                 "native_preproc_full_execute requires rawdata_read_only_confirmed=true.",
             ))
-            return ApprovalGateResult(
-                ok=False,
-                execution_allowed=False,
-                approval_required=True,
-                approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
         risk_ack = appr_dict.get("risk_acknowledgement")
         if risk_ack is not True:
@@ -354,14 +294,6 @@ def check_approval_gate(
                 "NATIVE_PREPROC_RISK_ACKNOWLEDGEMENT_REQUIRED",
                 "native_preproc_full_execute requires risk_acknowledgement=true.",
             ))
-            return ApprovalGateResult(
-                ok=False,
-                execution_allowed=False,
-                approval_required=True,
-                approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
         subject_scope = appr_dict.get("subject_scope_confirmed")
         if subject_scope is not True:
@@ -369,29 +301,13 @@ def check_approval_gate(
                 "NATIVE_PREPROC_SUBJECT_SCOPE_CONFIRMATION_REQUIRED",
                 "native_preproc_full_execute requires subject_scope_confirmed=true.",
             ))
-            return ApprovalGateResult(
-                ok=False,
-                execution_allowed=False,
-                approval_required=True,
-                approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
-    # ── 12. manual_required nodes block execution (MVP) ──
     if manual_required_nodes:
         errors.append(ApprovalGateIssue(
             "MANUAL_REQUIRED_NODE",
             f"Manual-required nodes not yet supported: {', '.join(manual_required_nodes)}",
         ))
-        return ApprovalGateResult(
-            ok=False, execution_allowed=False,
-            approval_required=True, approved=True,
-            missing_approval_nodes=list(approval_required_nodes),
-            errors=errors,
-        )
 
-    # ── 13. External-tool safety acknowledgements (M6-T004) ──
     external_tool_nodes = high_risk_backend_nodes or high_risk_nodes
     if external_tool_nodes:
         external_tool_ack = appr_dict.get("external_tool_acknowledgement")
@@ -401,12 +317,6 @@ def check_approval_gate(
                 "High-risk external-tool nodes require explicit external_tool_acknowledgement=true. "
                 "This confirms awareness that MATLAB/SPM/DPABI will be invoked.",
             ))
-            return ApprovalGateResult(
-                ok=False, execution_allowed=False,
-                approval_required=True, approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
         rawdata_confirm = appr_dict.get("rawdata_read_only_confirmed")
         if rawdata_confirm is not True:
@@ -414,12 +324,6 @@ def check_approval_gate(
                 "RAWDATA_READ_ONLY_CONFIRMATION_REQUIRED",
                 "High-risk external-tool nodes require rawdata_read_only_confirmed=true.",
             ))
-            return ApprovalGateResult(
-                ok=False, execution_allowed=False,
-                approval_required=True, approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
         output_confirm = appr_dict.get("output_directory_confirmed")
         if output_confirm is not True:
@@ -427,12 +331,6 @@ def check_approval_gate(
                 "OUTPUT_DIRECTORY_CONFIRMATION_REQUIRED",
                 "High-risk external-tool nodes require output_directory_confirmed=true.",
             ))
-            return ApprovalGateResult(
-                ok=False, execution_allowed=False,
-                approval_required=True, approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
         risk_ack = appr_dict.get("risk_acknowledgement")
         if risk_ack is not True:
@@ -440,12 +338,6 @@ def check_approval_gate(
                 "RISK_ACKNOWLEDGEMENT_REQUIRED",
                 "High-risk external-tool nodes require risk_acknowledgement=true.",
             ))
-            return ApprovalGateResult(
-                ok=False, execution_allowed=False,
-                approval_required=True, approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
         overwrite_policy = appr_dict.get("overwrite_policy")
         ALLOWED_OVERWRITE = {"fail_if_exists", "require_explicit_overwrite_approval"}
@@ -455,12 +347,6 @@ def check_approval_gate(
                 f"High-risk external-tool nodes require overwrite_policy in {ALLOWED_OVERWRITE}. "
                 f"Got: {overwrite_policy!r}",
             ))
-            return ApprovalGateResult(
-                ok=False, execution_allowed=False,
-                approval_required=True, approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
 
         subject_scope = appr_dict.get("subject_scope_confirmed")
         if subject_scope is not True:
@@ -468,12 +354,15 @@ def check_approval_gate(
                 "SUBJECT_SCOPE_CONFIRMATION_REQUIRED",
                 "High-risk external-tool nodes require subject_scope_confirmed=true.",
             ))
-            return ApprovalGateResult(
-                ok=False, execution_allowed=False,
-                approval_required=True, approved=True,
-                missing_approval_nodes=list(approval_required_nodes),
-                errors=errors,
-            )
+
+    if errors:
+        return ApprovalGateResult(
+            ok=False, execution_allowed=False,
+            approval_required=True, approved=True,
+            rejected_nodes=list(rejected_nodes),
+            missing_approval_nodes=missing_approval_nodes,
+            errors=errors,
+        )
 
     # ── 14. high risk approved → warning ──
     if high_risk_nodes:

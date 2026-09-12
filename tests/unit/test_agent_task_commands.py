@@ -1533,3 +1533,19 @@ def test_recovery_command_uses_recommended_candidate_and_one_explicit_approval(
     assert [kind for kind, _ in calls] == ["approve", "execute"]
     assert calls[0][1]["candidate_id"] == fixture.proposal.recommended_candidate_id
     assert calls[1][1]["candidate_id"] == fixture.proposal.recommended_candidate_id
+
+
+def test_goal_revision_detection_matches_leading_error_codes_only() -> None:
+    from src.backend.app.services.agent_planning_service import AgentPlanningService
+
+    assert AgentPlanningService._requires_goal_revision(
+        "UNSUPPORTED_GOAL: could not match goal 'x'; PLANNER_UNAVAILABLE"
+    )
+    assert AgentPlanningService._requires_goal_revision("EMPTY_GOAL: goal must be a non-empty string.")
+    # A code merely mentioned mid-message must not decide the branch.
+    assert not AgentPlanningService._requires_goal_revision(
+        "PLANNER_UNAVAILABLE: upstream service reported UNSUPPORTED_GOAL earlier"
+    )
+    assert not AgentPlanningService._requires_goal_revision(
+        "NODE_CONTRACT_UNKNOWN: invented_node"
+    )

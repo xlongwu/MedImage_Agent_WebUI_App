@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 import logging
 import math
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -920,18 +921,25 @@ class AgentPlanningService:
             updates={"pending_decision_batch": decision, "evidence_snapshot_hash": evidence.snapshot_hash},
         )
 
-    @staticmethod
-    def _requires_goal_revision(reason: str) -> bool:
-        normalized = reason.upper()
-        return any(
-            code in normalized
-            for code in (
-                "UNSUPPORTED_GOAL",
-                "GOAL_KIND_UNSUPPORTED_OR_AMBIGUOUS",
-                "GOAL_TEXT_REQUIRED",
-                "EMPTY_GOAL",
-            )
-        )
+    _GOAL_REVISION_ERROR_CODES = frozenset({
+        "UNSUPPORTED_GOAL",
+        "GOAL_KIND_UNSUPPORTED_OR_AMBIGUOUS",
+        "GOAL_TEXT_REQUIRED",
+        "EMPTY_GOAL",
+    })
+    _PLANNER_ERROR_CODE = re.compile(r"^([A-Z][A-Z0-9_]{2,})(?::|)")
+
+    @classmethod
+    def _requires_goal_revision(cls, reason: str) -> bool:
+        # Match stable planner error codes by leading token instead of
+        # substring-scanning the whole human-readable reason, so reworded
+        # messages or unrelated errors containing these words cannot flip the
+        # "missing input" vs "goal revision" decision.
+        for segment in str(reason).split(";"):
+            match = cls._PLANNER_ERROR_CODE.match(segment.strip())
+            if match and match.group(1) in cls._GOAL_REVISION_ERROR_CODES:
+                return True
+        return False
 
     @staticmethod
     def _is_plan_only(plan: dict[str, Any]) -> bool:

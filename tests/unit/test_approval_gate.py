@@ -413,3 +413,56 @@ def test_high_risk_still_warns():
     result = check_approval_gate(plan, v, a)
     assert result.execution_allowed is True
     assert any(w.code == "HIGH_RISK_APPROVED" for w in result.warnings)
+
+
+# ── Collect-all: one gate run reports every violated requirement ──
+
+
+def test_gate_reports_all_violations_in_one_pass():
+    plan = {
+        "nodes": [
+            {"id": "native_preproc_full_execute", "backend": "python"},
+            {"id": "spm_realign_subject", "backend": "matlab-spm"},
+        ]
+    }
+    approval = ApprovalRecord(
+        approved=True,
+        approved_nodes=[],  # nothing explicitly approved
+        rejected_nodes=[],
+        approved_backends=[],  # matlab-spm backend not approved
+        external_tool_acknowledgement=False,
+        rawdata_read_only_confirmed=False,
+        output_directory_confirmed=False,
+        risk_acknowledgement=False,
+        overwrite_policy="overwrite_freely",
+        subject_scope_confirmed=False,
+        native_preprocessing_acknowledgement=False,
+        no_external_tools_confirmed=False,
+    )
+    validation = _valid_validation(
+        approval_required_nodes=["spm_realign_subject"],
+        high_risk_nodes=["spm_realign_subject"],
+    )
+
+    result = check_approval_gate(plan, validation, approval)
+
+    assert result.execution_allowed is False
+    codes = {error.code for error in result.errors}
+    assert "WILDCARD_APPROVAL_NOT_ALLOWED_FOR_HIGH_RISK_BACKEND" not in codes
+    assert {
+        "HIGH_RISK_NODE_REQUIRES_EXPLICIT_APPROVAL",
+        "HIGH_RISK_BACKEND_REQUIRES_APPROVAL",
+        "APPROVAL_NODE_MISSING",
+        "NATIVE_PREPROC_ACKNOWLEDGEMENT_REQUIRED",
+        "NATIVE_PREPROC_NO_EXTERNAL_TOOLS_CONFIRMATION_REQUIRED",
+        "NATIVE_PREPROC_RAWDATA_READ_ONLY_CONFIRMATION_REQUIRED",
+        "NATIVE_PREPROC_RISK_ACKNOWLEDGEMENT_REQUIRED",
+        "NATIVE_PREPROC_SUBJECT_SCOPE_CONFIRMATION_REQUIRED",
+        "EXTERNAL_TOOL_ACKNOWLEDGEMENT_REQUIRED",
+        "RAWDATA_READ_ONLY_CONFIRMATION_REQUIRED",
+        "OUTPUT_DIRECTORY_CONFIRMATION_REQUIRED",
+        "RISK_ACKNOWLEDGEMENT_REQUIRED",
+        "OVERWRITE_POLICY_REQUIRED",
+        "SUBJECT_SCOPE_CONFIRMATION_REQUIRED",
+    } <= codes
+    assert result.missing_approval_nodes == ["spm_realign_subject"]
