@@ -336,6 +336,7 @@ def call_openai_compatible_provider(
     http_post: Callable[..., Any] | None = None,
     *,
     config: AgentModelRuntimeConfig,
+    max_attempts: int = 2,
 ) -> LLMProviderResult:
     """Call an OpenAI-compatible chat completions API.
 
@@ -345,6 +346,7 @@ def call_openai_compatible_provider(
         http_post: Injectable HTTP POST function for testing.
                    Signature: (url, headers, json_body, timeout) → response-like.
                    Response must have .json() and .raise_for_status() or .status_code.
+        max_attempts: Total model calls (1 = no self-correction round).
 
     Returns:
         LLMProviderResult with ok=True and parsed plan content on success.
@@ -361,19 +363,22 @@ def call_openai_compatible_provider(
     prompt = build_planner_prompt(goal, constraints=constraints)
     last_raw: dict[str, Any] | None = None
     last_metadata: dict[str, object] = {"endpoint_class": "chat_completions", "network_called": False}
-    last_error = "PLANNER_OUTPUT_INVALID"
-    for attempt in range(2):
+    last_errors: list[str] = ["PLANNER_OUTPUT_INVALID"]
+    for attempt in range(max(1, max_attempts)):
         messages = [
             {"role": "system", "content": "You are a medical imaging pipeline planner. Output only valid JSON."},
             {"role": "user", "content": prompt},
         ]
-        if attempt == 1:
+        if attempt > 0:
+            error_lines = "\n".join(f"- {error}" for error in last_errors[:8])
             messages.append(
                 {
                     "role": "user",
                     "content": (
-                        "The prior response was invalid. Using the identical goal, constraints, "
-                        "and tool catalog, return only one corrected JSON object matching the schema."
+                        "The prior response was invalid. Fix ALL of the following validation "
+                        "errors and, using the identical goal, constraints, and tool catalog, "
+                        "return only one corrected JSON object matching the schema.\n"
+                        f"VALIDATION ERRORS:\n{error_lines}"
                     ),
                 }
             )
@@ -395,9 +400,9 @@ def call_openai_compatible_provider(
 
             validation = validate_plan(candidate)
             if not validation.ok:
-                last_error = "; ".join(
+                last_errors = [
                     f"{issue.code}: {issue.message}" for issue in validation.errors
-                )
+                ]
                 continue
             return LLMProviderResult(
                 ok=True,
@@ -406,13 +411,13 @@ def call_openai_compatible_provider(
                 **last_metadata,
             )
         except ValueError as exc:
-            last_error = str(exc)
+            last_errors = [str(exc)]
 
     return LLMProviderResult(
         ok=False,
         content="",
         raw=last_raw,
-        errors=[_safe_error_code(last_error, default="PLANNER_OUTPUT_INVALID")],
+        errors=[_safe_error_code(last_errors[-1], default="PLANNER_OUTPUT_INVALID")],
         **last_metadata,
     )
 

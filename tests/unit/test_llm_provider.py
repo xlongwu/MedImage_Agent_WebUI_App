@@ -379,3 +379,74 @@ def test_no_real_network():
     result = call_openai_compatible_provider("motion", config=_model_config(api_key=None))
     assert result.ok is False
     assert result.errors == ["AGENT_MODEL_CONFIG_INCOMPLETE"]
+
+
+# ── Validation-error-driven self-correction ──
+
+
+def test_repair_request_carries_specific_validation_error_codes():
+    calls: list[dict] = []
+
+    def fake_post(url, headers, body, timeout):
+        calls.append(body)
+        if len(calls) == 1:
+            return FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "pipeline_id": "bad",
+                                        "nodes": [
+                                            {
+                                                "id": "invented_node",
+                                                "backend": "python",
+                                                "depends_on": [],
+                                                "params": {},
+                                            }
+                                        ],
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+            )
+        return FakeResponse(_valid_plan_response())
+
+    result = call_openai_compatible_provider("motion", http_post=fake_post, config=_model_config())
+
+    assert result.ok is True
+    assert len(calls) == 2
+    repair_messages = [m["content"] for m in calls[1]["messages"] if m["role"] == "user"]
+    assert any("VALIDATION ERRORS" in content for content in repair_messages)
+    assert any("UNKNOWN_NODE_ID" in content for content in repair_messages)
+
+
+def test_max_attempts_controls_self_correction_rounds():
+    calls = 0
+
+    def fake_post(url, headers, body, timeout):
+        nonlocal calls
+        calls += 1
+        return FakeResponse({"choices": [{"message": {"content": "not json"}}]})
+
+    result = call_openai_compatible_provider(
+        "motion", http_post=fake_post, config=_model_config(), max_attempts=3
+    )
+    assert result.ok is False
+    assert calls == 3
+
+    calls = 0
+
+    def single_post(url, headers, body, timeout):
+        nonlocal calls
+        calls += 1
+        return FakeResponse({"choices": [{"message": {"content": "not json"}}]})
+
+    result = call_openai_compatible_provider(
+        "motion", http_post=single_post, config=_model_config(), max_attempts=1
+    )
+    assert result.ok is False
+    assert calls == 1
