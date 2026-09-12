@@ -117,6 +117,26 @@ def test_context_truncates_to_published_32kib_limit() -> None:
     assert any(item.startswith("memory_context:") for item in context.omitted_sections)
 
 
+def test_byte_budget_evicts_lowest_priority_optional_sections_first() -> None:
+    builder = HarnessContextBuilder()
+    lifecycle = _lifecycle({"memory_context": {
+        "memory_ids": ["m1"],
+        "decision_suggestions": [{"summary": "x" * 1024} for _ in range(8)],
+    }})
+    oversized_result_summary = {f"field-{index}": "y" * 1024 for index in range(24)}
+
+    context = builder.build(sources=HarnessContextSources(
+        lifecycle=lifecycle, project=_project({}), evidence_snapshot=_evidence(),
+        result_summary=oversized_result_summary,
+    ))
+
+    rendered = str(context.prompt_payload()["sections"]["memory_context"]["data"])
+    assert "m1" in rendered
+    assert "memory_context:byte_budget" not in context.omitted_sections
+    assert "last_action_result:byte_budget" in context.omitted_sections
+    assert len(__import__("json").dumps(context.prompt_payload()).encode()) <= builder.MAX_BYTES
+
+
 def test_dynamic_section_or_policy_change_invalidates_context_hash() -> None:
     builder = HarnessContextBuilder()
     lifecycle = _lifecycle({"science_answers": {"atlas": "aal"}})

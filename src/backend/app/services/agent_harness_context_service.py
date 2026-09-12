@@ -189,8 +189,12 @@ class HarnessContextBuilder:
         return tuple(dict.fromkeys(included)), []
 
     def _fit_optional_sections(self, sections, included, required, purpose, omitted):
+        # optional_order_by_purpose is priority-ordered (most valuable first,
+        # matching _included_sections); eviction must proceed from the lowest
+        # priority so high-value optional sections such as memory_context
+        # survive a byte-budget squeeze.
         candidate = list(included)
-        for name in self.policy.optional_order_by_purpose[purpose]:
+        for name in reversed(self.policy.optional_order_by_purpose[purpose]):
             if self._payload_size(sections, candidate) <= self.MAX_BYTES:
                 break
             if name in candidate and name not in required:

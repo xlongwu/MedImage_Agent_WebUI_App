@@ -90,14 +90,21 @@ def match_error_patterns(
     root_dir: str = ".",
 ) -> list[dict[str, Any]]:
     kb = read_error_kb(root_dir)
-    entries = kb.get("errors", []) or []
-
-    matches: list[dict[str, Any]] = []
+    categories = kb.get("categories", {}) or {}
     joined_errors = "\n".join(errors)
 
-    for entry in entries:
-        pattern = str(entry.get("pattern", ""))
-        if pattern and pattern in joined_errors:
-            matches.append(entry)
+    matches: list[dict[str, Any]] = []
+    for category, cat_def in categories.items():
+        for pattern in cat_def.get("patterns", []) or []:
+            pattern = str(pattern)
+            if pattern and pattern.lower() in joined_errors.lower():
+                matches.append({
+                    "category": category,
+                    "pattern": pattern,
+                    "severity": cat_def.get("severity", "unknown"),
+                    "retryable": bool(cat_def.get("retryable", False)),
+                    "suggested_fixes": list(cat_def.get("suggested_fixes", []) or []),
+                })
+                break
 
     return matches
