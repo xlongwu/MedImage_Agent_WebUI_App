@@ -77,6 +77,7 @@ def write_node_state(
         "metrics": result.get("metrics", {}),
         "warnings": result.get("warnings", []),
         "errors": result.get("errors", []),
+        "error_details": result.get("error_details", []),
         "result_json": result.get("result_json"),
         "returncode": result.get("returncode"),
     }

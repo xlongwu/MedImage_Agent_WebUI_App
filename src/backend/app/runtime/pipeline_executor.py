@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.runtime.capability_enforcement import (
@@ -16,6 +18,7 @@ from src.backend.app.runtime.execution_gateway import (
     VerifiedExecutionContext,
     assert_verified_execution_context,
 )
+from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.runtime.node_registry import NodeExecutionContext, get_node_runner
 from src.backend.app.runtime.scheduler import get_scheduler_config
 from src.backend.app.runtime.state_store import (
@@ -30,6 +33,89 @@ from src.backend.app.schemas.pipeline_schema import (
     PipelineValidationError,
     load_pipeline_yaml,
 )
+
+_RUNNER_TIMEOUT_ERROR = "NODE_RUNNER_TIMEOUT"
+_ERROR_CODE_PREFIX = re.compile(r"^([A-Z][A-Z0-9_]{2,})(?::|\s|\b)")
+_MESSAGE_LIMIT = 2000
+
+
+def _runtime_failure_code(exc: BaseException) -> str:
+    """Best-effort canonical error code for a runtime failure.
+
+    Coded application errors (SafetyError & friends) carry a stable ``code``;
+    plain runner exceptions fall back to a leading error-code token in the
+    message and otherwise map to NODE_FAILED.
+    """
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{2,}", code):
+        return code
+    match = _ERROR_CODE_PREFIX.match(str(exc))
+    return match.group(1) if match else "NODE_FAILED"
+
+
+def _error_detail(
+    exc: BaseException | None,
+    *,
+    node_id: str,
+    subject_id: str | None = None,
+    timeout_seconds: int | None = None,
+) -> dict[str, Any]:
+    detail: dict[str, Any] = {
+        "error_code": _RUNNER_TIMEOUT_ERROR if timeout_seconds is not None else _runtime_failure_code(exc or Exception()),
+        "error_type": "TimeoutError" if timeout_seconds is not None else type(exc or Exception()).__name__,
+        "message": (
+            f"Node '{node_id}' exceeded runner_timeout_seconds={timeout_seconds}"
+            if timeout_seconds is not None
+            else str(exc)[:_MESSAGE_LIMIT]
+        ),
+        "node_id": node_id,
+    }
+    if subject_id is not None:
+        detail["subject_id"] = subject_id
+    if timeout_seconds is not None:
+        detail["timeout_seconds"] = timeout_seconds
+    return detail
+
+
+def _runner_timeout_seconds(node_id: str) -> int | None:
+    try:
+        contract = get_node_contract(node_id)
+    except KeyError:
+        return None
+    return contract.resources.runner_timeout_seconds
+
+
+def _invoke_runner(
+    invoke: Callable[[], Any],
+    *,
+    node_id: str,
+    subject_id: str | None = None,
+) -> tuple[Any, dict[str, Any] | None]:
+    """Invoke a runner callable honoring the node contract runner timeout.
+
+    Returns ``(result, None)`` on success or ``(None, error_detail)`` when the
+    invocation raised or exceeded the contract timeout. A timed-out in-process
+    runner cannot be killed (Python threads are not interruptible), so it keeps
+    running in the background while the pipeline fails fast with
+    NODE_RUNNER_TIMEOUT; external backends remain governed by their own
+    process sandbox limits.
+    """
+    timeout_seconds = _runner_timeout_seconds(node_id)
+    try:
+        if timeout_seconds is None:
+            return invoke(), None
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"node-{node_id}")
+        try:
+            future = pool.submit(invoke)
+            return future.result(timeout=timeout_seconds), None
+        except FutureTimeoutError:
+            return None, _error_detail(
+                None, node_id=node_id, subject_id=subject_id, timeout_seconds=timeout_seconds
+            )
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+    except Exception as exc:  # noqa: BLE001 - executor records all runner failures
+        return None, _error_detail(exc, node_id=node_id, subject_id=subject_id)
 
 
 def _elapsed_seconds(started_at: str, ended_at: str) -> float:
@@ -407,18 +493,27 @@ def run_pipeline(
                         work_dir=work_dir,
                     )
 
-                    try:
-                        node_result = runner(context, node, subject_record, subject_id)
-                    except Exception as exc:
-                        error_msg = f"Node '{node.id}' execution failed for {subject_id}: {exc}"
+                    result, error_detail = _invoke_runner(
+                        lambda: runner(context, node, subject_record, subject_id),
+                        node_id=node.id,
+                        subject_id=subject_id,
+                    )
+                    if error_detail is not None:
+                        error_msg = (
+                            f"Node '{node.id}' execution failed for {subject_id}: "
+                            f"{error_detail['message']}"
+                        )
                         errors.append(error_msg)
                         node_result = {
                             "ok": False,
                             "subject_id": subject_id,
                             "errors": [error_msg],
+                            "error_details": [error_detail],
                         }
                         all_subject_success = False
                         failed_subjects.add(subject_id)
+                    else:
+                        node_result = result
 
                     subject_status = determine_status_from_result(node_result)
 
@@ -478,25 +573,29 @@ def run_pipeline(
                         work_dir=context.work_dir,
                     )
 
-                    try:
-                        result = current_runner(
+                    result, error_detail = _invoke_runner(
+                        lambda: current_runner(
                             context, current_node, subject_record, subject_id
-                        )
-                        result["subject_id"] = subject_id
-                        result["started_at"] = subject_started_at
-                        result["ended_at"] = now_iso()
-                        return result
-                    except Exception as exc:
+                        ),
+                        node_id=current_node.id,
+                        subject_id=subject_id,
+                    )
+                    if error_detail is not None:
                         return {
                             "ok": False,
                             "subject_id": subject_id,
                             "errors": [
                                 f"Node '{current_node.id}' execution failed for "
-                                f"{subject_id}: {exc}"
+                                f"{subject_id}: {error_detail['message']}"
                             ],
+                            "error_details": [error_detail],
                             "started_at": subject_started_at,
                             "ended_at": now_iso(),
                         }
+                    result["subject_id"] = subject_id
+                    result["started_at"] = subject_started_at
+                    result["ended_at"] = now_iso()
+                    return result
 
                 with ThreadPoolExecutor(max_workers=worker_count) as executor:
                     futures = {
@@ -565,14 +664,17 @@ def run_pipeline(
                 result={},
                 work_dir=work_dir,
             )
-            try:
-                node_result = runner(context, node)
-            except Exception as exc:
-                error_msg = f"Node '{node.id}' execution failed: {exc}"
+            node_result, error_detail = _invoke_runner(
+                lambda: runner(context, node),
+                node_id=node.id,
+            )
+            if error_detail is not None:
+                error_msg = f"Node '{node.id}' execution failed: {error_detail['message']}"
                 errors.append(error_msg)
                 node_result = {
                     "ok": False,
                     "errors": [error_msg],
+                    "error_details": [error_detail],
                 }
 
             node_results.append(node_result)

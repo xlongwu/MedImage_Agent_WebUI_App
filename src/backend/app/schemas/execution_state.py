@@ -78,6 +78,9 @@ class PersistedNodeState(BaseModel):
     metrics: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    # Structured runtime failure evidence ({error_code, error_type, message,
+    # node_id, subject_id?}); errors stays the human-readable string channel.
+    error_details: list[dict[str, Any]] = Field(default_factory=list)
     result_json: Any = None
     returncode: int | None = None
 

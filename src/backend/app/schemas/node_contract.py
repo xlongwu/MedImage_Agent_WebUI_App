@@ -43,6 +43,10 @@ class ResourceRequirements(BaseModel):
     cpu_cores_min: int = 1
     gpu_required: bool = False
     process_mode: Literal["in_process", "sandbox_process"] = "in_process"
+    # Wall-clock budget enforced by the pipeline executor for a single runner
+    # invocation. None keeps the historical unlimited behavior; per-node values
+    # must be calibrated against real runtimes before being declared here.
+    runner_timeout_seconds: int | None = Field(default=None, ge=1, le=604800)
 
 
 class ContractRetryPolicy(BaseModel):
