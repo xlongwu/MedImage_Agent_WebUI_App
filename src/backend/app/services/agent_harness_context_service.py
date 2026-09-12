@@ -249,13 +249,23 @@ class HarnessContextBuilder:
         return data
 
     def _safe_snapshot(self, snapshot) -> dict[str, Any]:
-        return self._safe_object({
+        limit = self.policy.max_items_per_section
+        facts = [item.model_dump(mode="json") for item in getattr(snapshot, "facts", ())]
+        missing = list(getattr(snapshot, "missing", ()))
+        warnings = [item.model_dump(mode="json") for item in getattr(snapshot, "warnings", ())]
+        source_refs = [item.model_dump(mode="json") for item in getattr(snapshot, "source_refs", ())]
+        data = self._safe_object({
             "snapshot_hash": getattr(snapshot, "snapshot_hash", None),
-            "facts": [item.model_dump(mode="json") for item in getattr(snapshot, "facts", ())[:self.policy.max_items_per_section]],
-            "missing": list(getattr(snapshot, "missing", ())[:self.policy.max_items_per_section]),
-            "warnings": [item.model_dump(mode="json") for item in getattr(snapshot, "warnings", ())[:self.policy.max_items_per_section]],
-            "source_refs": [item.model_dump(mode="json") for item in getattr(snapshot, "source_refs", ())[:self.policy.max_items_per_section]],
-        }, max_items=self.policy.max_items_per_section)
+            "facts": facts[:limit],
+            "missing": missing[:limit],
+            "warnings": warnings[:limit],
+            "source_refs": source_refs[:limit],
+            **({"facts_omitted": len(facts) - limit} if len(facts) > limit else {}),
+            **({"missing_omitted": len(missing) - limit} if len(missing) > limit else {}),
+            **({"warnings_omitted": len(warnings) - limit} if len(warnings) > limit else {}),
+            **({"source_refs_omitted": len(source_refs) - limit} if len(source_refs) > limit else {}),
+        }, max_items=limit)
+        return data
 
     def _evidence_refs(self, snapshot) -> list[dict[str, str]]:
         if snapshot is None:
@@ -272,7 +282,16 @@ class HarnessContextBuilder:
     def _plan_state(self, lifecycle, plan) -> dict[str, Any]:
         payload = getattr(plan, "payload", {}) if plan is not None else {}
         nodes = payload.get("nodes", []) if isinstance(payload, dict) else []
-        return {"reviewed_plan_id": self._safe_ref(getattr(plan, "reviewed_plan_id", None) or getattr(lifecycle, "reviewed_plan_id", None)), "plan_hash": self._safe_ref(getattr(plan, "plan_hash", None)), "revision_no": self._safe_scalar(getattr(plan, "revision_no", None)), "node_count": len(nodes) if isinstance(nodes, list) else 0, "nodes": self._safe_nodes(nodes)}
+        node_count = len(nodes) if isinstance(nodes, list) else 0
+        nodes_omitted = max(0, node_count - self.policy.max_items_per_section)
+        return {
+            "reviewed_plan_id": self._safe_ref(getattr(plan, "reviewed_plan_id", None) or getattr(lifecycle, "reviewed_plan_id", None)),
+            "plan_hash": self._safe_ref(getattr(plan, "plan_hash", None)),
+            "revision_no": self._safe_scalar(getattr(plan, "revision_no", None)),
+            "node_count": node_count,
+            "nodes": self._safe_nodes(nodes),
+            **({"nodes_omitted": nodes_omitted} if nodes_omitted else {}),
+        }
 
     def _execution_state(self, lifecycle, run_link) -> dict[str, Any]:
         return {"run_id": self._safe_ref(getattr(run_link, "run_id", None) or getattr(lifecycle, "run_id", None)), "status": self._safe_scalar(getattr(run_link, "status", None)), "dispatch_id": self._safe_ref(getattr(run_link, "dispatch_id", None))}
@@ -353,7 +372,12 @@ class HarnessContextBuilder:
 
     @staticmethod
     def _short_text(value: object, limit: int = 1024) -> str:
-        return HarnessContextBuilder._ABSOLUTE_PATH.sub("project://redacted", str(value or "").replace("\x00", ""))[:limit]
+        redacted = HarnessContextBuilder._ABSOLUTE_PATH.sub(
+            "project://redacted", str(value or "").replace("\x00", "")
+        )
+        # A visible marker so the model can tell when it is reading truncated
+        # content instead of silently incomplete evidence.
+        return redacted if len(redacted) <= limit else redacted[:limit] + "…"
 
     @staticmethod
     def _safe_scalar(value: object) -> str | int | float | bool | None:

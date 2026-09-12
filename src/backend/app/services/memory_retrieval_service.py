@@ -53,6 +53,7 @@ class MemoryRetrievalService:
         selected: list[MemoryItem] = []
         warnings: list[str] = list(health["warning_codes"])
         omitted = 0
+        budget_omitted = 0
         used_bytes = 0
         for item, _score in self.repository.retrieve_active_items(
             project_id=project_id, query=query, limit=200
@@ -74,9 +75,12 @@ class MemoryRetrievalService:
             ).encode("utf-8")
             if used_bytes + len(encoded) > self.config.max_context_bytes:
                 omitted += 1
+                budget_omitted += 1
                 continue
             used_bytes += len(encoded)
             selected.append(item)
+        if budget_omitted:
+            warnings.append("MEMORY_CONTEXT_BUDGET_OMITTED")
         return MemoryRetrievalResult(
             items=tuple(selected),
             warnings=tuple(dict.fromkeys(warnings)),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from src.backend.app.agent_skills.schemas import SkillContextRef
 from src.backend.app.planner.agent_model_adapter import (
     DefaultAgentModelAdapter,
@@ -252,3 +254,29 @@ def test_adapter_serializes_context_v2_in_fixed_order_and_rejects_flat_v1() -> N
         assert str(error) == "AGENT_CONTEXT_SCHEMA_INVALID"
     else:
         raise AssertionError("flat Context v1 must not be accepted")
+
+
+def test_truncation_leaves_visible_markers_for_the_model() -> None:
+    from src.backend.app.schemas.agent_evidence import EvidenceFact, EvidenceSourceRef
+
+    builder = HarnessContextBuilder()
+    ref = EvidenceSourceRef(source_type="project", source_id="project-1", source_hash="h")
+    snapshot = _evidence().model_copy(update={"facts": tuple(
+        EvidenceFact(key=f"fact-{index}", value="x" * 128, source_refs=(ref,))
+        for index in range(30)
+    )})
+    plan = SimpleNamespace(
+        reviewed_plan_id="reviewed-1", plan_hash="plan-hash", revision_no=1,
+        payload={"nodes": [{"id": f"node-{index}", "backend": "python"} for index in range(30)]},
+    )
+
+    long_goal_lifecycle = _lifecycle().model_copy(update={"goal_text": "z" * 800})
+    context = builder.build(sources=HarnessContextSources(
+        lifecycle=long_goal_lifecycle, project=_project({}), evidence_snapshot=snapshot,
+    ))
+
+    assert context.sections.project_evidence.data["facts_omitted"] == 6
+    assert context.sections.plan_state.data is not None
+    assert "x" * 2048 not in str(context.prompt_payload())
+    rendered = str(context.prompt_payload())
+    assert "…" in rendered

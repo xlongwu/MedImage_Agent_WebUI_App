@@ -224,6 +224,7 @@ def test_byte_budget_omits_lower_ranked_items(tmp_path: Path) -> None:
     result = retrieval.retrieve(project_id=project_id, query="report preference")
     assert result.omitted_count >= 1
     assert len(result.items) < 3
+    assert "MEMORY_CONTEXT_BUDGET_OMITTED" in result.warnings
 
 
 def test_influence_guard_requires_current_task_confirmation(tmp_path: Path) -> None:
