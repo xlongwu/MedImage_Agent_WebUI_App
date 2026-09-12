@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import lru_cache
 
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.audit_record import stable_hash
@@ -20,6 +21,12 @@ from src.backend.app.schemas.recovery import (
 )
 
 _ERROR_CODE = re.compile(r"^([A-Z][A-Z0-9_]{2,})(?::|\b)")
+
+
+def _default_kb_classifier(message: str) -> dict:
+    from src.backend.app.tools.error_classifier import classify_error
+
+    return classify_error(message)
 
 
 def calculate_diagnosis_hash(record: DiagnosisRecord | dict[str, object]) -> str:
@@ -89,8 +96,19 @@ def _retryability(category: str, contract: NodeContract | None) -> str:
 class RunDiagnosisService:
     VERSION = "run-diagnosis-v1"
 
-    def __init__(self, contract_resolver: Callable[[str], NodeContract]) -> None:
+    def __init__(
+        self,
+        contract_resolver: Callable[[str], NodeContract],
+        error_kb_classifier: Callable[[str], dict] | None = None,
+    ) -> None:
         self.contract_resolver = contract_resolver
+        # The curated ERROR_KB supplements contract error classes: when a node
+        # contract cannot classify a failure, the KB's retryable flag decides
+        # the fact's retryability instead of leaving it "unknown" (which would
+        # force root_cause_status=unknown and a human handoff downstream).
+        self._classify = lru_cache(maxsize=256)(
+            lambda message: (error_kb_classifier or _default_kb_classifier)(message)
+        )
 
     def build(
         self,
@@ -146,6 +164,14 @@ class RunDiagnosisService:
             for offset, message in enumerate(messages, start=1):
                 category = _category(message, "NODE_FAILED")
                 retryability = _retryability(category, contract)
+                confidence_source = "contract_rule" if retryability != "unknown" else "explicit_state"
+                if retryability == "unknown":
+                    kb_match = self._classify(message)
+                    if kb_match.get("classified"):
+                        retryability = (
+                            "retryable" if kb_match.get("retryable") else "non_retryable"
+                        )
+                        confidence_source = "error_kb"
                 facts.append(
                     DiagnosisFact(
                         fact_id=f"node-{len(facts) + 1:03d}-{offset:02d}",
@@ -156,9 +182,7 @@ class RunDiagnosisService:
                         subject_id=None if node.subject_id == "project" else node.subject_id,
                         session_id=node.session_id,
                         evidence_ids=node.evidence_ids,
-                        confidence_source=(
-                            "contract_rule" if retryability != "unknown" else "explicit_state"
-                        ),
+                        confidence_source=confidence_source,
                         retryability=retryability,
                         message=message,
                     )

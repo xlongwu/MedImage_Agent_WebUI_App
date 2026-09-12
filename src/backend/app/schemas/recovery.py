@@ -59,6 +59,7 @@ class DiagnosisFact(BaseModel):
     confidence_source: Literal[
         "explicit_state",
         "contract_rule",
+        "error_kb",
         "validator",
         "legacy_classifier",
     ]

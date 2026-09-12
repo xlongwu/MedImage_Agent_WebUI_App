@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -46,6 +47,31 @@ def calculate_recovery_attempt_hash(
     )
     payload.pop("recovery_attempt_hash", None)
     return stable_hash(payload)
+
+
+_RETRY_ACTIONS = {"SAFE_RETRY", "RETRY_FAILED_SUBJECTS"}
+_RETRY_BACKOFF_CAP_SECONDS = 30
+
+
+def _approved_retry_backoff(candidate) -> float:
+    """Wall-clock pause an approved retry must honor before dispatch.
+
+    The node contract's retry policy declares the backoff; approval has already
+    been granted by the time this runs, so this only spaces out the attempt as
+    the contract prescribes. Capped defensively against contract authoring
+    mistakes.
+    """
+    if getattr(candidate, "action", None) not in _RETRY_ACTIONS:
+        return 0.0
+    seconds = 0.0
+    for node_id in getattr(candidate, "target_node_ids", ()) or ():
+        try:
+            policy = get_node_contract(node_id).retry_policy
+        except (KeyError, SafetyError):
+            continue
+        if policy.backoff_policy == "fixed" and policy.backoff_seconds > 0:
+            seconds = max(seconds, min(policy.backoff_seconds, _RETRY_BACKOFF_CAP_SECONDS))
+    return seconds
 
 
 class RecoveryExecutionService:
@@ -563,6 +589,10 @@ class RecoveryExecutionService:
             nonlocal runner_started
             runner_started = True
             return selected_executor(**kwargs)
+
+        backoff_seconds = _approved_retry_backoff(candidate)
+        if backoff_seconds > 0:
+            time.sleep(backoff_seconds)
 
         try:
             result, consumed = ExecutionGateway(self.ticket_service).dispatch(
