@@ -40,6 +40,10 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   `answer` 提交给既有 Agent Task 命令；该事务持久化 wake 后，scheduler 才在后台推进一次
   有界 planning checkpoint。`approve` 与 `approve-recovery` 同样只调用既有服务，后续
   dry-run、Ticket、Gateway、monitor 和 Observation 仍在后端顺序中运行。
+- 持久化 wake 的 worker 在无到期项目时等待最近的 `PENDING`/`RETRY` 到期时间或
+  `CLAIMED` 租约到期；新入队与 shutdown 使用同一条件通知，未来 retry 不需要新用户命令。
+  单一 wake 最多尝试五次（含首次），之后写结构化 `AGENT_HARNESS_RETRY_EXHAUSTED`、消费
+  wake 并进入 `HUMAN_HANDOFF`；新用户命令才会创建新的受控推进机会。
 - 唯一模型协议是 schema version 2 的判别联合 `ActionEnvelope`。允许 kind 仅为
   `request_decision` 和 `draft_plan`；两者使用固定不可变字段，前者直接嵌入正式
   `DecisionItem`，不存在通用 `payload`。所有其他 kind 及额外字段默认拒绝。
@@ -90,6 +94,9 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   attempt 的 expected-status/lease fence 结算 totals。若进程在已持久化调用后失效，
   恢复会对已有 step 对账；未知 outcome 以 `AGENT_HARNESS_CALL_OUTCOME_UNKNOWN` 停止，
   不会重复调用 provider 或重复消费预算。
+- 非 rule-based provider 在跨越调用边界前将 call 标为 `may_have_been_sent`；成功收到
+  结果后标为 `response_received`，未跨越边界才保持 `not_sent`。恢复只会重试 `not_sent`，
+  `may_have_been_sent` 一律按未知结果停止，并仍占用调用预算。
 
 ## 安全和恢复
 

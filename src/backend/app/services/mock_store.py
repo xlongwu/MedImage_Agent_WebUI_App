@@ -2924,6 +2924,17 @@ class SQLiteDesktopStore:
                 return None
         return claimed
 
+    def next_agent_task_wake_at(self) -> datetime | None:
+        """Return the next durable retry or expired lease time without claiming it."""
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                """SELECT MIN(CASE WHEN status='CLAIMED' THEN lease_expires_at ELSE available_at END) AS due_at
+                   FROM agent_task_wake_outbox
+                   WHERE status IN ('PENDING', 'RETRY')
+                      OR (status='CLAIMED' AND lease_expires_at IS NOT NULL)"""
+            ).fetchone()
+        return datetime.fromisoformat(row["due_at"]) if row and row["due_at"] else None
+
     def complete_agent_task_wake(self, record: AgentTaskWakeRecord, *, owner: str, now: datetime) -> AgentTaskWakeRecord:
         if record.lease_owner != owner:
             raise RuntimeError("AGENT_TASK_WAKE_OWNER_MISMATCH")
@@ -2966,6 +2977,27 @@ class SQLiteDesktopStore:
             if cursor.rowcount != 1:
                 raise RuntimeError("AGENT_TASK_WAKE_CONCURRENT_UPDATE")
         return retried
+
+    def stop_agent_task_wake(
+        self, record: AgentTaskWakeRecord, *, owner: str, now: datetime, error_code: str
+    ) -> AgentTaskWakeRecord:
+        if record.lease_owner != owner:
+            raise RuntimeError("AGENT_TASK_WAKE_OWNER_MISMATCH")
+        stopped = record.model_copy(update={
+            "status": "CONSUMED", "lease_owner": None, "lease_expires_at": None,
+            "last_error_code": error_code[:128], "updated_at": now,
+        })
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """UPDATE agent_task_wake_outbox
+                   SET status=?, lease_owner=NULL, lease_expires_at=NULL, last_error_code=?, payload=?, updated_at=?
+                   WHERE wake_id=? AND status='CLAIMED' AND lease_owner=?""",
+                (stopped.status, stopped.last_error_code, json.dumps(stopped.model_dump(mode="json"), ensure_ascii=False),
+                 stopped.updated_at.isoformat(), stopped.wake_id, owner),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_TASK_WAKE_CONCURRENT_UPDATE")
+        return stopped
 
     def list_agent_task_wakes(self, *, project_id: str, include_consumed: bool = False) -> list[AgentTaskWakeRecord]:
         predicate = "project_id=?" if include_consumed else "project_id=? AND status != 'CONSUMED'"

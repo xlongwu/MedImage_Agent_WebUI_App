@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from threading import Lock, Thread
+from threading import Condition, Thread
 from typing import Callable, Protocol
 from uuid import uuid4
 
 from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
 from src.backend.app.core.agent_logging import agent_log_context
+from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ class AgentTaskScheduler:
 
     LEASE_SECONDS = 30
     MAX_RETRY_DELAY_SECONDS = 30
+    MAX_WAKE_ATTEMPTS = 5
     RESCAN_LIMIT = 100
 
     def __init__(
@@ -44,7 +46,7 @@ class AgentTaskScheduler:
         self.start_workers = start_workers
         self.now = now or (lambda: datetime.now(UTC))
         self._accepting = True
-        self._lock = Lock()
+        self._condition = Condition()
         self._worker: Thread | None = None
 
     def enqueue(self, *, project_id: str, lifecycle_id: str, step_key: str, reason: str) -> AgentTaskWakeRecord:
@@ -55,12 +57,16 @@ class AgentTaskScheduler:
             available_at=now, created_at=now, updated_at=now,
         )
         persisted = self.store.enqueue_agent_task_wake(record)
+        with self._condition:
+            self._condition.notify_all()
         if self._accepting and self.start_workers:
             self._start_worker()
         return persisted
 
     def notify(self) -> None:
         """Accelerate consumption of an already committed outbox record."""
+        with self._condition:
+            self._condition.notify_all()
         if self._accepting and self.start_workers:
             self._start_worker()
 
@@ -104,11 +110,28 @@ class AgentTaskScheduler:
             # capped backoff.  Permanent domain errors must be converted by
             # AgentPlanningService into lifecycle HUMAN_HANDOFF rather than
             # being hidden as an endlessly retried scheduler error.
+            error_code = getattr(exc, "code", None) or type(exc).__name__
+            if wake.attempts >= self.MAX_WAKE_ATTEMPTS:
+                lifecycle = self.store.get_agent_lifecycle(wake.lifecycle_id)
+                if lifecycle is not None and lifecycle.state != "HUMAN_HANDOFF":
+                    try:
+                        AgentOrchestrator(self.store).transition(
+                            project_id=wake.project_id, lifecycle_id=wake.lifecycle_id,
+                            to_state="HUMAN_HANDOFF", command_id=f"harness-retry-exhausted:{wake.wake_id}",
+                            actor="system-agent-task-scheduler", source_command="harness_retry_exhausted",
+                            reason="AGENT_HARNESS_RETRY_EXHAUSTED",
+                        )
+                    except Exception:
+                        pass
+                self.store.stop_agent_task_wake(
+                    wake, owner=owner, now=now, error_code="AGENT_HARNESS_RETRY_EXHAUSTED"
+                )
+                return wake.lifecycle_id
             delay = min(2 ** min(wake.attempts, 5), self.MAX_RETRY_DELAY_SECONDS)
             self.store.retry_agent_task_wake(
                 wake, owner=owner, now=now,
                 available_at=now + timedelta(seconds=delay),
-                error_code=getattr(exc, "code", None) or type(exc).__name__,
+                error_code=error_code,
             )
             logger.warning(
                 "agent_wake_retry_scheduled",
@@ -169,15 +192,16 @@ class AgentTaskScheduler:
         return tuple(processed)
 
     def shutdown(self) -> bool:
-        self._accepting = False
-        with self._lock:
+        with self._condition:
+            self._accepting = False
+            self._condition.notify_all()
             worker = self._worker
         if worker is not None and worker.is_alive():
             worker.join(timeout=self.LEASE_SECONDS)
         return worker is None or not worker.is_alive()
 
     def _start_worker(self) -> None:
-        with self._lock:
+        with self._condition:
             if not self._accepting or (self._worker is not None and self._worker.is_alive()):
                 return
             self._worker = Thread(target=self._run_worker, name="agent-task-scheduler", daemon=True)
@@ -186,6 +210,13 @@ class AgentTaskScheduler:
     def _run_worker(self) -> None:
         while self._accepting:
             if self.run_once() is None:
-                break
-        with self._lock:
+                next_due = getattr(self.store, "next_agent_task_wake_at", lambda: None)()
+                with self._condition:
+                    if not self._accepting:
+                        break
+                    timeout = None
+                    if next_due is not None:
+                        timeout = max(0.0, (next_due - self.now()).total_seconds())
+                    self._condition.wait(timeout=timeout)
+        with self._condition:
             self._worker = None

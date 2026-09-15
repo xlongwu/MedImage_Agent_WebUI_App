@@ -101,3 +101,26 @@ def test_expired_wake_lease_is_claimable_by_a_restarted_scheduler(tmp_path) -> N
     clock[0] = first.lease_expires_at + timedelta(seconds=1)
     claimed = scheduler.claim_next(owner="restarted")
     assert claimed is not None and claimed.lease_owner == "restarted"
+
+
+def test_scheduler_stops_after_five_attempts_and_hands_off(tmp_path) -> None:
+    store = _store(tmp_path)
+    clock = [datetime(2026, 1, 1, tzinfo=UTC)]
+    lifecycle = AgentOrchestrator(store).create(
+        project_id="project-1", command_id="create", actor="user"
+    )
+    scheduler = AgentTaskScheduler(
+        store, planning_service=RecordingPlanningService(fail=True),
+        start_workers=False, now=lambda: clock[0],
+    )
+    scheduler.enqueue(
+        project_id="project-1", lifecycle_id=lifecycle.lifecycle_id,
+        step_key="CREATED:retry", reason="retry",
+    )
+    for attempt in range(5):
+        assert scheduler.run_once(owner=f"owner-{attempt}") == lifecycle.lifecycle_id
+        wake, = store.list_agent_task_wakes(project_id="project-1", include_consumed=True)
+        clock[0] = wake.available_at + timedelta(seconds=1)
+    assert wake.status == "CONSUMED"
+    assert wake.last_error_code == "AGENT_HARNESS_RETRY_EXHAUSTED"
+    assert store.get_agent_lifecycle(lifecycle.lifecycle_id).state == "HUMAN_HANDOFF"

@@ -47,7 +47,7 @@ def test_action_conflict_returns_the_structured_domain_error(tmp_path):
     assert error.value.code == "AGENT_HARNESS_ACTION_STATE_CONFLICT"
 
 
-def test_baseline_future_retry_has_no_worker(tmp_path):
+def test_future_retry_wakes_the_worker_without_a_new_command(tmp_path):
     class FailingPlanner:
         calls = 0
 
@@ -61,19 +61,18 @@ def test_baseline_future_retry_has_no_worker(tmp_path):
     scheduler._start_worker()
     worker = scheduler._worker
     if worker is not None:
-        worker.join(timeout=5)
-        assert not worker.is_alive()
+        worker.join(timeout=3)
+        assert planner.calls >= 2
     try:
         wake, = scheduler.store.list_agent_task_wakes(project_id="project-1")
         assert wake.status == "RETRY"
         assert wake.available_at > wake.updated_at
-        assert scheduler._worker is None
-        assert planner.calls == 1
+        assert scheduler._worker is worker
     finally:
         assert scheduler.shutdown()
 
 
-def test_baseline_crash_at_provider_boundary_is_misclassified(tmp_path):
+def test_crash_at_provider_boundary_stops_without_provider_replay(tmp_path):
     class ProcessLoss(BaseException):
         pass
 
@@ -96,12 +95,13 @@ def test_baseline_crash_at_provider_boundary_is_misclassified(tmp_path):
         harness.run_one(lifecycle=task, actor="user")
     attempt = store.get_agent_harness_attempt(task.lifecycle_id)
     call, = store.list_agent_harness_steps(attempt.attempt_id)[0].model_calls
-    assert call.status == "started" and call.network_called is False
+    assert call.status == "started" and call.send_state == "may_have_been_sent"
     clock[0] = attempt.lease_expires_at + timedelta(seconds=1)
     reopened = SQLiteDesktopStore(tmp_path / "harness.sqlite")
     restarted = AgentHarnessService(reopened, config=config, model_config=model, adapter=adapter, now=lambda: clock[0])
     result = restarted.run_one(lifecycle=reopened.get_agent_lifecycle(task.lifecycle_id), actor="user")
-    assert result.attempt.status == "READY"  # Desired: STOPPED/outcome unknown.
+    assert result.attempt.status == "STOPPED"
+    assert result.attempt.terminal_reason == "AGENT_HARNESS_CALL_OUTCOME_UNKNOWN"
     assert adapter.calls == 1
 
 

@@ -38,6 +38,7 @@ AgentHarnessContextSectionName = Literal[
 AgentContextPurpose = Literal["decision_request", "plan_draft"]
 
 ModelCallStatus = Literal["started", "succeeded", "failed", "invalid_output", "unknown"]
+ModelCallSendState = Literal["not_sent", "may_have_been_sent", "response_received"]
 AgentActionStatus = Literal["accepted", "applied", "rejected"]
 
 
@@ -149,6 +150,7 @@ class ModelCallRecord(BaseModel):
     cached_input_tokens: int | None = Field(default=None, ge=0)
     provider_request_id: str | None = Field(default=None, max_length=128)
     network_called: bool = False
+    send_state: ModelCallSendState = "not_sent"
     status: ModelCallStatus = "started"
     error_code: str | None = Field(default=None, max_length=128)
     fallback_to: str | None = Field(default=None, max_length=128)

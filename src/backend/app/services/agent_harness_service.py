@@ -605,6 +605,13 @@ class AgentHarnessService:
                 event_code="AGENT_MODEL_CALL_STARTED",
             )},
         )
+        # Crossing a network provider boundary is an irreversible uncertainty:
+        # persist the intent before invoking it, so crash recovery never retries.
+        sent_step = started_step
+        if request.provider != "rule_based":
+            pending_call = pending_call.model_copy(update={"send_state": "may_have_been_sent"})
+            sent_step = step.model_copy(update={"model_calls": (*step.model_calls, pending_call)})
+            self.store.update_agent_harness_step(sent_step)
         try:
             proposal = self.adapter.propose_action(request=request)
             if not isinstance(proposal, ActionProposal):
@@ -614,7 +621,7 @@ class AgentHarnessService:
             completed = self._complete_model_call(
                 pending_call, metadata=exc.metadata, schema_valid=False, status=status, error_code=exc.code,
             )
-            completed_step = started_step.model_copy(
+            completed_step = sent_step.model_copy(
                 update={"model_calls": (*step.model_calls, completed)}
             )
             self.store.update_agent_harness_step(completed_step)
@@ -637,7 +644,7 @@ class AgentHarnessService:
                 pending_call, metadata=metadata, schema_valid=False, status="invalid_output",
                 error_code="AGENT_HARNESS_MODEL_OUTPUT_INVALID",
             )
-            completed_step = started_step.model_copy(
+            completed_step = sent_step.model_copy(
                 update={"model_calls": (*step.model_calls, completed)}
             )
             self.store.update_agent_harness_step(completed_step)
@@ -655,7 +662,7 @@ class AgentHarnessService:
         completed = self._complete_model_call(
             pending_call, metadata=proposal.metadata, schema_valid=True, status="succeeded",
         )
-        completed_step = started_step.model_copy(update={"model_calls": (*step.model_calls, completed)})
+        completed_step = sent_step.model_copy(update={"model_calls": (*step.model_calls, completed)})
         self.store.update_agent_harness_step(completed_step)
         logger.info(
             "agent_model_call_completed",
@@ -686,6 +693,7 @@ class AgentHarnessService:
             "cached_input_tokens": metadata.cached_input_tokens,
             "provider_request_id": self._safe_ledger_text(metadata.provider_request_id, limit=128),
             "network_called": metadata.network_called,
+            "send_state": "response_received" if pending.send_state == "may_have_been_sent" else "not_sent",
             "status": status,
             "error_code": self._safe_ledger_text(error_code, limit=128),
         })
@@ -835,7 +843,7 @@ class AgentHarnessService:
 
     @staticmethod
     def _network_call_count(calls: tuple[ModelCallRecord, ...]) -> int:
-        return sum(call.network_called for call in calls)
+        return sum(call.send_state != "not_sent" for call in calls)
 
     @staticmethod
     def _accumulate_optional(
@@ -1080,7 +1088,7 @@ class AgentHarnessService:
     @staticmethod
     def _is_pre_network_call(step: AgentHarnessStep) -> bool:
         return bool(step.model_calls) and all(
-            call.status == "started" and not call.network_called for call in step.model_calls
+            call.status == "started" and call.send_state == "not_sent" for call in step.model_calls
         )
 
     def _fallback_to_deterministic_planner(

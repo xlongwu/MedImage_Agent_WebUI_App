@@ -73,7 +73,8 @@ def test_expired_claim_distinguishes_unknown_network_outcomes_from_pre_network_r
             prompt_template_version="agent-harness-prompt-v2", context_hash=context.context_hash,
             request_hash="request", action_schema_hash="schema", model_parameters_hash="parameters", model_profile_hash="a" * 64,
             request_bytes=100, request_builder_version="agent-harness-request-v1", response_schema_version=2,
-            started_at=now, network_called=network_called, status="started",
+            started_at=now, network_called=network_called,
+            send_state="may_have_been_sent" if network_called else "not_sent", status="started",
         ),),
     ))
 
