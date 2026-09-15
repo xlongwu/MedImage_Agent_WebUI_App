@@ -141,7 +141,7 @@ class AgentHarnessService:
             project_id=lifecycle.project_id,
             provider_ref=provider_ref,
             model_call_phase_allocations={"planning": 4, "result_recovery": 2},
-            deadline_at=now + timedelta(seconds=self.config.max_wall_seconds),
+            active_seconds_used=0,
             created_at=now,
             updated_at=now,
         )
@@ -574,6 +574,16 @@ class AgentHarnessService:
     ) -> tuple[ActionProposal, AgentHarnessStep]:
         """Persist a call-start row before invoking an untrusted provider."""
         started = self.now()
+        remaining_active = self.config.max_active_seconds - self._active_seconds(
+            attempt, now=started
+        )
+        if (
+            self.model_config.provider != "rule_based"
+            and remaining_active < self.model_config.timeout_seconds
+        ):
+            raise _ModelCallFailure(
+                code="AGENT_HARNESS_ACTIVE_TIME_INSUFFICIENT", step=step
+            )
         phase = self._phase_for(lifecycle_state=step.state_before)
         request = build_canonical_model_request(
             snapshot=context.prompt_payload(), config=self.model_config, repair=repair,
@@ -744,6 +754,18 @@ class AgentHarnessService:
 
     def _claim(self, attempt: AgentHarnessAttempt, owner: str) -> AgentHarnessAttempt | None:
         now = self.now()
+        settled = self._settle_active_interval(attempt, now=now)
+        if settled != attempt:
+            try:
+                attempt = self.store.update_agent_harness_attempt(
+                    settled,
+                    expected_status=attempt.status,
+                    expected_step_no=attempt.next_step_no,
+                    expected_context_hash=attempt.context_hash,
+                    expected_lease_owner=attempt.lease_owner,
+                )
+            except RuntimeError:
+                return None
         if attempt.status == "RUNNING":
             if attempt.lease_expires_at is None or attempt.lease_expires_at > now or attempt.lease_takeovers >= self.MAX_LEASE_TAKEOVERS:
                 return None
@@ -754,9 +776,12 @@ class AgentHarnessService:
             expected = "READY"
         else:
             return None
+        remaining = max(0.0, self.config.max_active_seconds - attempt.active_seconds_used)
+        active_deadline = now + timedelta(seconds=remaining)
         claimed = self._with_attempt(
             attempt, status="RUNNING", lease_owner=owner,
             lease_expires_at=now + timedelta(seconds=self.config.lease_seconds), lease_takeovers=takeovers,
+            active_interval_started_at=now, active_interval_deadline_at=active_deadline,
         )
         try:
             return self.store.update_agent_harness_attempt(
@@ -776,8 +801,8 @@ class AgentHarnessService:
             return "AGENT_HARNESS_MODEL_CALL_BUDGET_EXHAUSTED"
         if attempt.action_proposals_used >= self.config.max_action_proposals:
             return "AGENT_HARNESS_ACTION_PROPOSAL_BUDGET_EXHAUSTED"
-        if self.now() >= attempt.deadline_at:
-            return "AGENT_HARNESS_WALL_TIME_BUDGET_EXHAUSTED"
+        if self._active_seconds(attempt) >= self.config.max_active_seconds:
+            return "AGENT_HARNESS_ACTIVE_TIME_BUDGET_EXHAUSTED"
         return None
 
     def _post_completion_budget_reason(
@@ -802,8 +827,8 @@ class AgentHarnessService:
             return "AGENT_HARNESS_INPUT_TOKEN_BUDGET_EXHAUSTED"
         if self.config.max_output_tokens is not None and output_tokens is not None and output_tokens >= self.config.max_output_tokens:
             return "AGENT_HARNESS_OUTPUT_TOKEN_BUDGET_EXHAUSTED"
-        if self.now() >= attempt.deadline_at:
-            return "AGENT_HARNESS_WALL_TIME_BUDGET_EXHAUSTED"
+        if self._active_seconds(attempt) >= self.config.max_active_seconds:
+            return "AGENT_HARNESS_ACTIVE_TIME_BUDGET_EXHAUSTED"
         return None
 
     def _complete_claim(
@@ -815,6 +840,7 @@ class AgentHarnessService:
         model_calls: tuple[ModelCallRecord, ...] = (),
         proposal_increment: int = 0,
     ) -> AgentHarnessAttempt:
+        attempt = self._settle_active_interval(attempt, now=self.now())
         phase_usage = dict(attempt.model_call_phase_usage)
         for call in model_calls:
             if call.network_called:
@@ -832,6 +858,7 @@ class AgentHarnessService:
             model_call_phase_usage=phase_usage,
             last_progress_at=self.now(),
             lease_owner=None, lease_expires_at=None,
+            active_interval_started_at=None, active_interval_deadline_at=None,
         )
         return self.store.update_agent_harness_attempt(
             updated,
@@ -888,10 +915,13 @@ class AgentHarnessService:
         )
 
     def _transition_attempt(self, attempt: AgentHarnessAttempt, *, status: str, terminal_reason: str | None, clear_lease: bool = False) -> AgentHarnessAttempt:
+        attempt = self._settle_active_interval(attempt, now=self.now())
         updated = self._with_attempt(
             attempt, status=status, terminal_reason=terminal_reason,
             lease_owner=None if clear_lease else attempt.lease_owner,
             lease_expires_at=None if clear_lease else attempt.lease_expires_at,
+            active_interval_started_at=None if clear_lease else attempt.active_interval_started_at,
+            active_interval_deadline_at=None if clear_lease else attempt.active_interval_deadline_at,
         )
         return self.store.update_agent_harness_attempt(updated, expected_status=attempt.status)
 
@@ -1125,6 +1155,30 @@ class AgentHarnessService:
 
     def _with_attempt(self, attempt: AgentHarnessAttempt, **updates) -> AgentHarnessAttempt:
         return attempt.model_copy(update={**updates, "updated_at": self.now()})
+
+    def _active_seconds(self, attempt: AgentHarnessAttempt, *, now: datetime | None = None) -> float:
+        now = now or self.now()
+        if attempt.active_interval_started_at is None:
+            return attempt.active_seconds_used
+        end = attempt.active_interval_deadline_at or now
+        effective_end = min(now, end)
+        return attempt.active_seconds_used + max(
+            0.0, (effective_end - attempt.active_interval_started_at).total_seconds()
+        )
+
+    def _settle_active_interval(
+        self, attempt: AgentHarnessAttempt, *, now: datetime
+    ) -> AgentHarnessAttempt:
+        if attempt.active_interval_started_at is None:
+            return attempt
+        return self._with_attempt(
+            attempt,
+            active_seconds_used=min(
+                float(self.config.max_active_seconds), self._active_seconds(attempt, now=now)
+            ),
+            active_interval_started_at=None,
+            active_interval_deadline_at=None,
+        )
 
     def _record(self, name: str, record_id: str | None):
         getter = getattr(self.store, name, None)

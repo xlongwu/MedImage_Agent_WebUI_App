@@ -339,7 +339,7 @@ class HarnessContextBuilder:
 
     @staticmethod
     def _budget_fields(attempt) -> dict[str, Any]:
-        return {} if attempt is None else {"steps_used": attempt.steps_used, "model_calls_used": attempt.model_calls_used, "action_proposals_used": attempt.action_proposals_used, "repairs_used": attempt.repairs_used, "deadline_at": attempt.deadline_at.isoformat()}
+        return {} if attempt is None else {"steps_used": attempt.steps_used, "model_calls_used": attempt.model_calls_used, "action_proposals_used": attempt.action_proposals_used, "repairs_used": attempt.repairs_used, "active_seconds_used": attempt.active_seconds_used, "active_seconds_limit": 300}
 
     def _memory_fields(self, value: object) -> dict[str, Any]:
         allowed = {"context_hash", "memory_ids", "planner_constraints", "decision_suggestions", "evidence_refs", "status", "warning_codes"}

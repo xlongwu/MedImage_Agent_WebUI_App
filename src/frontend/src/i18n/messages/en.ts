@@ -277,7 +277,7 @@ export const messagesEn = {
   "agent.harness.reason.recoveryBudgetExhausted": "the recovery budget was exhausted",
   "agent.harness.reason.inputTokenBudgetExhausted": "the input-token budget was exhausted",
   "agent.harness.reason.outputTokenBudgetExhausted": "the output-token budget was exhausted",
-  "agent.harness.reason.wallTimeBudgetExhausted": "the wall-time budget was exhausted",
+  "agent.harness.reason.activeTimeBudgetExhausted": "the active-work budget was exhausted",
   "agent.harness.reason.callOutcomeUnknown":
     "a previous provider call has an unknown outcome and was not retried",
   "agent.harness.reason.duplicateStep": "a duplicate step was rejected",

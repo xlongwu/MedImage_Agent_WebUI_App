@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from src.backend.app.core.config_schema import AgentHarnessConfig
-from src.backend.app.schemas.agent_harness import AgentHarnessStep, ModelCallRecord
+from src.backend.app.schemas.agent_harness import AgentHarnessAttempt, AgentHarnessStep, ModelCallRecord
+from src.backend.app.services.agent_harness_service import AgentHarnessService
 
 
 def test_harness_budget_defaults_and_hard_limits_are_installation_scoped(monkeypatch) -> None:
@@ -41,3 +42,22 @@ def test_step_persists_only_redacted_nested_model_call_ledger() -> None:
     assert len(step.model_calls) == 1
     assert payload["model_calls"][0]["request_hash"] == "request-hash"
     assert "raw" not in payload["model_calls"][0]
+
+
+def test_active_work_budget_excludes_waiting_and_caps_a_recovered_interval() -> None:
+    now = datetime(2026, 8, 9, tzinfo=UTC)
+    service = AgentHarnessService.__new__(AgentHarnessService)
+    service.config = AgentHarnessConfig(max_active_seconds=300)
+    service.now = lambda: now
+    waiting = AgentHarnessAttempt(
+        attempt_id="attempt-1", lifecycle_id="lifecycle-1", project_id="project-1",
+        provider_ref="rule_based", active_seconds_used=20,
+    )
+    interrupted = waiting.model_copy(update={
+        "active_interval_started_at": now - timedelta(seconds=30),
+        "active_interval_deadline_at": now - timedelta(seconds=1),
+        "active_seconds_used": 271,
+    })
+
+    assert service._budget_stop_reason(waiting) is None
+    assert service._budget_stop_reason(interrupted) == "AGENT_HARNESS_ACTIVE_TIME_BUDGET_EXHAUSTED"

@@ -421,6 +421,7 @@ def _build_agent_task_command_service(store: ProjectStore):
     from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
     from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
     from src.backend.app.services.agent_task_scheduler import AgentTaskScheduler
+    from src.backend.app.services.agent_execution_coordinator import AgentExecutionCoordinator
     from src.backend.app.services.approval_summary_service import ApprovalSummaryService
     from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
     from src.backend.app.services.goal_planning_service import GoalPlanningService
@@ -448,6 +449,7 @@ def _build_agent_task_command_service(store: ProjectStore):
         environment_service=ExecutionEnvironmentService(store)
     )
     reconciler = AgentTaskReconciler(store)
+    execution_coordinator = AgentExecutionCoordinator(store, reconciler=reconciler)
 
     def dry_runner(**kwargs):
         from src.backend.app.api.execute_reviewed_routes import ExecuteReviewedRequest
@@ -501,19 +503,21 @@ def _build_agent_task_command_service(store: ProjectStore):
         summary_service=summary_service,
         dry_runner=dry_runner,
         reconcile_once=reconciler.reconcile_once,
-        monitor_scheduler=reconciler.start_bounded_monitor,
+        monitor_scheduler=execution_coordinator.schedule_lifecycle,
     )
     recovery = AgentRecoveryCommandService(
         store,
         stop_planning=(planning.harness_service.stop if planning.harness_service else None),
         recovery_execution_factory=RecoveryExecutionService,
     )
-    return AgentTaskCommandService(
+    command_service = AgentTaskCommandService(
         store,
         planning_service=planning,
         approval_execution_service=approval,
         recovery_command_service=recovery,
     )
+    command_service.execution_coordinator = execution_coordinator
+    return command_service
 
 
 def get_agent_task_command_service_for_store(store: ProjectStore):

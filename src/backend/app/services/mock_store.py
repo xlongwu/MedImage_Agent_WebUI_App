@@ -21,6 +21,7 @@ from src.backend.app.schemas.agent_evidence import EvidenceSnapshot
 from src.backend.app.schemas.agent_invariant import AgentInvariantAuditRecord
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
+from src.backend.app.schemas.agent_execution_wake import AgentExecutionWakeRecord
 from src.backend.app.schemas.desktop import (
     ApprovalRecord,
     DatasetImportRequest,
@@ -280,6 +281,24 @@ class SQLiteDesktopStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_task_wake_ready
                     ON agent_task_wake_outbox(status, available_at, lifecycle_id);
+                CREATE TABLE IF NOT EXISTS agent_execution_wake_outbox (
+                    wake_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    available_at TEXT NOT NULL,
+                    lease_owner TEXT,
+                    lease_expires_at TEXT,
+                    last_error_code TEXT,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(lifecycle_id, run_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_execution_wake_ready
+                    ON agent_execution_wake_outbox(status, available_at, lifecycle_id, run_id);
                 CREATE TABLE IF NOT EXISTS agent_harness_attempts (
                     attempt_id TEXT PRIMARY KEY,
                     lifecycle_id TEXT NOT NULL UNIQUE,
@@ -3007,6 +3026,135 @@ class SQLiteDesktopStore:
                 (project_id,),
             ).fetchall()
         return [AgentTaskWakeRecord(**json.loads(row["payload"])) for row in rows]
+
+    def enqueue_agent_execution_wake(
+        self, record: AgentExecutionWakeRecord
+    ) -> AgentExecutionWakeRecord:
+        """Persist one run-evidence check; one lifecycle/run has one live row."""
+        with self._lock, self._connect() as conn:
+            existing = conn.execute(
+                "SELECT payload FROM agent_execution_wake_outbox WHERE lifecycle_id=? AND run_id=?",
+                (record.lifecycle_id, record.run_id),
+            ).fetchone()
+            if existing is not None:
+                prior = AgentExecutionWakeRecord(**json.loads(existing["payload"]))
+                record = prior.model_copy(update={
+                    "status": "PENDING" if prior.status == "CONSUMED" else prior.status,
+                    "available_at": record.available_at if prior.status == "CONSUMED" else min(prior.available_at, record.available_at),
+                    "lease_owner": None if prior.status == "CONSUMED" else prior.lease_owner,
+                    "lease_expires_at": None if prior.status == "CONSUMED" else prior.lease_expires_at,
+                    "updated_at": record.updated_at,
+                })
+            conn.execute(
+                """
+                INSERT INTO agent_execution_wake_outbox
+                    (wake_id, project_id, lifecycle_id, run_id, status, attempts,
+                     available_at, lease_owner, lease_expires_at, last_error_code,
+                     payload, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(lifecycle_id, run_id) DO UPDATE SET
+                    status=excluded.status, available_at=excluded.available_at,
+                    lease_owner=excluded.lease_owner, lease_expires_at=excluded.lease_expires_at,
+                    payload=excluded.payload, updated_at=excluded.updated_at
+                """,
+                (
+                    record.wake_id, record.project_id, record.lifecycle_id, record.run_id,
+                    record.status, record.attempts, record.available_at.isoformat(),
+                    record.lease_owner,
+                    record.lease_expires_at.isoformat() if record.lease_expires_at else None,
+                    record.last_error_code, json.dumps(record.model_dump(mode="json"), ensure_ascii=False),
+                    record.created_at.isoformat(), record.updated_at.isoformat(),
+                ),
+            )
+            row = conn.execute(
+                "SELECT payload FROM agent_execution_wake_outbox WHERE lifecycle_id=? AND run_id=?",
+                (record.lifecycle_id, record.run_id),
+            ).fetchone()
+        return AgentExecutionWakeRecord(**json.loads(row["payload"]))
+
+    def claim_next_agent_execution_wake(
+        self, *, owner: str, now: datetime, lease_expires_at: datetime
+    ) -> AgentExecutionWakeRecord | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                """SELECT wake_id, payload FROM agent_execution_wake_outbox
+                   WHERE (status IN ('PENDING', 'RETRY') AND available_at<=?)
+                      OR (status='CLAIMED' AND lease_expires_at IS NOT NULL AND lease_expires_at<=?)
+                   ORDER BY available_at, created_at, wake_id LIMIT 1""",
+                (now.isoformat(), now.isoformat()),
+            ).fetchone()
+            if row is None:
+                return None
+            record = AgentExecutionWakeRecord(**json.loads(row["payload"]))
+            claimed = record.model_copy(update={
+                "status": "CLAIMED", "attempts": record.attempts + 1,
+                "lease_owner": owner, "lease_expires_at": lease_expires_at, "updated_at": now,
+            })
+            cursor = conn.execute(
+                """UPDATE agent_execution_wake_outbox
+                   SET status=?, attempts=?, lease_owner=?, lease_expires_at=?, payload=?, updated_at=?
+                   WHERE wake_id=? AND ((status IN ('PENDING', 'RETRY') AND available_at<=?)
+                      OR (status='CLAIMED' AND lease_expires_at IS NOT NULL AND lease_expires_at<=?))""",
+                (
+                    claimed.status, claimed.attempts, claimed.lease_owner,
+                    claimed.lease_expires_at.isoformat(), json.dumps(claimed.model_dump(mode="json"), ensure_ascii=False),
+                    claimed.updated_at.isoformat(), claimed.wake_id, now.isoformat(), now.isoformat(),
+                ),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return claimed
+
+    def complete_agent_execution_wake(
+        self, record: AgentExecutionWakeRecord, *, owner: str, now: datetime
+    ) -> AgentExecutionWakeRecord:
+        completed = record.model_copy(update={
+            "status": "CONSUMED", "lease_owner": None, "lease_expires_at": None, "updated_at": now,
+        })
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """UPDATE agent_execution_wake_outbox
+                   SET status=?, lease_owner=NULL, lease_expires_at=NULL, payload=?, updated_at=?
+                   WHERE wake_id=? AND status='CLAIMED' AND lease_owner=?""",
+                (completed.status, json.dumps(completed.model_dump(mode="json"), ensure_ascii=False),
+                 completed.updated_at.isoformat(), completed.wake_id, owner),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_EXECUTION_WAKE_CONCURRENT_UPDATE")
+        return completed
+
+    def retry_agent_execution_wake(
+        self, record: AgentExecutionWakeRecord, *, owner: str, now: datetime,
+        available_at: datetime, error_code: str,
+    ) -> AgentExecutionWakeRecord:
+        retried = record.model_copy(update={
+            "status": "RETRY", "available_at": available_at, "lease_owner": None,
+            "lease_expires_at": None, "last_error_code": error_code[:128], "updated_at": now,
+        })
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """UPDATE agent_execution_wake_outbox
+                   SET status=?, available_at=?, lease_owner=NULL, lease_expires_at=NULL,
+                       last_error_code=?, payload=?, updated_at=?
+                   WHERE wake_id=? AND status='CLAIMED' AND lease_owner=?""",
+                (retried.status, retried.available_at.isoformat(), retried.last_error_code,
+                 json.dumps(retried.model_dump(mode="json"), ensure_ascii=False),
+                 retried.updated_at.isoformat(), retried.wake_id, owner),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_EXECUTION_WAKE_CONCURRENT_UPDATE")
+        return retried
+
+    def list_agent_execution_wakes(
+        self, *, project_id: str, include_consumed: bool = False
+    ) -> list[AgentExecutionWakeRecord]:
+        predicate = "project_id=?" if include_consumed else "project_id=? AND status != 'CONSUMED'"
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT payload FROM agent_execution_wake_outbox WHERE {predicate} ORDER BY available_at, wake_id",
+                (project_id,),
+            ).fetchall()
+        return [AgentExecutionWakeRecord(**json.loads(row["payload"])) for row in rows]
 
     def list_agent_lifecycles(self, project_id: str) -> list[AgentLifecycleRecord]:
         with self._lock, self._connect() as conn:

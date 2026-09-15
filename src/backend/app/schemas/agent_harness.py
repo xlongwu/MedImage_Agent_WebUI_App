@@ -192,7 +192,7 @@ class AgentActionRecord(BaseModel):
 class AgentHarnessAttempt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[4] = 4
+    schema_version: Literal[5] = 5
     attempt_id: str
     lifecycle_id: str
     project_id: str
@@ -210,7 +210,9 @@ class AgentHarnessAttempt(BaseModel):
     cached_input_tokens_used: int | None = Field(default=None, ge=0)
     model_call_phase_allocations: dict[str, int] = Field(default_factory=dict)
     model_call_phase_usage: dict[str, int] = Field(default_factory=dict)
-    deadline_at: datetime
+    active_seconds_used: float = Field(default=0, ge=0, le=300)
+    active_interval_started_at: datetime | None = None
+    active_interval_deadline_at: datetime | None = None
     lease_owner: str | None = None
     lease_expires_at: datetime | None = None
     lease_takeovers: int = Field(default=0, ge=0)

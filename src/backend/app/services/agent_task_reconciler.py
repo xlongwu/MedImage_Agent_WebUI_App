@@ -42,7 +42,7 @@ class AgentTaskReconciler:
         lock = self._lock(lifecycle_id)
         with lock:
             current = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
-            if current.state != "RUNNING":
+            if current.state not in {"RUNNING", "RETRYING", "RECOVERING"}:
                 return current
             evidence = self._terminal_evidence(current)
             if not evidence.terminal:
@@ -80,35 +80,64 @@ class AgentTaskReconciler:
                         command_id=f"{base}:recovery:{evaluation.goal_evaluation_hash}",
                         actor=actor,
                     )
-                if evaluated.state != "RUNNING":
+                if evaluated.state not in {"RUNNING", "RETRYING", "RECOVERING"}:
                     self._enqueue_planning(evaluated, reason="run_reconciled")
                 return evaluated
             except (SafetyError, StateStoreError):
                 latest = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
-                if latest.state != "RUNNING":
+                if latest.state not in {"RUNNING", "RETRYING", "RECOVERING"}:
                     return latest
                 raise
 
     def reconcile_incomplete_on_startup(self) -> tuple[str, ...]:
-        started = monotonic()
         processed: list[str] = []
         for project in self.store.list_projects():
             for lifecycle in self.store.list_agent_lifecycles(project.id):
-                if len(processed) >= self.STARTUP_BATCH_LIMIT or monotonic() - started >= self.STARTUP_WALL_SECONDS:
-                    return tuple(processed)
-                if lifecycle.state != "RUNNING":
-                    continue
-                current = self.reconcile_once(
-                    project_id=project.id,
-                    lifecycle_id=lifecycle.lifecycle_id,
-                )
-                if current.state == "RUNNING":
-                    self.start_bounded_monitor(
-                        project_id=project.id,
-                        lifecycle_id=lifecycle.lifecycle_id,
+                if lifecycle.state in {"RUNNING", "RETRYING", "RECOVERING"}:
+                    self.reconcile_once(project_id=project.id, lifecycle_id=lifecycle.lifecycle_id)
+                    processed.append(lifecycle.lifecycle_id)
+                elif lifecycle.state in {"OBSERVING", "EVALUATING", "DIAGNOSING"}:
+                    self._recover_intermediate(project_id=project.id, lifecycle_id=lifecycle.lifecycle_id)
+                    processed.append(lifecycle.lifecycle_id)
+                elif lifecycle.state in {"APPROVED", "EXECUTION_READY"}:
+                    # Dispatch is never reconstructed from a startup scan.  A
+                    # consumed/missing result is ambiguous and requires an
+                    # operator to inspect the approval, ticket and gateway.
+                    self.orchestrator.transition(
+                        project_id=project.id, lifecycle_id=lifecycle.lifecycle_id,
+                        to_state="HUMAN_HANDOFF",
+                        command_id=f"startup:{lifecycle.lifecycle_id}:execution-uncertain",
+                        actor="system-reconciler", source_command="execution_recovery_uncertain",
+                        reason="Approved execution has no recoverable run evidence.",
                     )
-                processed.append(lifecycle.lifecycle_id)
+                    processed.append(lifecycle.lifecycle_id)
         return tuple(processed)
+
+    def _recover_intermediate(self, *, project_id: str, lifecycle_id: str):
+        """Resume only deterministic persisted evidence transitions."""
+        current = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
+        base = f"startup-recovery:{lifecycle_id}"
+        if current.state == "OBSERVING":
+            if not current.observation_id:
+                current = self.orchestrator.observe(
+                    project_id=project_id, lifecycle_id=lifecycle_id,
+                    command_id=f"{base}:observe", actor="system-reconciler",
+                )
+            return self.orchestrator.evaluate_goal(
+                project_id=project_id, lifecycle_id=lifecycle_id,
+                command_id=f"{base}:evaluate", actor="system-reconciler",
+            )[0]
+        if current.state == "EVALUATING":
+            return self.orchestrator.evaluate_goal(
+                project_id=project_id, lifecycle_id=lifecycle_id,
+                command_id=f"{base}:evaluate", actor="system-reconciler",
+            )[0]
+        if current.state == "DIAGNOSING":
+            return self.orchestrator.propose_recovery(
+                project_id=project_id, lifecycle_id=lifecycle_id,
+                command_id=f"{base}:recovery", actor="system-reconciler",
+            )[0]
+        return current
 
     def start_bounded_monitor(self, *, project_id: str, lifecycle_id: str) -> bool:
         """Start at most one finite terminal-evidence monitor for a lifecycle."""

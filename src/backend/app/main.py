@@ -61,6 +61,7 @@ from src.backend.app.core.logging_config import setup_logging
 from src.backend.app.runtime.node_contract_consistency import assert_node_contract_consistency
 from src.backend.app.services.agent_invariant_checker import AgentInvariantChecker
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
+from src.backend.app.services.agent_execution_coordinator import AgentExecutionCoordinator
 from src.backend.app.services.sandbox_attempt_reconciler import SandboxAttemptReconciler
 from src.backend.app.services.memory_candidate_service import MemoryCandidateService
 from src.backend.app.services.memory_consolidation_service import MemoryConsolidationService
@@ -158,6 +159,7 @@ def _run_memory_startup_reconcile() -> None:
 async def _lifespan(_app: FastAPI):
     """Run one bounded recovery pass only when explicitly enabled."""
     task_scheduler = None
+    execution_coordinator = None
     if os.getenv("MEDIMAGE_AGENT_STARTUP_RECONCILE", "0") == "1":
         AgentTaskReconciler(get_project_store()).reconcile_incomplete_on_startup()
     startup_store = get_project_store()
@@ -165,6 +167,8 @@ async def _lifespan(_app: FastAPI):
         SandboxAttemptReconciler(startup_store).reconcile_incomplete_on_startup()
     command_service = get_agent_task_command_service_for_store(get_project_store())
     task_scheduler = command_service.planning_service.scheduler
+    execution_coordinator = command_service.execution_coordinator
+    execution_coordinator.recover_on_startup()
     _run_agent_invariant_startup_check()
     task_scheduler.recover_once_on_startup()
     _run_memory_startup_reconcile()
@@ -173,6 +177,8 @@ async def _lifespan(_app: FastAPI):
     finally:
         if task_scheduler is not None:
             task_scheduler.shutdown()
+        if execution_coordinator is not None:
+            execution_coordinator.shutdown()
 
 
 def create_app() -> FastAPI:

@@ -267,9 +267,12 @@ class AgentOrchestrator:
         updates: dict[str, Any] | None = None,
         details: dict[str, Any] | None = None,
         planning_wake_reason: str | None = None,
+        allow_same_state: bool = False,
     ) -> AgentLifecycleRecord:
         current = self.get(project_id=project_id, lifecycle_id=lifecycle_id)
-        if to_state not in _TRANSITIONS[current.state]:
+        if to_state not in _TRANSITIONS[current.state] and not (
+            allow_same_state and to_state == current.state
+        ):
             raise SafetyError(
                 f"LIFECYCLE_TRANSITION_INVALID: {current.state} -> {to_state}",
                 code="LIFECYCLE_TRANSITION_INVALID",
@@ -456,8 +459,10 @@ class AgentOrchestrator:
         recovery_attempt_id: str | None = None,
     ) -> AgentLifecycleRecord:
         current = self.get(project_id=project_id, lifecycle_id=lifecycle_id)
-        if current.state not in {"RUNNING", "RETRYING", "RECOVERING"}:
+        if current.state not in {"RUNNING", "RETRYING", "RECOVERING", "OBSERVING"}:
             raise SafetyError("LIFECYCLE_OBSERVATION_NOT_ALLOWED", code="LIFECYCLE_OBSERVATION_NOT_ALLOWED")
+        if current.state == "OBSERVING" and current.observation_id:
+            return current
         observation = ObservationCollector(self.store).collect(
             project_id=project_id,
             lifecycle_id=lifecycle_id,
@@ -479,6 +484,7 @@ class AgentOrchestrator:
                 "observation_hash": observation.observation_hash,
                 "completeness": observation.completeness.status,
             },
+            allow_same_state=current.state == "OBSERVING",
         )
         logger.info(
             "agent_observation_completed",
@@ -503,23 +509,28 @@ class AgentOrchestrator:
         previous_goal_evaluation_id: str | None = None,
     ) -> tuple[AgentLifecycleRecord, GoalEvaluationRecord]:
         current = self.get(project_id=project_id, lifecycle_id=lifecycle_id)
-        if current.state != "OBSERVING" or not current.observation_id:
+        if current.state not in {"OBSERVING", "EVALUATING"} or not current.observation_id:
             raise SafetyError(
                 "LIFECYCLE_GOAL_EVALUATION_NOT_ALLOWED",
                 code="LIFECYCLE_GOAL_EVALUATION_NOT_ALLOWED",
             )
-        evaluating = self.transition(
-            project_id=project_id,
-            lifecycle_id=lifecycle_id,
-            to_state="EVALUATING",
-            command_id=f"{command_id}:evaluating",
-            actor=actor,
-            source_command="goal_evaluation_started",
-        )
-        try:
-            evaluation = GoalEvaluator(self.store).evaluate(
+        evaluating = current
+        if current.state == "OBSERVING":
+            evaluating = self.transition(
                 project_id=project_id,
                 lifecycle_id=lifecycle_id,
+                to_state="EVALUATING",
+                command_id=f"{command_id}:evaluating",
+                actor=actor,
+                source_command="goal_evaluation_started",
+            )
+        try:
+            persisted = self.store.list_goal_evaluations(
+                project_id, lifecycle_id=lifecycle_id,
+                observation_id=evaluating.observation_id or "",
+            )
+            evaluation = persisted[0] if persisted else GoalEvaluator(self.store).evaluate(
+                project_id=project_id, lifecycle_id=lifecycle_id,
                 observation_id=evaluating.observation_id or "",
                 previous_goal_evaluation_id=previous_goal_evaluation_id,
             )
@@ -598,6 +609,31 @@ class AgentOrchestrator:
                 "LIFECYCLE_RECOVERY_PROPOSAL_NOT_ALLOWED",
                 code="LIFECYCLE_RECOVERY_PROPOSAL_NOT_ALLOWED",
             )
+        existing_proposals = self.store.list_recovery_proposals(
+            project_id, lifecycle_id=lifecycle_id,
+        )
+        if existing_proposals:
+            proposal = existing_proposals[0]
+            diagnosis = self.store.get_recovery_diagnosis(proposal.diagnosis_id)
+            if diagnosis is None:
+                raise SafetyError("RECOVERY_EVIDENCE_REQUIRED", code="RECOVERY_EVIDENCE_REQUIRED")
+            summary = proposal.summary()
+            target: AgentLifecycleState = (
+                "HUMAN_HANDOFF" if summary.recommended_action == "HUMAN_HANDOFF"
+                else "RECOVERY_PROPOSED"
+            )
+            updated = self.transition(
+                project_id=project_id, lifecycle_id=lifecycle_id, to_state=target,
+                command_id=f"{command_id}:recovered:{proposal.recovery_proposal_hash}",
+                actor=actor, source_command="recovery_proposal_recovered",
+                updates={
+                    "diagnosis_id": diagnosis.diagnosis_id,
+                    "diagnosis_summary": diagnosis.summary(),
+                    "recovery_proposal_id": proposal.recovery_proposal_id,
+                    "recovery_proposal_summary": summary,
+                },
+            )
+            return updated, diagnosis, proposal
         observation = self.store.get_observation(current.observation_id or "")
         evaluation = self.store.get_goal_evaluation(current.goal_evaluation_id or "")
         ticket = self.store.get_execution_ticket(current.execution_ticket_id or "")

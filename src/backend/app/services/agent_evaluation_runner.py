@@ -41,6 +41,7 @@ from src.backend.app.services.agent_planning_service import AgentPlanningService
 from src.backend.app.services.agent_recovery_command_service import AgentRecoveryCommandService
 from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
+from src.backend.app.services.agent_execution_coordinator import AgentExecutionCoordinator
 from src.backend.app.services.agent_task_scheduler import AgentTaskScheduler
 from src.backend.app.services.agent_trace_service import AgentTraceService
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
@@ -724,7 +725,9 @@ class AgentEvaluationRunner:
             summary_service=ApprovalSummaryService(),
             dry_runner=lambda **_kwargs: {"ok": True, "status": "DRY_RUN_OK"},
             reconcile_once=reconciler.reconcile_once,
-            monitor_scheduler=reconciler.start_bounded_monitor,
+            monitor_scheduler=AgentExecutionCoordinator(
+                store, reconciler=reconciler, start_workers=False
+            ).schedule_lifecycle,
         )
         command = AgentTaskCommandService(
             store,

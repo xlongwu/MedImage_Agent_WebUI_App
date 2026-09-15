@@ -12,6 +12,7 @@ from src.backend.app.schemas.approval_summary import ApprovalSummary
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_invariant_checker import AgentInvariantChecker
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
+from src.backend.app.services.agent_execution_coordinator import AgentExecutionCoordinator
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.reviewed_execution_service import ReviewedExecutionService
 
@@ -36,7 +37,9 @@ class AgentApprovalExecutionService:
         self.dry_runner = dry_runner
         reconciler = AgentTaskReconciler(store)
         self.reconcile_once = reconcile_once or reconciler.reconcile_once
-        self.monitor_scheduler = monitor_scheduler or reconciler.start_bounded_monitor
+        self.monitor_scheduler = monitor_scheduler or AgentExecutionCoordinator(
+            store, reconciler=reconciler
+        ).schedule_lifecycle
 
     def approve(
         self, *, project_id: str, lifecycle_id: str, approval_summary_hash: str,

@@ -27,15 +27,21 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   idempotency key 为 `attempt_id:step_no:input_hash`，重复 key 绝不触发第二次模型调用。
 - 安装级预算由 `ConfigService` 读取并以硬上限夹紧：默认/硬上限分别为 8/16 个
   step、6/6 次真实 provider 调用、8/8 个 action proposal、每 step 1/1 次 repair、
-  2/3 次 recovery 和 300/300 秒 wall time。输入/输出 token 限额默认关闭，只有
+  2/3 次 recovery 和 300/300 秒活跃工作时间。排队、用户决策等待和重试退避不计入
+  活跃预算；attempt 持久化累计秒数及当前区间，重启时最多按已持久化区间边界结算，
+  不会将停机时间计入。单次网络请求必须在剩余活跃预算允许的既有 timeout 内开始。
+  输入/输出 token 限额默认关闭，只有
   provider 实际返回 usage 且管理员设置 `MEDIMAGE_AGENT_HARNESS_MAX_*_TOKENS` 后才
   累计和限制；缺失 usage 保持 `null`，绝不估算为 0。项目 metadata、用户请求或模型
   输出不能提高这些上限。每次 wake 默认最多 3 步，硬上限为 6。达到 wake 上限时
   attempt 保持 `READY`、递增 `yield_count` 并在 FIFO 队列尾部重新排队，不能独占 worker。
-- Scheduler 只处理 create、answer、recovery 执行、run terminal 和 startup recovery
-  的 wake 请求。它在应用 lifespan 内保持单一后台 owner；`GET`/list/read projection
-  不会登记 wake、claim lease 或调用模型。startup 只恢复 `READY` 或 lease 已过期的
-  `RUNNING` attempt；shutdown 拒绝新 claim，并只等待 scheduler 自己当前的有限 step。
+- `AgentTaskScheduler` 只处理规划 wake，并且只调用
+  `AgentPlanningService.advance_planning()`。已分派 run 的检查由独立的
+  `AgentExecutionCoordinator` 消费 lifecycle/run 唯一的协调 outbox；它只读取既有
+  run 证据并调用确定性 reconciler，不能规划、调用模型、审批、签发 Ticket 或分派
+  Gateway。每次检查有界；run 未终态时持久化下一次到期时间，终态事件可提前唤醒，
+  遗漏事件仍由到期检查补足。`GET`/list/read projection 不会登记、claim 或协调。
+  startup 扫描所有项目及其 lifecycle，不以首批数量或墙钟时限永久漏掉后续 run。
 - App Shell 的项目绑定确认弹窗不是 Harness step 或 scheduler owner。它只把用户当前的
   `answer` 提交给既有 Agent Task 命令；该事务持久化 wake 后，scheduler 才在后台推进一次
   有界 planning checkpoint。`approve` 与 `approve-recovery` 同样只调用既有服务，后续
@@ -108,6 +114,12 @@ validator、Reviewed Plan 和 Approval Summary 流程决定后续状态。Harnes
 `AGENT_HARNESS_PROVIDER_UNAVAILABLE` 停止，并写入 `fallback_from`、`fallback_to`
 和结构化原因；随后才由确定性 Goal Planning Service 重新生成其自身的 plan/context
 hash。该 fallback 不复用旧 Approval Summary；schema、安全或预算拒绝仍只安全停止。
+
+重启恢复按持久状态处理：规划中间状态回到规划 wake；用户输入、科学决定和审批状态
+保持等待；`RUNNING`、`RETRYING`、`RECOVERING` 只检查原有 run；`OBSERVING`、
+`EVALUATING` 复用已有 Observation/Evaluation 并完成尚未提交的确定性状态；
+`DIAGNOSING` 复用唯一已持久化恢复提案或生成一份提案。批准但没有可确认 run 结果、
+缺失或冲突证据一律进入 `HUMAN_HANDOFF`，不会另建 run、补造成功结果或自动批准恢复。
 
 前端只显示后端只读 `harness_summary`（实际规划路径、steps/calls/actions/repairs/
 recovery/token 预算、状态、下一步、让出次数、actual fallback 路径、停止原因和最新

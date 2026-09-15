@@ -246,7 +246,7 @@ export const messagesZhCn = {
   "agent.harness.reason.recoveryBudgetExhausted": "恢复预算已耗尽",
   "agent.harness.reason.inputTokenBudgetExhausted": "输入 token 预算已耗尽",
   "agent.harness.reason.outputTokenBudgetExhausted": "输出 token 预算已耗尽",
-  "agent.harness.reason.wallTimeBudgetExhausted": "总耗时预算已耗尽",
+  "agent.harness.reason.activeTimeBudgetExhausted": "活跃工作预算已耗尽",
   "agent.harness.reason.callOutcomeUnknown": "此前模型调用结果未知，系统没有重试",
   "agent.harness.reason.duplicateStep": "重复步骤已被拒绝",
   "agent.harness.reason.providerUnavailable": "配置的模型提供方不可用",

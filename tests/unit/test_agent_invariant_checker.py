@@ -84,7 +84,7 @@ def test_action_without_completed_call_and_plan_only_run_are_blocking(tmp_path) 
     lifecycle = _lifecycle(store)
     attempt = store.create_agent_harness_attempt(AgentHarnessAttempt(
         attempt_id="attempt-1", lifecycle_id=lifecycle.lifecycle_id, project_id="project-1",
-        provider_ref="rule_based", deadline_at=datetime(2026, 8, 17, tzinfo=UTC),
+        provider_ref="rule_based", active_seconds_used=0,
     ))
     store.add_agent_harness_action(AgentActionRecord(
         action_id="action-1", attempt_id=attempt.attempt_id, step_id="step-1",

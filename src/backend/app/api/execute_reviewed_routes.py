@@ -60,6 +60,7 @@ from src.backend.app.schemas.native_preproc_api import NativeFullPreprocRequest
 from src.backend.app.schemas.recovery import RecoveryQuotaLimits
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
+from src.backend.app.services.agent_execution_coordinator import AgentExecutionCoordinator
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.execution_ticket_service import ExecutionTicketService
 from src.backend.app.services.mock_store import mock_store
@@ -1665,7 +1666,9 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                     lifecycle_id=lifecycle.lifecycle_id,
                 )
                 if lifecycle.state == "RUNNING":
-                    reconciler.start_bounded_monitor(
+                    AgentExecutionCoordinator(
+                        mock_store, reconciler=reconciler
+                    ).schedule_lifecycle(
                         project_id=lifecycle.project_id,
                         lifecycle_id=lifecycle.lifecycle_id,
                     )

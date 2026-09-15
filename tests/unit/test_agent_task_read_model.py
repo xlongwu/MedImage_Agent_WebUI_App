@@ -368,7 +368,7 @@ def test_projection_uses_deterministic_result_explanation_without_harness_text()
     store.get_goal_evaluation = lambda evaluation_id: evaluation
     store.get_agent_harness_attempt = lambda lifecycle_id: AgentHarnessAttempt(
         attempt_id="harness-1", lifecycle_id=lifecycle_id, project_id="project-1",
-        provider_ref="rule_based", status="FINISHED", deadline_at=NOW,
+        provider_ref="rule_based", status="FINISHED", active_seconds_used=0,
     )
     store.list_agent_harness_steps = lambda attempt_id: []
 
