@@ -217,6 +217,14 @@ class AgentEvidenceService:
             "source_refs": refs,
         })
 
+    @classmethod
+    def select_for_purpose(cls, snapshot: EvidenceSnapshot, *, purpose: str) -> EvidenceSnapshot:
+        """Project a freshly rebuilt snapshot using the same Harness scope."""
+        wanted = cls._CONTEXT_TYPES_BY_PURPOSE.get(purpose)
+        if wanted is None:
+            raise SafetyError("AGENT_CONTEXT_PURPOSE_INVALID", code="AGENT_CONTEXT_PURPOSE_INVALID")
+        return cls._select(snapshot, wanted)
+
     def read_for_context(
         self,
         *,

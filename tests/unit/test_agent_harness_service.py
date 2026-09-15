@@ -90,7 +90,7 @@ class NoopPlanningActions:
     def __init__(self) -> None:
         self.calls = 0
 
-    def apply(self, *, lifecycle_id: str, action, actor: str):
+    def apply(self, *, lifecycle_id: str, action, actor: str, action_record=None):
         self.calls += 1
         return HarnessActionResult(
             lifecycle=type("Lifecycle", (), {"lifecycle_id": lifecycle_id, "state": action.expected_state})(),
@@ -210,6 +210,10 @@ def test_action_is_accepted_before_apply_and_marked_applied(tmp_path) -> None:
     actions = store.list_agent_harness_actions(attempt.attempt_id)
     assert result.attempt.status == "WAITING_FOR_USER"
     assert len(actions) == 1 and actions[0].status == "applied"
+    assert actions[0].context_hash == store.get_agent_harness_attempt(lifecycle.lifecycle_id).context_hash
+    assert actions[0].evidence_snapshot_hash
+    assert actions[0].decision_batch_id
+    assert actions[0].decision_batch_hash
     assert store.get_agent_lifecycle(lifecycle.lifecycle_id).pending_decision_batch.items[0] == _decision().decision
 
 

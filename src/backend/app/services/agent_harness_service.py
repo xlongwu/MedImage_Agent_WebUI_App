@@ -336,6 +336,9 @@ class AgentHarnessService:
             request_hash=step.model_calls[-1].request_hash,
             response_hash=step.model_calls[-1].response_hash,
             action_hash=stable_hash(envelope.model_dump(mode="json")),
+            context_hash=context.context_hash,
+            evidence_snapshot_hash=context.evidence_snapshot_hash,
+            context_purpose=context.purpose,
             kind=envelope.kind,
             expected_state=envelope.expected_state,
             action_payload=envelope.model_dump(mode="json"),
@@ -360,7 +363,7 @@ class AgentHarnessService:
                 ),
             )
         try:
-            applied = self._apply(envelope, lifecycle, actor)
+            applied = self._apply(envelope, lifecycle, actor, accepted_action)
         except Exception as exc:
             error_code = str(exc).split(":", 1)[0] or "AGENT_HARNESS_STEP_FAILED"
             rejected_action = accepted_action.model_copy(update={
@@ -386,10 +389,11 @@ class AgentHarnessService:
                 ),
             )
         try:
-            self.store.update_agent_harness_action(
-                accepted_action.model_copy(update={"status": "applied", "completed_at": self.now()}),
-                expected_status="accepted",
-            )
+            if not applied.action_already_applied:
+                self.store.update_agent_harness_action(
+                    accepted_action.model_copy(update={"status": "applied", "completed_at": self.now()}),
+                    expected_status="accepted",
+                )
         except Exception:
             completed = step.model_copy(update={
                 "kind": envelope.kind,
@@ -720,11 +724,14 @@ class AgentHarnessService:
 
         parse_action_envelope(envelope)
 
-    def _apply(self, envelope: ActionEnvelope, lifecycle, actor: str) -> HarnessActionResult:
+    def _apply(
+        self, envelope: ActionEnvelope, lifecycle, actor: str, action_record: AgentActionRecord | None = None
+    ) -> HarnessActionResult:
         return self.planning_action_service.apply(
             lifecycle_id=lifecycle.lifecycle_id,
             action=envelope,
             actor=actor,
+            action_record=action_record,
         )
 
     def _claim(self, attempt: AgentHarnessAttempt, owner: str) -> AgentHarnessAttempt | None:
@@ -1001,7 +1008,7 @@ class AgentHarnessService:
             if envelope.kind != action.kind or envelope.expected_state != action.expected_state:
                 raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
             if lifecycle.state == action.expected_state:
-                applied = self._apply(envelope, lifecycle, "system-agent-task-recovery")
+                applied = self._apply(envelope, lifecycle, "system-agent-task-recovery", action)
                 lifecycle = applied.lifecycle
                 action_result_code = applied.action_result_code
             else:

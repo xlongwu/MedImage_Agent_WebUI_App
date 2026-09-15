@@ -178,6 +178,11 @@ class ProjectStore(
         self, record: AgentLifecycleRecord, event: AgentLifecycleEvent, wake: AgentTaskWakeRecord, *, expected_state: str
     ) -> AgentLifecycleRecord: ...
 
+    def transition_agent_lifecycle_with_harness_action(
+        self, record: AgentLifecycleRecord, event: AgentLifecycleEvent, action: AgentActionRecord,
+        *, expected_state: str, expected_action_status: str,
+    ) -> AgentLifecycleRecord: ...
+
     def list_agent_lifecycle_events(
         self,
         lifecycle_id: str,

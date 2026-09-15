@@ -1,7 +1,8 @@
-"""Phase-zero characterization: these assertions describe defects, NOT fixes.
+"""Harness regression coverage retained from the phase-zero characterization.
 
-Replace each defect assertion with the desired contract in its repair phase.
-No xfail, real network, desktop database, or research data is involved.
+Each repair phase replaces only its applicable defect assertion with the
+required behavior. No xfail, real network, desktop database, or research
+data is involved.
 """
 from datetime import UTC, datetime, timedelta
 
@@ -11,7 +12,10 @@ from src.backend.app.core.config_schema import AgentHarnessConfig, AgentModelRun
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
-from src.backend.app.services.agent_planning_action_service import AgentPlanningActionService
+from src.backend.app.services.agent_planning_action_service import (
+    AgentPlanningActionConflictError,
+    AgentPlanningActionService,
+)
 from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.agent_task_scheduler import AgentTaskScheduler
 from src.backend.app.services.memory_repository import MemoryRepository
@@ -21,26 +25,26 @@ from tests.unit.test_agent_harness_service import Adapter, _decision, _store
 from tests.unit.test_memory_repository import _remember
 
 
-def test_baseline_first_question_answer_is_rejected_as_stale(tmp_path):
+def test_first_question_answer_uses_the_persisted_evidence_snapshot(tmp_path):
     store = _store(tmp_path)
     harness = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=Adapter(_decision()))
     commands, scheduler = _service(store, harness)
     task = commands.create(project_id="project-1", goal="Plan preprocessing", command_id="create", actor="user")
     scheduler.run_once(owner="baseline")
     task = store.get_agent_lifecycle(task.lifecycle_id)
-    assert task.pending_decision_batch.evidence_snapshot_hash == "harness-evidence-unavailable"
-    with pytest.raises(SafetyError) as error:
-        commands.answer(project_id=task.project_id, lifecycle_id=task.lifecycle_id,
-                        batch_id=task.pending_decision_batch.batch_id,
-                        answers=[{"item_id": "atlas", "value": "aal"}], command_id="answer", actor="user")
-    assert error.value.code == "AGENT_DECISION_EVIDENCE_STALE"
+    assert task.pending_decision_batch.evidence_snapshot_hash == task.evidence_snapshot_hash
+    resumed = commands.answer(project_id=task.project_id, lifecycle_id=task.lifecycle_id,
+                              batch_id=task.pending_decision_batch.batch_id,
+                              answers=[{"item_id": "atlas", "value": "aal"}], command_id="answer", actor="user")
+    assert resumed.state == "PLAN_DRAFTED"
     assert store.list_execution_tickets(task.project_id) == []
 
 
-def test_baseline_action_conflict_loses_domain_error(tmp_path):
+def test_action_conflict_returns_the_structured_domain_error(tmp_path):
     actions = AgentPlanningActionService(_store(tmp_path), draft_plan=lambda **kw: None)
-    with pytest.raises(AttributeError, match="code"):
+    with pytest.raises(AgentPlanningActionConflictError) as error:
         actions.apply(lifecycle_id="missing", action=_decision(), actor="user")
+    assert error.value.code == "AGENT_HARNESS_ACTION_STATE_CONFLICT"
 
 
 def test_baseline_future_retry_has_no_worker(tmp_path):

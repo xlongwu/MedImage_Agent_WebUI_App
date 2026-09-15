@@ -5,9 +5,9 @@ Harness 是可选的单 Agent 控制层，默认由
 澄清；结果解释由 `AgentTaskResultSummaryService` 生成，恢复由确定性恢复服务处理。
 Harness 不执行计算，也不拥有审批权限。
 
-审查发现的待修复行为和阶段 0 复现证据见
-[`Harness 优化复现基线`](../../specs/阶段记录/Harness优化/00_复现基线与阶段验收.md)。
-该基线测试通过表示成功复现已知缺陷，不表示下述运行合同已全部由实现满足。
+审查发现的待修复行为、阶段 0 复现证据和阶段验收记录见
+[`Harness 优化`](../../specs/阶段记录/Harness优化/)。阶段 0 的通过只表示成功复现
+已知缺陷；后续阶段分别以正确合同回归验证，不能把基线通过当作修复结论。
 
 Harness 和确定性模式都只从项目级 Agent Task 命令进入。它们不会创建或读取
 文件型 Agent plan/run、`plan.json`、review summary 或 `agent_runs/` 目录；规划和
@@ -73,9 +73,15 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   调用记录还保存 action-schema/model-parameter hash、request builder/response schema
   version、状态、时间、token、脱敏 provider request ID 和错误码；不保存 prompt、context
   正文、完整 response、header、API key、影像或原始 provider 错误。
-- 结构与引用校验通过后先写入 `AgentActionRecord(accepted)`；
-  `AgentPlanningActionService` 成功完成既有决定或确定性规划后才更新为 `applied`，失败则
-  写为 `rejected`。Trace 与 Replay 显示这两个独立账本状态而不重放网络或业务调用。
+- 结构与引用校验通过后先写入 `AgentActionRecord(accepted)`。每个记录绑定本次已持久化
+  Context 的 `context_hash`、Evidence snapshot hash 和 purpose，不能从后续 lifecycle
+  状态猜测输入来源。`request_decision` 的 pending batch、lifecycle/event 和 action 的
+  batch ID/hash 在一个 SQLite 事务中共同发布；缺少真实来源即安全停止，不生成可回答的问题。
+  回答会以同一 purpose 重建当前证据，来源改变时仍以结构化 stale 错误拒绝旧答案。
+  `request_decision` 保存 batch ID/hash；`draft_plan` 保存生成的 Reviewed Plan ID/hash，
+  或该规划产生的后续 decision batch ID/hash。`AgentPlanningActionService` 成功完成既有
+  决定或确定性规划后才更新为 `applied`，失败则写为 `rejected`。Trace 与 Replay 显示这些
+  账本状态而不重放网络或业务调用。
 - OpenAI-compatible response 的 model、usage、cache usage 和 request ID 在可用时才
   写入；rule-based 路径显式记录为 `provider=rule_based`、`network_called=false`，其
   token 字段为 `null`。模型调用计数只统计真实 provider 请求，repair 也受同一总调用

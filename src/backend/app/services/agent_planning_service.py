@@ -130,6 +130,11 @@ class AgentPlanningService:
             project_id=project_id, lifecycle_id=lifecycle_id,
             memory_context=self._memory_context(current.command_context),
         )
+        if pending.source == "harness":
+            purpose = str(current.command_context.get("harness_evidence_purpose") or "decision_request")
+            fresh = self.evidence_service.select_for_purpose(
+                fresh, purpose=purpose
+            )
         if fresh.snapshot_hash != pending.evidence_snapshot_hash:
             raise SafetyError("AGENT_DECISION_EVIDENCE_STALE", code="AGENT_DECISION_EVIDENCE_STALE")
         supplied: dict[str, str] = {}
@@ -168,6 +173,7 @@ class AgentPlanningService:
         if errors:
             raise SafetyError("AGENT_DECISION_BATCH_INVALID", code="AGENT_DECISION_BATCH_INVALID", details={"fields": errors})
         context = dict(current.command_context)
+        context.pop("harness_evidence_purpose", None)
         updates: dict[str, Any] = {"pending_decision_batch": None, "command_context": context}
         context.pop("pending_plan_hash", None)
         goal_items = [item for item in pending.items if item.kind == "goal_revision"]

@@ -3033,6 +3033,38 @@ class SQLiteDesktopStore:
             self._insert_agent_task_wake(conn, wake)
         return record
 
+    def transition_agent_lifecycle_with_harness_action(
+        self,
+        record: AgentLifecycleRecord,
+        event: AgentLifecycleEvent,
+        action: AgentActionRecord,
+        *,
+        expected_state: str,
+        expected_action_status: str,
+    ) -> AgentLifecycleRecord:
+        """Atomically publish a Harness business result and its action ledger."""
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            cursor = conn.execute(
+                """UPDATE agent_lifecycles SET state=?, payload=?, updated_at=?
+                   WHERE lifecycle_id=? AND project_id=? AND state=?""",
+                (record.state, json.dumps(record.model_dump(mode="json"), ensure_ascii=False),
+                 record.updated_at.isoformat(), record.lifecycle_id, record.project_id, expected_state),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("LIFECYCLE_CONCURRENT_TRANSITION")
+            self._insert_agent_lifecycle_event(conn, event)
+            cursor = conn.execute(
+                """UPDATE agent_harness_actions SET status=?, payload=?, completed_at=?
+                   WHERE action_id=? AND attempt_id=? AND step_id=? AND status=?""",
+                (action.status, json.dumps(action.model_dump(mode="json"), ensure_ascii=False),
+                 action.completed_at.isoformat() if action.completed_at else None,
+                 action.action_id, action.attempt_id, action.step_id, expected_action_status),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_HARNESS_ACTION_CONCURRENT_UPDATE")
+        return record
+
     def add_agent_lifecycle_event(self, event: AgentLifecycleEvent) -> AgentLifecycleEvent:
         with self._lock, self._connect() as conn:
             self._insert_agent_lifecycle_event(conn, event)

@@ -164,17 +164,24 @@ class AgentActionRecord(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     action_id: str = Field(min_length=1, max_length=128)
     attempt_id: str = Field(min_length=1, max_length=128)
     step_id: str = Field(min_length=1, max_length=128)
     request_hash: str = Field(min_length=1, max_length=128)
     response_hash: str | None = Field(default=None, max_length=128)
     action_hash: str = Field(min_length=1, max_length=128)
+    context_hash: str | None = Field(default=None, min_length=1, max_length=128)
+    evidence_snapshot_hash: str | None = Field(default=None, min_length=1, max_length=128)
+    context_purpose: AgentContextPurpose | None = None
     kind: AgentHarnessActionKind
     expected_state: str = Field(min_length=1, max_length=64)
     action_payload: dict[str, Any] = Field(default_factory=dict)
     status: AgentActionStatus
+    decision_batch_id: str | None = Field(default=None, min_length=1, max_length=128)
+    decision_batch_hash: str | None = Field(default=None, min_length=1, max_length=128)
+    reviewed_plan_id: str | None = Field(default=None, min_length=1, max_length=128)
+    reviewed_plan_hash: str | None = Field(default=None, min_length=1, max_length=128)
     error_code: str | None = Field(default=None, max_length=128)
     created_at: datetime
     completed_at: datetime | None = None
