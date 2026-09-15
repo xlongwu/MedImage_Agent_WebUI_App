@@ -5,6 +5,10 @@ Harness 是可选的单 Agent 控制层，默认由
 澄清；结果解释由 `AgentTaskResultSummaryService` 生成，恢复由确定性恢复服务处理。
 Harness 不执行计算，也不拥有审批权限。
 
+审查发现的待修复行为和阶段 0 复现证据见
+[`Harness 优化复现基线`](../../specs/阶段记录/Harness优化/00_复现基线与阶段验收.md)。
+该基线测试通过表示成功复现已知缺陷，不表示下述运行合同已全部由实现满足。
+
 Harness 和确定性模式都只从项目级 Agent Task 命令进入。它们不会创建或读取
 文件型 Agent plan/run、`plan.json`、review summary 或 `agent_runs/` 目录；规划和
 运行证据分别由 Agent Task 投影与项目 Runs 提供。
