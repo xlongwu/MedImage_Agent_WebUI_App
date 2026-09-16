@@ -182,6 +182,42 @@ def test_missing_required_evidence_stops_before_provider_call(tmp_path) -> None:
     assert adapter.calls == 0
 
 
+def test_oversized_complete_request_stops_before_provider_call(tmp_path, monkeypatch) -> None:
+    import src.backend.app.planner.agent_model_adapter as model_adapter
+
+    store = _store(tmp_path)
+    lifecycle = _lifecycle(store)
+    adapter = Adapter(DraftPlanAction(kind="draft_plan", reason="Plan", expected_state="CREATED"))
+    service = _service(store, adapter)
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="rule_based")
+    monkeypatch.setattr(model_adapter, "action_envelope_json_schema", lambda: {"schema": "x" * (65 * 1024)})
+
+    result = service.run_one(lifecycle=lifecycle, actor="user")
+
+    assert result.attempt.status == "STOPPED"
+    assert result.attempt.terminal_reason == "AGENT_MODEL_REQUEST_TOO_LARGE"
+    assert adapter.calls == 0
+
+
+def test_strict_token_caps_without_trusted_provider_profile_stop_before_provider(tmp_path) -> None:
+    store = _store(tmp_path)
+    lifecycle = _lifecycle(store)
+    adapter = Adapter(DraftPlanAction(kind="draft_plan", reason="Plan", expected_state="CREATED"))
+    service = AgentHarnessService(
+        store,
+        config=AgentHarnessConfig(enabled=True, max_input_tokens=1),
+        model_config=AgentModelRuntimeConfig(provider="openai_compatible"),
+        adapter=adapter,
+    )
+    service.ensure_attempt(lifecycle=lifecycle, provider_ref="openai_compatible")
+
+    result = service.run_one(lifecycle=lifecycle, actor="user")
+
+    assert result.attempt.status == "STOPPED"
+    assert result.attempt.terminal_reason == "AGENT_HARNESS_STRICT_TOKEN_BUDGET_UNSUPPORTED"
+    assert adapter.calls == 0
+
+
 @pytest.mark.parametrize("action", [
     DraftPlanAction(kind="draft_plan", reason="stale", expected_state="PLAN_DRAFTED"),
     DraftPlanAction(kind="draft_plan", reason="bad reference", expected_state="CREATED", input_refs=("unregistered",)),

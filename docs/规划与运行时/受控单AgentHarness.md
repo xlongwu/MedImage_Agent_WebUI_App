@@ -30,10 +30,11 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   2/3 次 recovery 和 300/300 秒活跃工作时间。排队、用户决策等待和重试退避不计入
   活跃预算；attempt 持久化累计秒数及当前区间，重启时最多按已持久化区间边界结算，
   不会将停机时间计入。单次网络请求必须在剩余活跃预算允许的既有 timeout 内开始。
-  输入/输出 token 限额默认关闭，只有
-  provider 实际返回 usage 且管理员设置 `MEDIMAGE_AGENT_HARNESS_MAX_*_TOKENS` 后才
-  累计和限制；缺失 usage 保持 `null`，绝不估算为 0。项目 metadata、用户请求或模型
-  输出不能提高这些上限。每次 wake 默认最多 3 步，硬上限为 6。达到 wake 上限时
+  输入/输出 token 限额默认关闭；实际 provider usage 始终以可空字段记录，缺失 usage
+  保持 `null`，绝不估算为 0。严格 token 限额只能由具有可信计数和输出上限能力的
+  provider profile 启用；通用 OpenAI-compatible profile 目前没有该计数能力，配置严格
+  限额会在调用前以 `AGENT_HARNESS_STRICT_TOKEN_BUDGET_UNSUPPORTED` 拒绝，而不会把
+  字节估算伪装成实际消耗。项目 metadata、用户请求或模型输出不能提高这些上限。每次 wake 默认最多 3 步，硬上限为 6。达到 wake 上限时
   attempt 保持 `READY`、递增 `yield_count` 并在 FIFO 队列尾部重新排队，不能独占 worker。
 - `AgentTaskScheduler` 只处理规划 wake，并且只调用
   `AgentPlanningService.advance_planning()`。已分派 run 的检查由独立的
@@ -71,15 +72,21 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   不会打开 rawdata、完整日志、未登记路径或任意文件正文。Memory 仅是建议背景，
   不能作为审批或环境事实。
 - 裁剪只会按固定用途顺序移除完整的可选 section，并在 `omitted_sections` 记录原因；
-  不会截断 JSON、ID 或 hash。必需 section 缺失使 Context 标记 incomplete，必需
-  section 仍超限时在模型调用前以 `AGENT_CONTEXT_REQUIRED_SECTION_TOO_LARGE` 安全停止。
-  `complete=false` 永远不会送入 provider。
+  不会截断 JSON、ID、hash 或已脱敏 goal。goal section 还从已审核 Goal Contract 和
+  已确认答案投影 scope、禁止限制和输出要求；每个 section 的顶层字段都由明确白名单
+  决定，不能因字段名包含 `image` 或 `log` 静默删除约束。必需 section 缺失使 Context
+  标记 incomplete；完整 goal 或必需限制仍超限时在模型调用前以
+  `AGENT_CONTEXT_REQUIRED_CONTENT_TOO_LARGE` 安全停止并要求缩小目标。`complete=false`
+  永远不会送入 provider。
 
 ## 模型调用账本
 
 - 每次调用先构造唯一的 `CanonicalModelRequest`，其中包含 provider/model/endpoint、
   system prompt、已脱敏 context、实际 action JSON Schema、模型参数和 repair 标识。
-  规范序列化后的字节数及哈希先落入 `ModelCallRecord(started)`，写入失败绝不调用模型。
+  调用前完整检查会计入 system prompt、Product Skill、Context、Action JSON Schema、模型参数
+  和按输出 token 上限预留的字节，默认上限为 64 KiB；超限以
+  `AGENT_MODEL_REQUEST_TOO_LARGE` 停止，provider 调用次数为零。规范序列化后的字节数及
+  哈希先落入 `ModelCallRecord(started)`，写入失败绝不调用模型。
   调用记录还保存 action-schema/model-parameter hash、request builder/response schema
   version、状态、时间、token、脱敏 provider request ID 和错误码；不保存 prompt、context
   正文、完整 response、header、API key、影像或原始 provider 错误。

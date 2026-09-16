@@ -18,10 +18,12 @@ from src.backend.app.planner.agent_model_adapter import (
     ActionProposal,
     AgentModelAdapter,
     AgentModelInvalidOutputError,
+    AgentModelRequestLimitExceededError,
     AgentModelProviderError,
     DefaultAgentModelAdapter,
     REQUEST_BUILDER_VERSION,
     build_canonical_model_request,
+    assert_complete_request_within_limit,
     canonical_request_bytes,
 )
 from src.backend.app.planner.audit_record import stable_hash
@@ -194,6 +196,8 @@ class AgentHarnessService:
         if claimed is None:
             return HarnessRunResult(lifecycle=lifecycle, attempt=self.store.get_agent_harness_attempt(lifecycle.lifecycle_id))
         if reason := self._budget_stop_reason(claimed):
+            return HarnessRunResult(lifecycle=lifecycle, attempt=self._stop_claimed(claimed, reason))
+        if reason := self._strict_token_budget_stop_reason():
             return HarnessRunResult(lifecycle=lifecycle, attempt=self._stop_claimed(claimed, reason))
         # A reclaimed step may already contain a durable started provider call.
         # Reconcile it before reading fresh context: rebuilding cannot make an
@@ -585,9 +589,16 @@ class AgentHarnessService:
                 code="AGENT_HARNESS_ACTIVE_TIME_INSUFFICIENT", step=step
             )
         phase = self._phase_for(lifecycle_state=step.state_before)
-        request = build_canonical_model_request(
-            snapshot=context.prompt_payload(), config=self.model_config, repair=repair,
-        )
+        try:
+            request = build_canonical_model_request(
+                snapshot=context.prompt_payload(), config=self.model_config, repair=repair,
+            )
+            # Keep the call boundary guarded even if a future request builder
+            # is replaced or wrapped.  This happens before any call ledger is
+            # marked sent and before the adapter can reach a provider.
+            assert_complete_request_within_limit(request)
+        except AgentModelRequestLimitExceededError as exc:
+            raise _ModelCallFailure(code=exc.code, step=step) from exc
         serialized_request = canonical_request_bytes(request)
         pending_call = ModelCallRecord(
             call_id=f"harness_call_{uuid4().hex}", step_id=step.step_id,
@@ -804,6 +815,23 @@ class AgentHarnessService:
         if self._active_seconds(attempt) >= self.config.max_active_seconds:
             return "AGENT_HARNESS_ACTIVE_TIME_BUDGET_EXHAUSTED"
         return None
+
+    def _strict_token_budget_stop_reason(self) -> str | None:
+        """Reject strict caps without a provider profile that can enforce them.
+
+        The generic OpenAI-compatible adapter exposes nullable usage and has
+        no model-specific trusted tokenizer profile.  Its byte reservation is
+        a safety gate, not an actual token count, so it must not be presented
+        as a strict token-budget enforcement mechanism.
+        """
+        if (
+            self.config.max_input_tokens is None
+            and self.config.max_output_tokens is None
+        ):
+            return None
+        if self.model_config.provider == "rule_based":
+            return None
+        return "AGENT_HARNESS_STRICT_TOKEN_BUDGET_UNSUPPORTED"
 
     def _post_completion_budget_reason(
         self,

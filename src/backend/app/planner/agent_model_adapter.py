@@ -147,6 +147,11 @@ class AgentModelAdapter(Protocol):
 
 
 REQUEST_BUILDER_VERSION = "agent-harness-request-v1"
+MAX_COMPLETE_REQUEST_BYTES = 64 * 1024
+# The provider receives an output-token reservation in addition to the JSON
+# request body.  Four bytes per token is deliberately conservative for this
+# byte gate; it is an input-size reservation, never an actual-token report.
+RESERVED_OUTPUT_BYTES_PER_TOKEN = 4
 _SYSTEM_PROMPT = (
     "You are an advice-only research planning assistant. You may not approve, execute, "
     "write files, invoke tools, or issue commands. Return strictly valid JSON."
@@ -161,6 +166,40 @@ def canonical_request_bytes(request: CanonicalModelRequest) -> bytes:
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
+
+
+class AgentModelRequestLimitExceededError(ValueError):
+    code = "AGENT_MODEL_REQUEST_TOO_LARGE"
+
+    def __init__(self, *, request_bytes: int, reserved_output_bytes: int, max_bytes: int) -> None:
+        super().__init__(
+            f"{self.code}: complete request is {request_bytes + reserved_output_bytes} bytes; "
+            f"limit is {max_bytes} bytes"
+        )
+        self.request_bytes = request_bytes
+        self.reserved_output_bytes = reserved_output_bytes
+        self.max_bytes = max_bytes
+
+
+def complete_request_bytes(request: CanonicalModelRequest) -> tuple[int, int, int]:
+    """Measure every provider-visible request component plus output reserve."""
+    request_bytes = len(canonical_request_bytes(request))
+    reserve_tokens = request.model_parameters.get("max_output_tokens", 0)
+    reserve_tokens = reserve_tokens if isinstance(reserve_tokens, int) and not isinstance(reserve_tokens, bool) else 0
+    reserved_output_bytes = max(0, reserve_tokens) * RESERVED_OUTPUT_BYTES_PER_TOKEN
+    return request_bytes, reserved_output_bytes, request_bytes + reserved_output_bytes
+
+
+def assert_complete_request_within_limit(
+    request: CanonicalModelRequest, *, max_bytes: int = MAX_COMPLETE_REQUEST_BYTES,
+) -> None:
+    request_bytes, reserved_output_bytes, total_bytes = complete_request_bytes(request)
+    if total_bytes > max_bytes:
+        raise AgentModelRequestLimitExceededError(
+            request_bytes=request_bytes,
+            reserved_output_bytes=reserved_output_bytes,
+            max_bytes=max_bytes,
+        )
 
 
 def build_canonical_model_request(
@@ -199,7 +238,7 @@ def build_canonical_model_request(
         context_policy_version=str(serialized["projection_policy_version"]),
         request_builder_version=REQUEST_BUILDER_VERSION,
     )
-    return CanonicalModelRequest(
+    request = CanonicalModelRequest(
         provider=provider or "unknown",
         model=model,
         endpoint_class=endpoint_class,
@@ -220,6 +259,8 @@ def build_canonical_model_request(
         model_profile_hash=profile.profile_hash,
         repair=repair,
     )
+    assert_complete_request_within_limit(request)
+    return request
 
 
 class DefaultAgentModelAdapter:

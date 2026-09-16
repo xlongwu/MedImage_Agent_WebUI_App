@@ -226,7 +226,8 @@ def test_required_context_that_cannot_fit_stops_before_provider() -> None:
     try:
         builder.build(sources=HarnessContextSources(lifecycle=_lifecycle(), project=_project({}), evidence_snapshot=_evidence()))
     except AgentContextLimitExceededError as error:
-        assert str(error) == "AGENT_CONTEXT_REQUIRED_SECTION_TOO_LARGE"
+        assert str(error).startswith("AGENT_CONTEXT_REQUIRED_CONTENT_TOO_LARGE:")
+        assert "reduce the goal or required constraints" in str(error)
     else:
         raise AssertionError("required Context v3 sections must not be string-truncated")
 
@@ -279,4 +280,45 @@ def test_truncation_leaves_visible_markers_for_the_model() -> None:
     assert context.sections.plan_state.data is not None
     assert "x" * 2048 not in str(context.prompt_payload())
     rendered = str(context.prompt_payload())
-    assert "…" in rendered
+    assert long_goal_lifecycle.goal_text in rendered
+
+
+def test_goal_projection_preserves_tail_constraints_and_reviewed_contract() -> None:
+    goal = "Prepare an auditable preprocessing plan. " + ("detail " * 120) + (
+        "Do not execute computation, do not modify rawdata, and deliver image and log outputs."
+    )
+    lifecycle = _lifecycle({"science_answers": {"output_format": "image+log"}}).model_copy(update={
+        "goal_text": goal,
+        "goal_contract_id": "goal-contract-1",
+        "goal_contract_hash": "goal-contract-hash",
+    })
+    reviewed_plan = SimpleNamespace(payload={"goal_contract": {
+        "scope": {"subject_ids": ["sub-001"], "exclude": ["sub-002"], "completeness_required": True},
+        "forbidden_limitation_flags": ["partial", "preview_only"],
+        "criteria": [
+            {"criterion_id": "artifact-1", "criterion_type": "artifact_present", "target": "qc",
+             "expected": {"artifact_type": "image"}},
+            {"criterion_id": "scope-1", "criterion_type": "scope_complete", "target": "reviewed_scope",
+             "expected": {}},
+        ],
+    }})
+
+    context = HarnessContextBuilder().build(sources=HarnessContextSources(
+        lifecycle=lifecycle, project=_project({}), evidence_snapshot=_evidence(), reviewed_plan=reviewed_plan,
+    ))
+
+    goal_data = context.sections.goal.data
+    assert goal_data["goal"] == goal
+    assert goal_data["scope"] == {"subject_ids": ["sub-001"], "exclude": ["sub-002"], "completeness_required": True}
+    assert goal_data["prohibitions"] == ["partial", "preview_only"]
+    assert goal_data["output_requirements"][0]["artifact_type"] == "image"
+    assert context.sections.decision_state.data["confirmed_answers"] == {"output_format": "image+log"}
+
+
+def test_full_goal_that_exceeds_required_context_budget_stops_with_clear_reason() -> None:
+    lifecycle = _lifecycle().model_copy(update={"goal_text": "x" * (HarnessContextBuilder.MAX_BYTES * 2)})
+
+    with __import__("pytest").raises(AgentContextLimitExceededError, match="AGENT_CONTEXT_REQUIRED_CONTENT_TOO_LARGE"):
+        HarnessContextBuilder().build(sources=HarnessContextSources(
+            lifecycle=lifecycle, project=_project({}), evidence_snapshot=_evidence(),
+        ))

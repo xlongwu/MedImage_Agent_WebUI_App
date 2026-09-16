@@ -5,8 +5,12 @@ import pytest
 
 from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.planner.agent_model_adapter import (
+    AgentModelRequestLimitExceededError,
     AgentModelProviderError,
     DefaultAgentModelAdapter,
+    MAX_COMPLETE_REQUEST_BYTES,
+    assert_complete_request_within_limit,
+    complete_request_bytes,
 )
 from src.backend.app.schemas.agent_harness import CanonicalModelRequest
 
@@ -71,3 +75,20 @@ def test_runtime_config_redacts_api_key() -> None:
 
     assert secret not in repr(config)
     assert secret not in config.model_dump_json()
+
+
+@pytest.mark.parametrize("repair", [False, True])
+def test_complete_request_budget_includes_output_reservation(repair: bool) -> None:
+    request = _request(provider="rule_based").model_copy(update={
+        "context_payload": {"skill_working_procedures": "x" * MAX_COMPLETE_REQUEST_BYTES},
+        "model_parameters": {"max_output_tokens": 1024},
+        "repair": repair,
+    })
+
+    request_bytes, reserved_output_bytes, total_bytes = complete_request_bytes(request)
+    assert request_bytes > MAX_COMPLETE_REQUEST_BYTES
+    assert reserved_output_bytes == 4096
+    assert total_bytes == request_bytes + reserved_output_bytes
+    with pytest.raises(AgentModelRequestLimitExceededError) as exc_info:
+        assert_complete_request_within_limit(request)
+    assert exc_info.value.code == "AGENT_MODEL_REQUEST_TOO_LARGE"

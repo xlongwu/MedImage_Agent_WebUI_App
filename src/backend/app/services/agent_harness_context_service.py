@@ -26,7 +26,7 @@ class AgentContextLimitExceededError(ValueError):
 
 
 class AgentContextRequiredSectionTooLargeError(AgentContextLimitExceededError):
-    code = "AGENT_CONTEXT_REQUIRED_SECTION_TOO_LARGE"
+    code = "AGENT_CONTEXT_REQUIRED_CONTENT_TOO_LARGE"
 
 
 @dataclass(frozen=True)
@@ -86,8 +86,36 @@ class HarnessContextBuilder:
 
     MAX_BYTES = 32 * 1024
     _SECRET_KEY = re.compile(r"(?:api[_-]?key|token|secret|password|authorization)", re.I)
-    _UNSAFE_KEY = re.compile(r"(?:rawdata|image|dicom|nifti|transcript|prompt|log)", re.I)
     _ABSOLUTE_PATH = re.compile(r"(?:[A-Za-z]:[\\/]|\\\\|(?<![:/])/)[^\s,;\]\)}]+")
+    # Each section is constructed from this fixed top-level field set.  This
+    # avoids treating neutral domain words such as "image" and "log" as a
+    # reason to silently discard a user constraint.
+    SECTION_FIELD_ALLOWLIST = {
+        "goal": frozenset({
+            "goal", "goal_contract_id", "goal_contract_hash", "goal_version",
+            "lifecycle_state", "scope", "prohibitions", "output_requirements",
+        }),
+        "policy": frozenset({
+            "action_allowlist", "rawdata_read_only", "approved_write_roots",
+            "plan_only", "projection_policy_version", "tool_catalog_version",
+            "allowed_nodes", "tool_catalog_hash",
+        }),
+        "project_evidence": frozenset({
+            "project_id", "snapshot_hash", "facts", "missing", "warnings", "source_refs",
+            "facts_omitted", "missing_omitted", "warnings_omitted", "source_refs_omitted",
+            "data_state", "subject_count", "dataset_type", "registered_artifact_count",
+            "conversion_status", "preprocessing_status",
+        }),
+        "decision_state": frozenset({
+            "confirmed_answers", "unresolved_gaps", "pending_batch_id", "pending_item_count",
+        }),
+        "plan_state": frozenset({"reviewed_plan_id", "plan_hash", "revision_no", "node_count", "nodes", "nodes_omitted"}),
+        "execution_state": frozenset({"run_id", "status", "dispatch_id"}),
+        "latest_observation": frozenset({"observation", "evaluation", "recovery"}),
+        "last_action_result": frozenset({"step_id", "kind", "action_hash", "result_code", "summary", "result_summary"}),
+        "memory_context": frozenset({"context_hash", "memory_ids", "planner_constraints", "decision_suggestions", "advisories", "evidence_refs", "status", "warning_codes"}),
+        "budget": frozenset({"steps_used", "model_calls_used", "action_proposals_used", "repairs_used", "active_seconds_used", "active_seconds_limit"}),
+    }
     SECTION_ORDER = (
         "goal", "policy", "project_evidence", "decision_state", "plan_state",
         "execution_state", "latest_observation", "last_action_result", "memory_context", "budget",
@@ -114,15 +142,7 @@ class HarnessContextBuilder:
         safe_memory = self._memory_fields(memory)
         snapshot = sources.evidence_snapshot
         section_inputs: dict[str, tuple[dict[str, Any], tuple[str, ...]]] = {
-            "goal": ({
-                "goal": self._short_text(getattr(lifecycle, "goal_text", ""), limit=512),
-                "goal_contract_id": self._safe_ref(getattr(lifecycle, "goal_contract_id", None)),
-                "goal_contract_hash": self._safe_ref(
-                    getattr(lifecycle, "goal_contract_hash", None) or command_context.get("goal_contract_hash")
-                ),
-                "goal_version": self._safe_scalar(command_context.get("goal_revision")),
-                "lifecycle_state": self._safe_scalar(getattr(lifecycle, "state", None)),
-            }, (self._typed_ref("lifecycle", getattr(lifecycle, "lifecycle_id", None)) or "",)),
+            "goal": (self._goal_fields(lifecycle, command_context, sources.reviewed_plan), (self._typed_ref("lifecycle", getattr(lifecycle, "lifecycle_id", None)) or "",)),
             "policy": (self._policy_fields(purpose), ("policy:agent-context-v3",)),
             "project_evidence": (
                 self._safe_snapshot(snapshot) if snapshot is not None else self._safe_project_evidence(metadata, lifecycle),
@@ -201,7 +221,9 @@ class HarnessContextBuilder:
                 candidate.remove(name)
                 omitted.append(f"{name}:byte_budget")
         if self._payload_size(sections, candidate) > self.MAX_BYTES:
-            raise AgentContextRequiredSectionTooLargeError(AgentContextRequiredSectionTooLargeError.code)
+            raise AgentContextRequiredSectionTooLargeError(
+                f"{AgentContextRequiredSectionTooLargeError.code}: reduce the goal or required constraints"
+            )
         return tuple(candidate), omitted
 
     def _incomplete_reason(self, sections, required: tuple[str, ...]) -> str | None:
@@ -224,9 +246,71 @@ class HarnessContextBuilder:
     def _sections(self, values):
         return AgentHarnessContextSections(**{
             name: AgentHarnessContextSection(
-                source_refs=tuple(sorted({ref for ref in refs if ref})), source_hash=stable_hash(data), data=data,
+                source_refs=tuple(sorted({ref for ref in refs if ref})),
+                source_hash=stable_hash(self._allowlisted_section_data(name, data)),
+                data=self._allowlisted_section_data(name, data),
             ) for name, (data, refs) in values.items()
         })
+
+    def _allowlisted_section_data(self, name: str, data: dict[str, Any]) -> dict[str, Any]:
+        allowed = self.SECTION_FIELD_ALLOWLIST[name]
+        return {key: data[key] for key in data if key in allowed}
+
+    def _goal_fields(self, lifecycle, command_context: dict[str, Any], reviewed_plan) -> dict[str, Any]:
+        """Project the already-reviewed goal semantics without asking a model.
+
+        Goal text is intentionally never character-truncated.  If it and the
+        mandatory projection do not fit the Context budget, the caller stops
+        with a structured request for the user to narrow the goal.
+        """
+        contract = self._goal_contract(reviewed_plan)
+        return {
+            "goal": self._full_text(getattr(lifecycle, "goal_text", "")),
+            "goal_contract_id": self._safe_ref(getattr(lifecycle, "goal_contract_id", None)),
+            "goal_contract_hash": self._safe_ref(
+                getattr(lifecycle, "goal_contract_hash", None) or command_context.get("goal_contract_hash")
+            ),
+            "goal_version": self._safe_scalar(command_context.get("goal_revision")),
+            "lifecycle_state": self._safe_scalar(getattr(lifecycle, "state", None)),
+            "scope": contract["scope"],
+            "prohibitions": contract["prohibitions"],
+            "output_requirements": contract["output_requirements"],
+        }
+
+    def _goal_contract(self, reviewed_plan) -> dict[str, Any]:
+        payload = getattr(reviewed_plan, "payload", {}) if reviewed_plan is not None else {}
+        candidate = payload.get("goal_contract") if isinstance(payload, dict) else None
+        if not isinstance(candidate, dict):
+            return {"scope": {}, "prohibitions": [], "output_requirements": []}
+        scope = candidate.get("scope")
+        scope = scope if isinstance(scope, dict) else {}
+        projected_scope = {
+            key: self._safe_list(scope.get(key), max_items=self.policy.max_items_per_section)
+            for key in ("subject_ids", "session_ids", "include", "exclude")
+            if isinstance(scope.get(key), (list, tuple))
+        }
+        if isinstance(scope.get("completeness_required"), bool):
+            projected_scope["completeness_required"] = scope["completeness_required"]
+        criteria = candidate.get("criteria")
+        output_requirements = []
+        if isinstance(criteria, (list, tuple)):
+            for item in criteria[:self.policy.max_items_per_section]:
+                if not isinstance(item, dict) or item.get("criterion_type") not in {
+                    "artifact_present", "artifact_reloadable", "artifact_registered", "scope_complete",
+                }:
+                    continue
+                expected = item.get("expected") if isinstance(item.get("expected"), dict) else {}
+                output_requirements.append({
+                    "criterion_id": self._safe_ref(item.get("criterion_id")),
+                    "criterion_type": self._safe_scalar(item.get("criterion_type")),
+                    "target": self._safe_scalar(item.get("target")),
+                    "artifact_type": self._safe_scalar(expected.get("artifact_type")),
+                })
+        return {
+            "scope": projected_scope,
+            "prohibitions": self._safe_list(candidate.get("forbidden_limitation_flags"), max_items=self.policy.max_items_per_section),
+            "output_requirements": output_requirements,
+        }
 
     def _policy_fields(self, purpose: AgentContextPurpose) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -362,7 +446,7 @@ class HarnessContextBuilder:
 
     def _safe_object(self, value: object, *, max_items: int) -> Any:
         if isinstance(value, dict):
-            return {str(key): self._safe_object(value[key], max_items=max_items) for key in sorted(value)[:max_items] if not self._SECRET_KEY.search(str(key)) and not self._UNSAFE_KEY.search(str(key))}
+            return {str(key): self._safe_object(value[key], max_items=max_items) for key in sorted(value)[:max_items] if not self._SECRET_KEY.search(str(key))}
         if isinstance(value, (list, tuple)): return [self._safe_object(item, max_items=max_items) for item in value[:max_items]]
         if isinstance(value, str): return self._short_text(value)
         return value if isinstance(value, (int, float, bool)) or value is None else self._short_text(str(value))
@@ -378,6 +462,12 @@ class HarnessContextBuilder:
         # A visible marker so the model can tell when it is reading truncated
         # content instead of silently incomplete evidence.
         return redacted if len(redacted) <= limit else redacted[:limit] + "…"
+
+    @staticmethod
+    def _full_text(value: object) -> str:
+        return HarnessContextBuilder._ABSOLUTE_PATH.sub(
+            "project://redacted", str(value or "").replace("\x00", "")
+        )
 
     @staticmethod
     def _safe_scalar(value: object) -> str | int | float | bool | None:
