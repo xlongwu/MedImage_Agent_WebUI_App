@@ -117,27 +117,44 @@ class AgentTaskReconciler:
         """Resume only deterministic persisted evidence transitions."""
         current = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
         base = f"startup-recovery:{lifecycle_id}"
-        if current.state == "OBSERVING":
-            if not current.observation_id:
-                current = self.orchestrator.observe(
+        try:
+            if current.state == "OBSERVING":
+                if not current.observation_id:
+                    current = self.orchestrator.observe(
+                        project_id=project_id, lifecycle_id=lifecycle_id,
+                        command_id=f"{base}:observe", actor="system-reconciler",
+                    )
+                return self.orchestrator.evaluate_goal(
                     project_id=project_id, lifecycle_id=lifecycle_id,
-                    command_id=f"{base}:observe", actor="system-reconciler",
-                )
-            return self.orchestrator.evaluate_goal(
-                project_id=project_id, lifecycle_id=lifecycle_id,
-                command_id=f"{base}:evaluate", actor="system-reconciler",
-            )[0]
-        if current.state == "EVALUATING":
-            return self.orchestrator.evaluate_goal(
-                project_id=project_id, lifecycle_id=lifecycle_id,
-                command_id=f"{base}:evaluate", actor="system-reconciler",
-            )[0]
-        if current.state == "DIAGNOSING":
-            return self.orchestrator.propose_recovery(
-                project_id=project_id, lifecycle_id=lifecycle_id,
-                command_id=f"{base}:recovery", actor="system-reconciler",
-            )[0]
-        return current
+                    command_id=f"{base}:evaluate", actor="system-reconciler",
+                )[0]
+            if current.state == "EVALUATING":
+                return self.orchestrator.evaluate_goal(
+                    project_id=project_id, lifecycle_id=lifecycle_id,
+                    command_id=f"{base}:evaluate", actor="system-reconciler",
+                )[0]
+            if current.state == "DIAGNOSING":
+                return self.orchestrator.propose_recovery(
+                    project_id=project_id, lifecycle_id=lifecycle_id,
+                    command_id=f"{base}:recovery", actor="system-reconciler",
+                )[0]
+            return current
+        except (SafetyError, StateStoreError) as exc:
+            # A persisted intermediate state without its required observation
+            # or evaluation is not safe to replay.  Preserve the evidence and
+            # make the ambiguity visible instead of leaving it stranded.
+            latest = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
+            return self.orchestrator.transition(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                to_state="HUMAN_HANDOFF",
+                command_id=f"{base}:evidence-incomplete",
+                actor="system-reconciler",
+                source_command="intermediate_recovery_incomplete",
+                reason=f"Startup recovery could not verify persisted evidence: {exc}",
+                updates={"last_error": str(exc)},
+                allow_same_state=latest.state == "HUMAN_HANDOFF",
+            )
 
     def start_bounded_monitor(self, *, project_id: str, lifecycle_id: str) -> bool:
         """Start at most one finite terminal-evidence monitor for a lifecycle."""

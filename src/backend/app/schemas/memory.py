@@ -194,6 +194,19 @@ class MemoryEvidenceRef(BaseModel):
     provenance_warning: str | None = None
 
 
+class MemoryAdvisory(BaseModel):
+    """A restricted non-scientific projection for permitted consumers only."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    memory_id: str
+    revision_hash: str
+    kind: Literal["user_preference", "presentation_preference", "error_lesson"]
+    use: Literal["presentation", "failure_checklist"]
+    content: dict[str, Any]
+    source_refs: tuple[str, ...]
+
+
 class MemoryContext(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -202,6 +215,7 @@ class MemoryContext(BaseModel):
     project_id: str
     planner_constraints: dict[str, Any] = Field(default_factory=dict)
     decision_suggestions: tuple[MemoryDecisionSuggestion, ...] = ()
+    advisories: tuple[MemoryAdvisory, ...] = ()
     evidence_refs: tuple[MemoryEvidenceRef, ...] = ()
     omitted_count: int = Field(default=0, ge=0)
     used_bytes: int = Field(default=0, ge=0)

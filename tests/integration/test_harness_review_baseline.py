@@ -106,7 +106,7 @@ def test_crash_at_provider_boundary_stops_without_provider_replay(tmp_path):
 
 
 @pytest.mark.parametrize("state", ["OBSERVING", "EVALUATING"])
-def test_baseline_startup_skips_persisted_intermediate_state(tmp_path, state):
+def test_startup_recovery_hands_off_incomplete_intermediate_state(tmp_path, state):
     store = _store(tmp_path)
     task = AgentOrchestrator(store).create(project_id="project-1", command_id="create", actor="user")
     # Persist the crash checkpoint through the store's transactional API.
@@ -117,11 +117,13 @@ def test_baseline_startup_skips_persisted_intermediate_state(tmp_path, state):
         source_command="crash_fixture", occurred_at=datetime.now(UTC), from_state=task.state, to_state=state)
     store.transition_agent_lifecycle(changed, event, expected_state=task.state)
     reopened = SQLiteDesktopStore(tmp_path / "harness.sqlite")
-    assert AgentTaskReconciler(reopened).reconcile_incomplete_on_startup() == ()
-    assert reopened.get_agent_lifecycle(task.lifecycle_id).state == state
+    assert AgentTaskReconciler(reopened).reconcile_incomplete_on_startup() == (task.lifecycle_id,)
+    recovered = reopened.get_agent_lifecycle(task.lifecycle_id)
+    assert recovered.state == "HUMAN_HANDOFF"
+    assert recovered.last_error is not None
 
 
-def test_baseline_old_unique_memory_hit_is_lost(tmp_path, monkeypatch):
+def test_old_unique_memory_hit_survives_fts_candidate_filtering(tmp_path, monkeypatch):
     repository = MemoryRepository(tmp_path / "memory.sqlite")
     monkeypatch.setattr("src.backend.app.services.memory_repository.utc_iso", lambda *args: "2026-01-01T00:00:00+00:00")
     _remember(repository, key="old-entry", summary="uniqueneedle")
@@ -130,10 +132,11 @@ def test_baseline_old_unique_memory_hit_is_lost(tmp_path, monkeypatch):
         _remember(repository, command_id=f"remember-{index:04d}", key=f"entry-{index:04d}", summary="Unrelated preference")
     with repository.connect() as conn:
         assert conn.execute("SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'uniqueneedle'").fetchone()[0] == 1
-    assert repository.retrieve_active_items(project_id="project-a", query="uniqueneedle", limit=200) == []
+    matches = repository.retrieve_active_items(project_id="project-a", query="uniqueneedle", limit=200)
+    assert [item.canonical_key for item, _score in matches] == ["presentation_preference:old-entry"]
 
 
-def test_baseline_user_wait_exhausts_work_budget(tmp_path):
+def test_user_wait_does_not_exhaust_active_work_budget(tmp_path):
     store = _store(tmp_path)
     clock = [datetime.now(UTC)]
     harness = AgentHarnessService(store, config=AgentHarnessConfig(enabled=True), adapter=Adapter(_decision()), now=lambda: clock[0])
@@ -143,4 +146,4 @@ def test_baseline_user_wait_exhausts_work_budget(tmp_path):
     assert result.attempt.status == "WAITING_FOR_USER"
     clock[0] += timedelta(minutes=10)
     resumed = harness.prepare_resume(lifecycle=result.lifecycle, provider_ref="rule_based")
-    assert harness._budget_stop_reason(resumed) == "AGENT_HARNESS_WALL_TIME_BUDGET_EXHAUSTED"
+    assert harness._budget_stop_reason(resumed) is None

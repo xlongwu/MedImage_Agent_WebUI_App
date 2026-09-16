@@ -61,6 +61,18 @@ def canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def memory_search_terms(value: str) -> tuple[str, ...]:
+    """Deterministic shared English/Chinese index and query tokenization."""
+    normalized = unicodedata.normalize("NFC", value).casefold()
+    terms: list[str] = re.findall(r"[\w-]{2,64}", normalized, flags=re.UNICODE)
+    for span in re.findall(r"[\u4e00-\u9fff]+", normalized):
+        if len(span) == 1:
+            terms.append(span)
+        else:
+            terms.extend(span[index : index + 2] for index in range(len(span) - 1))
+    return tuple(dict.fromkeys(terms))
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS store_meta (
     key TEXT PRIMARY KEY,
@@ -338,6 +350,7 @@ class MemoryRepository:
                     "INSERT OR REPLACE INTO store_meta(key, value) VALUES('schema_version', ?)",
                     (MEMORY_SCHEMA_VERSION,),
                 )
+                self._rebuild_fts(conn)
         except MemoryRepositoryError:
             raise
         except Exception as exc:
@@ -543,12 +556,7 @@ class MemoryRepository:
         """
 
         effective_now = utc_iso(now)
-        tokens = tuple(
-            dict.fromkeys(
-                value.casefold()
-                for value in re.findall(r"[\w-]{2,64}", query, flags=re.UNICODE)
-            )
-        )[:20]
+        tokens = memory_search_terms(query)[:20]
         fts_query = " OR ".join(f'"{value.replace(chr(34), chr(34) * 2)}"' for value in tokens)
         bounded_limit = max(1, min(limit, 200))
         with self.connect() as conn:
@@ -556,12 +564,18 @@ class MemoryRepository:
             if fts_query:
                 rows = conn.execute(
                     """
-                    SELECT memory_id, bm25(memory_fts) AS score
-                    FROM memory_fts
-                    WHERE memory_fts MATCH ? AND project_id=?
-                    ORDER BY score, memory_id LIMIT ?
+                    SELECT f.memory_id, bm25(memory_fts) AS score
+                    FROM memory_fts AS f
+                    JOIN memory_items AS item ON item.memory_id=f.memory_id
+                    JOIN memory_revisions AS revision
+                      ON revision.revision_id=item.current_revision_id
+                    WHERE memory_fts MATCH ? AND f.project_id=?
+                      AND item.project_id=? AND item.status='active'
+                      AND (item.valid_until IS NULL OR item.valid_until>?)
+                      AND revision.sensitivity NOT IN ('restricted', 'rejected')
+                    ORDER BY score, f.memory_id LIMIT ?
                     """,
-                    (fts_query, project_id, bounded_limit),
+                    (fts_query, project_id, project_id, effective_now, bounded_limit),
                 ).fetchall()
                 ranked.update(
                     (str(row["memory_id"]), float(-row["score"])) for row in rows
@@ -575,9 +589,8 @@ class MemoryRepository:
                 WHERE project_id=? AND status='active'
                   AND (valid_until IS NULL OR valid_until>?)
                 ORDER BY pinned DESC, updated_at DESC, memory_id
-                LIMIT ?
                 """,
-                (project_id, effective_now, bounded_limit),
+                (project_id, effective_now),
             ).fetchall()
             selected: dict[str, sqlite3.Row] = {}
             for row in base_rows:
@@ -608,6 +621,32 @@ class MemoryRepository:
                 pair[0].memory_id,
             ),
         )[:bounded_limit]
+
+    @staticmethod
+    def _fts_text(*values: str) -> str:
+        source = " ".join(value for value in values if value)
+        return f"{source} {' '.join(memory_search_terms(source))}".strip()
+
+    def _rebuild_fts(self, conn: sqlite3.Connection) -> None:
+        """Rebuild only from current active authority; forgotten rows never return."""
+        conn.execute("DELETE FROM memory_fts")
+        rows = conn.execute(
+            """SELECT item.memory_id, item.project_id, item.current_revision_id,
+                      item.canonical_key, revision.content_text
+               FROM memory_items AS item
+               JOIN memory_revisions AS revision
+                 ON revision.revision_id=item.current_revision_id
+               WHERE item.status='active'
+                 AND (item.valid_until IS NULL OR item.valid_until>?)
+                 AND revision.sensitivity NOT IN ('restricted', 'rejected')""",
+            (utc_iso(),),
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "INSERT INTO memory_fts(memory_id, project_id, revision_id, canonical_key, content_text) VALUES (?, ?, ?, ?, ?)",
+                (row["memory_id"], row["project_id"], row["current_revision_id"],
+                 self._fts_text(row["canonical_key"]), self._fts_text(row["content_text"])),
+            )
 
     def count_items(
         self, *, project_id: str, status: str | None = "active"
@@ -956,7 +995,7 @@ class MemoryRepository:
         )
         conn.execute(
             "INSERT INTO memory_fts(memory_id, project_id, revision_id, canonical_key, content_text) VALUES (?, ?, ?, ?, ?)",
-            (memory_id, project_id, revision_id, canonical_key, summary),
+            (memory_id, project_id, revision_id, self._fts_text(canonical_key), self._fts_text(summary)),
         )
         event_id = self._insert_event(
             conn,
@@ -1826,8 +1865,8 @@ class MemoryRepository:
                                 active["memory_id"],
                                 project_id,
                                 revision_id,
-                                candidate["canonical_key"],
-                                candidate["content_text"],
+                                self._fts_text(candidate["canonical_key"]),
+                                self._fts_text(candidate["content_text"]),
                             ),
                         )
                         self._insert_event(
@@ -2169,7 +2208,7 @@ class MemoryRepository:
             )
             conn.execute(
                 "INSERT INTO memory_fts(memory_id, project_id, revision_id, canonical_key, content_text) VALUES (?, ?, ?, ?, ?)",
-                (memory_id, project_id, revision_id, item["canonical_key"], summary),
+                    (memory_id, project_id, revision_id, self._fts_text(item["canonical_key"]), self._fts_text(summary)),
             )
             event_id = self._insert_event(
                 conn,

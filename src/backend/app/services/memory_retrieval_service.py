@@ -9,6 +9,7 @@ from typing import Any
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.memory import (
     MemoryContext,
+    MemoryAdvisory,
     MemoryDecisionSuggestion,
     MemoryEvidenceRef,
     MemoryItem,
@@ -217,6 +218,7 @@ class MemoryRetrievalService:
     ) -> MemoryContext:
         suggestions: list[MemoryDecisionSuggestion] = []
         evidence: list[MemoryEvidenceRef] = []
+        advisories: list[MemoryAdvisory] = []
         for item in result.items:
             revision = item.revision
             source_refs = tuple(source.source_ref for source in item.sources)
@@ -244,6 +246,19 @@ class MemoryRetrievalService:
                     )
                 )
                 continue
+            if item.kind in {"user_preference", "presentation_preference", "error_lesson"}:
+                advisory_content = self._advisory_content(
+                    kind=item.kind,
+                    content=revision.content,
+                )
+                if advisory_content:
+                    advisories.append(MemoryAdvisory(
+                        memory_id=item.memory_id,
+                        revision_hash=revision.content_hash,
+                        kind=item.kind,
+                        use="failure_checklist" if item.kind == "error_lesson" else "presentation",
+                        content=advisory_content, source_refs=source_refs,
+                    ))
             for source_ref in source_refs or ("memory:no-source",):
                 evidence.append(
                     MemoryEvidenceRef(
@@ -266,6 +281,7 @@ class MemoryRetrievalService:
             "decision_suggestions": [
                 item.model_dump(mode="json") for item in suggestions
             ],
+            "advisories": [item.model_dump(mode="json") for item in advisories],
             "evidence_refs": [item.model_dump(mode="json") for item in evidence],
             "omitted_count": result.omitted_count,
             "used_bytes": result.used_bytes,
@@ -276,6 +292,21 @@ class MemoryRetrievalService:
             **identity,
             context_hash=stable_hash(identity),
         )
+
+    @staticmethod
+    def _advisory_content(*, kind: str, content: dict[str, Any]) -> dict[str, Any]:
+        """Return only fields permitted in a non-authoritative advisory."""
+
+        permitted = (
+            {"reason_code", "failure_code", "checklist", "check_items"}
+            if kind == "error_lesson"
+            else {"language", "locale", "format", "style", "display", "report_style"}
+        )
+        return {
+            key: value
+            for key, value in content.items()
+            if key in permitted and isinstance(value, (str, int, float, bool, list, dict))
+        }
 
     def _forgotten_generations(self, project_id: str) -> dict[str, int]:
         values: dict[str, int] = {}
