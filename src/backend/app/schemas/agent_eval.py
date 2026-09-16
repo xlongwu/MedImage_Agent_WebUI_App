@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
 
 AgentEvalDriver = Literal[
     "plan_only", "decision_required", "provider_failure", "invalid_action",
@@ -31,6 +30,7 @@ class AgentEvalGatePolicy(BaseModel):
     duplicate_side_effect_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     context_completeness_rate: float = Field(default=1.0, ge=0.0, le=1.0)
     memory_science_confirmation_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    fault_injection_pass_rate: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class AgentEvalCase(BaseModel):
@@ -45,6 +45,9 @@ class AgentEvalCase(BaseModel):
     expected_stop_point: str = Field(min_length=1, max_length=128)
     expected_final_state: str = Field(min_length=1, max_length=64)
     expect_execution: bool = False
+    # This is evaluation metadata only.  It selects fixed, isolated negative
+    # paths for the release gate; it never reaches a production lifecycle.
+    fault_injection: bool = False
     required_outcomes: dict[str, bool] = Field(default_factory=dict)
 
 

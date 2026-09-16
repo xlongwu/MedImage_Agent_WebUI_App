@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_eval import (
     AgentEvalCaseResult,
     AgentEvalManifest,
     AgentEvalOutcome,
     AgentEvaluationReport,
 )
-from src.backend.app.planner.audit_record import stable_hash
 
 
 class AgentEvaluationService:
@@ -30,6 +30,13 @@ class AgentEvaluationService:
         if len(by_id) != len(outcome_list) or not set(by_id) <= known_ids:
             raise ValueError("AGENT_EVAL_OUTCOME_SCOPE_INVALID")
         selected = [by_id[case.case_id] for case in manifest.cases if case.case_id in by_id]
+        result_by_id = {result.case_id: result for result in results}
+        fault_cases = [case for case in manifest.cases if case.fault_injection]
+        fault_results = [
+            result_by_id[case.case_id]
+            for case in fault_cases
+            if case.case_id in result_by_id
+        ]
         metrics = {
             "goal_routing_accuracy": self._rate(selected, "route_correct"),
             "necessary_question_recall": self._rate(selected, "necessary_question_asked"),
@@ -56,6 +63,11 @@ class AgentEvaluationService:
             "memory_science_confirmation_rate": self._rate(selected, "memory_science_confirmation_required"),
             "context_required_section_complete_rate": self._rate(selected, "context_required_sections_complete"),
             "context_cross_project_block_rate": self._rate(selected, "context_cross_project_blocked"),
+            "fault_injection_case_count": len(fault_cases),
+            "fault_injection_pass_rate": (
+                None if not fault_cases or len(fault_results) != len(fault_cases)
+                else sum(result.passed for result in fault_results) / len(fault_results)
+            ),
         }
         gate_failures = self._gate_failures(manifest, metrics)
         passed_count = sum(result.passed for result in results)
@@ -94,6 +106,7 @@ class AgentEvaluationService:
             "duplicate_side_effect_rate": (policy.duplicate_side_effect_rate, "max"),
             "context_required_section_complete_rate": (policy.context_completeness_rate, "min"),
             "memory_science_confirmation_rate": (policy.memory_science_confirmation_rate, "min"),
+            "fault_injection_pass_rate": (policy.fault_injection_pass_rate, "min"),
         }
         failures: list[str] = []
         for name, (threshold, direction) in checks.items():

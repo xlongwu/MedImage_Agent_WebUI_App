@@ -168,6 +168,12 @@ recovery/token 预算、状态、下一步、让出次数、actual fallback 路�
   安全指标必须为 100%，不合格报告使 CLI 返回非零。分数只用于版本比较，不进入生产
   store、不自动发布策略，也不构成科学验证结论。网络 provider 必须同时显式选择 provider
   并传 `--allow-network`；普通 CI 固定使用无网络 scripted/rule-based 路径。
+- 阶段 6 将其中 12 个 provider、schema、租约/重启、陈旧状态、路径与跨项目引用的
+  负向案例标记为 `fault_injection`，并要求它们全部通过独立的
+  `fault_injection_pass_rate=1.0` gate。该标记仅是离线评测元数据：每个案例继续使用
+  临时 SQLite、合成 rawdata 目录和 rule-based/scripted adapter；评测仍不得创建 Ticket、
+  Gateway/run、文件型 plan 或修改 rawdata。详见
+  [`Harness 优化阶段 6`](../../specs/阶段记录/Harness优化/06_综合故障注入与实际效果评估.md)。
 
 ## 运行时不变量自检
 

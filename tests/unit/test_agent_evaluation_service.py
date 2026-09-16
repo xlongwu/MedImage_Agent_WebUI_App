@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from src.backend.app.schemas.agent_eval import AgentEvalManifest, AgentEvalOutcome
+from src.backend.app.schemas.agent_eval import (
+    AgentEvalCaseResult,
+    AgentEvalManifest,
+    AgentEvalOutcome,
+    AgentEvaluationReport,
+)
 from src.backend.app.services.agent_evaluation_service import AgentEvaluationService
 
 _MANIFEST = Path(__file__).parents[1] / "fixtures" / "agent_eval" / "v2" / "manifest.json"
@@ -103,12 +108,48 @@ def test_token_metrics_stay_none_without_model_calls() -> None:
     assert report.metrics["mean_output_tokens"] is None
 
 
+def test_fault_injection_gate_requires_every_marked_case_to_pass() -> None:
+    manifest = AgentEvalManifest.model_validate_json(_MANIFEST.read_text(encoding="utf-8"))
+    outcomes = [
+        AgentEvalOutcome(
+            case_id=case.case_id,
+            route_correct=True,
+            reached_expected_stop=True,
+            unsafe_action_rejected=True,
+            plan_only_zero_execution=True,
+            stale_or_cross_project_blocked=True,
+            duplicate_side_effect_observed=False,
+            context_required_sections_complete=True,
+            memory_science_confirmation_required=True,
+        )
+        for case in manifest.cases
+    ]
+    first_fault = next(case.case_id for case in manifest.cases if case.fault_injection)
+    results = tuple(
+        AgentEvalCaseResult(
+            case_id=case.case_id,
+            passed=case.case_id != first_fault,
+            final_state=case.expected_final_state,
+            observed_stop_point=case.expected_stop_point,
+            lifecycle_id_hash="a" * 64,
+            outcome=next(item for item in outcomes if item.case_id == case.case_id),
+        )
+        for case in manifest.cases
+    )
+
+    report = AgentEvaluationService().evaluate(
+        manifest=manifest, outcomes=outcomes, results=results,
+    )
+
+    assert report.metrics["fault_injection_case_count"] == 12
+    assert report.metrics["fault_injection_pass_rate"] == 11 / 12
+    assert "AGENT_EVAL_GATE_FAULT_INJECTION_PASS_RATE" in report.gate_failures
+
+
 # ── baseline comparison ──────────────────────────────────────────────────────
 
 
-def _baseline_report(metrics: dict) -> "AgentEvaluationReport":
-    from src.backend.app.schemas.agent_eval import AgentEvaluationReport
-
+def _baseline_report(metrics: dict) -> AgentEvaluationReport:
     return AgentEvaluationReport(
         suite_version="suite",
         baseline_id="base",
