@@ -1,5 +1,10 @@
 # DPABI Execution Sandbox Specification
 
+> **范围声明（2026-10-01）**：本规范描述的外部执行路径不在当前受支持范围内。DPABI/MATLAB 沙箱执行入口
+> `dpabi.sandbox_smoke` 经 `src/backend/app/api/execution_contract.py:reject_execution_contract()` 返回
+> HTTP 410，本文中的“执行前”前置条件在当前产品中不可满足。保留为沙箱边界设计参考，不得据以认为该能力
+> 可执行；真实能力等级以 `docs/项目概览/能力矩阵.md` 与 `PROJECT_STATE.md` 为准。
+
 This document defines the MVP approved DPABI sandbox execution.
 
 ## Goals

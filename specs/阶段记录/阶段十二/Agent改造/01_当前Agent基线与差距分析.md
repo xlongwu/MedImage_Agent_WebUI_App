@@ -85,7 +85,7 @@
 
 在 characterization 通过后再处理：
 
-- `specs/阶段记录/阶段十一/README.md`：区分“方案状态”和“源码实现状态”；
+- `specs/阶段记录/已完成实施方案/阶段十一/README.md`：区分“方案状态”和“源码实现状态”；
 - `docs/规划与运行时/受控单AgentHarness.md`：只描述已验证合同；
 - `PROJECT_STATE.md`：只在确认 source、test、packaging、release 证据后更新；
 - `docs/项目概览/能力矩阵.md`：Harness 不是科学计算能力，不提升数值能力等级。

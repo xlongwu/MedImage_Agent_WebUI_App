@@ -1,5 +1,10 @@
 # GPU Runtime Specification
 
+> **范围声明（2026-10-01）**：本规范描述的独立 GPU 基准执行路径不在当前受支持范围内。入口
+> `gpu.benchmark`、`gpu.synthetic_benchmark` 经 `src/backend/app/api/execution_contract.py:reject_execution_contract()`
+> 返回 HTTP 410。原生 ALFF/fALFF 的 CuPy backend 是另一条已实现路径，其真实等级以
+> `docs/项目概览/能力矩阵.md` 为准，不得由本文推导。
+
 This document defines the MVP GPU acceleration prototype for MedImage Agent.
 
 ## Goals

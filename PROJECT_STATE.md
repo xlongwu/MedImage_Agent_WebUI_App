@@ -406,4 +406,4 @@ their tag state.
 - Run lifecycle: `docs/安全与审批/真实项目运行生命周期.md`
 - RC2 release convergence: `specs/阶段记录/阶段九/README.md`
 - Agent-first source implementation and deferred acceptance gates:
-  `specs/阶段记录/阶段十/README.md`
+  `specs/阶段记录/已完成实施方案/阶段十/README.md`

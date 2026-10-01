@@ -1,5 +1,12 @@
 # 阶段十一：自动 AC-PC 前联合定位与受控 Agent Harness
 
+> 归档状态（2026-10-01 审计）：计划 01–03 声明的工程实施范围全部落地并有源码级回归覆盖，
+> 因此本目录归档为历史实施记录。归档不外推为发布或科学验证结论：自动 AC-PC 仍为 `computed`，
+> 独立人工标注参考验证属单独的 Scientific Validation 任务；Harness 的 packaged/release 证据
+> 仍为 `unknown`。正文 §3 的六个动作种类与 `runtime/agent_harness_scheduler.py` 路径已被后续
+> 收敛取代（当前只有 `request_decision`、`draft_plan`，调度器为
+> `src/backend/app/services/agent_task_scheduler.py`），不得据正文恢复兼容入口。
+>
 > 状态：**计划 02 的源码实现、生产入口和 focused 基线已确认；当前 Harness 的 packaged smoke / 正式 release 证据仍为 unknown。计划 01 的独立科学参考验证仍未完成。**
 > 更新日期：2026-08-22。工程结论以当前源码、完整后端回归和前端检查为依据；自动 AC-PC 前联合定位仍保持 `computed`，不得标为 `validated`。
 

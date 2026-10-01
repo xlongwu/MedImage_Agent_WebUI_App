@@ -1,5 +1,13 @@
 # 阶段十：Agent-first 前端与交互收敛
 
+> 归档状态（2026-10-01 审计）：10A–10F 的源码与自动化验收范围已完成，按 `AGENTS.md` §7.6
+> 与 `specs/阶段记录/已完成实施方案/README.md` 归档为历史实施记录。本目录不再是当前待办，
+> 也不得作为当前行为来源。
+>
+> 归档边界：下表“仍未完成的证据”中，packaged、可见 Electron 三流程与重启投影已由阶段十五
+> 的 clean exact-SHA 验收（2026-08-25）覆盖；installer、版本面 `v0.6.0-rc2`、tag 与发布
+> 仍属独立的 Release 任务，记录在 `PROJECT_STATE.md` “Next Work”。
+>
 > 状态：Source implemented — packaged/release acceptance deferred
 >
 > 版本边界：当前版本面仍为 `v0.6.0-rc1`；阶段十尚无 exact-SHA、打包或发布版本声明。

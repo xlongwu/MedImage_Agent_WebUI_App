@@ -1,5 +1,10 @@
 # SPM Normalization and Normalization QC Specification
 
+> **范围声明（2026-10-01）**：本规范描述的外部执行路径不在当前受支持范围内。SPM/MATLAB 执行入口经
+> `src/backend/app/api/execution_contract.py:reject_execution_contract()` 统一返回 HTTP 410，受审预处理
+> 只使用项目内 Python kernel。本文保留为阶段与质控合同设计参考，不得据以认为该能力可执行；真实能力
+> 等级以 `docs/项目概览/能力矩阵.md` 与 `PROJECT_STATE.md` 为准。
+
 This document defines the MVP SPM normalization and normalization QC stage for rs-fMRI preprocessing.
 
 ## Goals
