@@ -95,7 +95,7 @@
 | reviewed execution 路由已负责 Approval Gate、ticket 和 lifecycle | `src/backend/app/api/execute_reviewed_routes.py:726-1184` | 先抽取 application service，Agent route 与旧 route 共用；禁止复制 1400 行路由逻辑 |
 | GPU planner 明确规定 auto 未放行时回退 CPU | `src/backend/app/native_preproc/orchestrator/gpu_resource_planner.py:109-124,232-239` | UI 文案必须反映真实后端选择，不承诺自动 GPU |
 | DICOM conversion 执行当前不是 Execution Ticket | `src/backend/app/runtime/execution_entry_inventory.py:33-44` | DICOM 一句话流程受 10E 独立保护性关卡约束 |
-| 当前 RC2 主线禁止新 API 和状态契约 | `specs/阶段记录/阶段九/README.md:19-28` | 本计划只能进入 v0.7 能力线 |
+| 当时的 RC2 主线禁止新 API 和状态契约（RC2 已于 2026-10-01 终止） | `specs/阶段记录/已完成实施方案/阶段九/README.md` §1、§6 | 本计划只能进入 v0.7 能力线 |
 
 ## 3. Architecture Decision
 

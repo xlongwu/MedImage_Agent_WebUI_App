@@ -36,7 +36,7 @@
 4. 多 Agent 产出的最终候选仍必须进入现有 `GoalPlanningService -> Plan Validator -> Reviewed Plan -> Approval Summary -> 人工审批 -> 审批后 dry-run -> Execution Ticket -> Execution Gateway` 链路。
 5. 不新增第二套顶层任务状态机；Team、Worker、Work Item 是 `AgentLifecycleRecord` 的从属执行域，Agent Task 继续是用户可见的唯一权威任务。
 6. 首期只实现扁平两层、Coordinator 集中通信、最多 3 个 Worker、一次综合和一次有界复核；不实现递归 spawn、Agent 自治执行、自由 peer-to-peer、长时间无限循环或跨任务共享权限。
-7. 当前 `v0.6.0-rc2` 收敛窗口冻结 public API、依赖和能力扩展（`PROJECT_STATE.md:114-117`）。因此本方案可作为下一阶段实施基线，但不能直接并入当前 release 收敛线，除非先重新打开 capability review。
+7. `v0.6.0-rc2` 收敛窗口已于 2026-10-01 正式终止，当前没有生效的 release 冻结；`PROJECT_STATE.md` 的 “Current Execution Boundaries” 是权威记录。本方案引入的 public API、状态契约与依赖扩展因此不能并入已作废的 RC2 线，必须先通过 `v0.7.0-rc1` 的 capability review，再作为下一阶段实施基线进入新的收敛窗口。
 
 推荐的首个生产用途是“复杂目标的并行只读分析 + 独立安全/科学审查”，而不是并行修改代码或并行运行科学 pipeline。这样能获得上下文隔离、并行探索和交叉审查的收益，同时保持项目现有审批、执行和科学真实性边界。
 
@@ -170,7 +170,7 @@ Prompt cache 依赖稳定前缀，顺序为 `tools -> system -> messages`；工�
 ### 3.3 当前规范冲突
 
 - `specs/规范/平台与运行时/智能体运行时规范.md:34-42` 明确 MVP 不支持 multi-agent communication、UI、database 和 background review；实施本方案时必须版本化更新该正式规范。
-- `PROJECT_STATE.md:114-117` 冻结 public API、依赖和能力扩展；需要先完成 capability review，再进入实现分支。
+- `PROJECT_STATE.md` 的 “Current Execution Boundaries” 记录：`v0.6.0-rc2` 冻结窗口已于 2026-10-01 终止，当前没有生效的 release 冻结；本方案的 public API、依赖和能力扩展仍需先完成 `v0.7.0-rc1` 的 capability review，再进入实现分支。
 - `docs/安全与审批/安全边界.md:83-101` 规定 LLM 只能规划、建议、解释，并必须经 validator 和 Approval Gate；本方案把该规则扩展到所有 Worker 和 synthesis model。
 - 当前未跟踪的 `docs/架构与决策/记忆系统设计方案.md` 也会修改 `AgentTaskCommandService`、ProjectStore、Reviewed Plan identity 和 read model。两项工作不能并行写同一文件；应采用单一 owner、顺序集成。
 
@@ -1142,7 +1142,7 @@ npm --prefix desktop/electron run check
 | Agent 间 prompt injection | 越权或伪证据 | typed envelope、untrusted 标记、capability broker、evidence resolution | 出现授权传播或工具旁路 |
 | PHI/路径外发 | 隐私风险 | 最小 snapshot、redaction、consent、raw transcript off | 日志/请求出现禁止字段 |
 | 与记忆系统并行冲突 | 重复状态/plan hash 错误 | 单 owner、统一 planning inputs、顺序实施 | 两套 snapshot/identity 同时存在 |
-| RC2 兼容面扩大 | 发布不稳定 | 不在当前收敛线实施、feature flag、分 phase gate | 未获 capability review |
+| release 收敛线兼容面扩大 | 发布不稳定 | 不在当前收敛线实施、feature flag、分 phase gate | 未获 capability review |
 | UI 过度暴露内部复杂度 | 用户误解 Team=执行 | 单一 current action、advanced detail、i18n | 用户测试持续误判执行状态 |
 | cache 优化侵入正确性 | provider 差异导致行为变化 | Phase 7 才做、capability detection、cache miss 可接受 | cache on/off 输出契约不一致 |
 
@@ -1186,7 +1186,7 @@ npm --prefix desktop/electron run check
 
 只有以下条件全部满足，才能声明多 Agent 能力完成：
 
-- capability review 已批准，实施不在冻结的 RC2 收敛规则之外偷渡；
+- capability review 已批准，实施不在当期已开启的 release 收敛冻结规则之外偷渡；
 - feature flag 默认关闭、single 路径兼容；
 - Team/Worker/Work Item/Message/Finding/Event 均版本化、project-scoped、可重载；
 - 扁平 DAG、lease/fencing、预算、取消、shutdown、restart 全部通过故障测试；

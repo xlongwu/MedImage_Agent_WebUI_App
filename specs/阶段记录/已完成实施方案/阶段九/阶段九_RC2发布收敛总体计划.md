@@ -1,9 +1,13 @@
 # 阶段九总体计划：RC2 功能冻结、证据收敛与 Windows 发布验证
 
-> **Status：Ready for Implementation**
+> **Status：Closed — Terminated（2026-10-01，RC2 主线由维护者正式终止）**
 > **Task Mode：Release and Packaging Mode + Scientific Validation Mode**
-> **Target：v0.6.0-rc2**
-> **Packaging candidate baseline：`6a392c15079f51c16a8e3c2a035915972aabd9ff`；后续运行时或打包配置修复将产生新的候选提交并使旧构建证据失效。**
+> **Target：~~v0.6.0-rc2~~（作废；发布线改走 `v0.7.0-rc1`）**
+> **Packaging candidate baseline：`6a392c15079f51c16a8e3c2a035915972aabd9ff`；该基线已被其后的 62 个提交作废，本计划中所有绑定它的构建、installer 与工作流证据均不再是当前候选证据。**
+
+本计划保留为当时的范围、风险与证明义务定义。9A–9E 是范围条款而非完成声明；逐关卡的真实判定见
+§9 与 [README §2](README.md)，分级证据与正式跳过项见 [README §3、§4](README.md)。
+归档结论为「已终止/未完成」，不构成发布完成。
 
 ## 1. Scope Anchor
 
@@ -32,14 +36,15 @@
 
 | 事实 | 当前证据 | 发布含义 |
 |---|---|---|
-| 当前版本面均为 `0.6.0-rc1` | `src/backend/app/version.py`、frontend/electron `package.json`、`pyproject.toml` | 通过发布关卡后统一升级 `rc2` |
+| 当前版本面均为 `0.6.0-rc1` | `src/backend/app/version.py`、frontend/electron `package.json`、`pyproject.toml` | RC2 终止后未升级；版本面变更必须是独立的显式 Release 任务 |
 | 阶段七/八执行与恢复源码已落地 | commit `17e3ebac`；Execution Gateway/Ticket、Observation、Goal Evaluation、Recovery services | 冻结其契约，只做发布阻塞修复 |
-| 当前打包候选 | commit `6a392c15` | 已完成源码、unpacked/portable/NSIS 构建与 smoke、打包 sidecar/API 三被试 E2E 和远端 CI 取证 |
+| 历史打包候选 | commit `6a392c15` | 该候选上的源码、unpacked/portable/NSIS 构建与 smoke、打包 sidecar/API 三被试 E2E 与远端 CI 取证只对其自身成立，已不可归因于当前源码线 |
+| 当前候选远端 CI | `743fb1bb`，GitHub Actions run `36845148426` | `backend`/`frontend`/`desktop`/`windows-sandbox` 全部 `success`；只证明该提交的 CI，不授予发布许可 |
 | 本地源码级全量后端验证 | `4108 passed, 16 skipped` | 证明源码回归，不证明打包真实数据工作流 |
 | 阶段七/八 focused 验证 | `103 passed, 1 skipped` | symlink 用例因 Windows 权限跳过，保留风险 |
 | 本地前端验证 | format、typecheck、`238` tests、build 通过 | exact-SHA 远端 frontend job 同样通过 |
-| DemoData 有三名成对被试 | `Sub_001`、`Sub_002`、`Sub_003` 同时存在于 FunRaw/T1Raw | RC2 多受试者 E2E 固定使用三名被试 |
-| exact-SHA Windows 产物已重建 | unpacked、portable、NSIS 来自 `6a392c15` | 三类产物 smoke/安装验证通过；打包 sidecar/API 工作流通过，不替代 UI 驱动证据 |
+| DemoData 有三名成对被试 | `Sub_001`、`Sub_002`、`Sub_003` 同时存在于 FunRaw/T1Raw | 后续多受试者 E2E 固定使用三名被试；2026-10-01 复核 `data/DemoData` 仍为 1,104 个文件 |
+| 打包产物现存状态 | `desktop/packaging/dist/` 不存在；`desktop/electron/dist/` 只有 `win-unpacked/`，其 provenance 记录 dirty `4a587673`（2026-09-12） | installer 与 portable 未为任何当前候选构建；dirty 包只能证明 build success 层 |
 | 正式 atlas-grounded FC 仍需项目内已登记 atlas | `docs/项目概览/能力矩阵.md` | 没有合格 atlas 时不得把 synthetic FC 记为正式通过 |
 
 候选构建、smoke、产物 hash 和 CI job URL 见
@@ -160,14 +165,16 @@
 
 ## 9. Release Gates
 
-| Gate | 退出条件 | 2026-07-16 状态 |
+| Gate | 退出条件 | 终局判定（2026-10-01） |
 |---|---|---|
-| G9-0 状态同步 | PROJECT_STATE、能力矩阵、阶段状态一致 | 通过；状态和边界已同步到当前候选 |
-| G9-1 功能冻结 | 冻结基线和变更准入生效 | 生效；仅接受发布阻塞修复与证据 |
-| G9-2 候选构建 | exact-SHA Windows build/launch/smoke 通过 | 通过；`6a392c15` unpacked、portable 和 NSIS 构建/启动/安装验证成功 |
-| G9-3 真实 E2E | 三被试科学链路与 rawdata 不变性通过 | 源码级及 exact-candidate 打包 sidecar/API 级通过；Electron UI 驱动仍待验证 |
-| G9-4 恢复 E2E | 退出、崩溃、恢复、局部重试和 replay 测试通过 | 已证明正常退出与转换登记复用；运行中退出/强杀/恢复/隔离/局部重试待执行 |
-| G9-5 CI | exact-SHA 远端 backend/frontend/desktop 全绿 | 通过；run `29469529639` 的三个 job 全部成功 |
-| G9-6 RC2 | 版本、说明、产物、checksum、已知限制全部一致 | 部分通过；安装包/portable/checksum 已验证，版本升级和正式发布仍由 G9-4 阻塞 |
+| G9-0 状态同步 | PROJECT_STATE、能力矩阵、阶段状态一致 | `通过`；仅指文档按真实分级证据重新一致，不构成发布证据 |
+| G9-1 功能冻结 | 冻结基线和变更准入生效 | `证据已失效`；冻结基线被 62 个提交作废，其中含记忆域与新公共 API/持久化契约 |
+| G9-2 候选构建 | exact-SHA Windows build/launch/smoke 通过 | `证据已失效`；无当前候选产物，本机仅存 dirty `4a587673` 包，且无 smoke 结果文件 |
+| G9-3 真实 E2E | 三被试科学链路与 rawdata 不变性通过 | `部分通过`；真实三被试只有 packaged sidecar/API 证据，可见 UI 驱动用合成 fixture。「真实数据 UI 驱动 E2E」经维护者批准 `正式跳过`，闭环见 README §4.1 |
+| G9-4 恢复 E2E | 退出、崩溃、恢复、局部重试和 replay 测试通过 | `部分通过`；打包多被试强制终止 + 重启 reconciliation 无证据，经维护者批准延期，判定为 `待办`，闭环见 README §4.2 |
+| G9-5 CI | exact-SHA 远端 backend/frontend/desktop 全绿 | `通过`；`743fb1bb` 的 run `36845148426` 四个 job 全 `success`，但不授予发布许可 |
+| G9-6 RC2 | 版本、说明、产物、checksum、已知限制全部一致 | `正式跳过`；RC2 不发布，发布动作转为 `v0.7.0-rc1` 待办 |
 
-任何 gate 失败都阻止 RC2 发布。只有出现明确的新能力或破坏性契约变更时才改走 `v0.7.0-rc1`；不得用版本升级掩盖未完成的 RC2 验证。
+RC2 主线已终止，因此以上判定不再阻塞 `v0.6.0-rc2`（该版本不会发布）。`G9-2`、`G9-4`、`G9-6` 的未完成
+项移交 `PROJECT_STATE.md` 的 Next Work，必须在 `v0.7.0-rc1` 的独立 Release 任务中重新取证；capability 与
+contract 扩展（记忆域、新公共 API）须先取得 capability review，不得用版本升级掩盖未完成的发布验证。

@@ -1,22 +1,31 @@
 # Project State
 
-Current as of 2026-08-24.
+Current as of 2026-10-01.
 
 ## Version and Branch
 
-- Current source/release line: `v0.6.0-rc1`.
-- Release convergence target: `v0.6.0-rc2`. This is a stabilization release;
-  `v0.7.0-rc1` is reserved for a separately approved capability or contract
-  expansion.
+- Current source/release line: `v0.6.0-rc1`. No version surface was bumped.
+- The `v0.6.0-rc2` convergence line was formally terminated on 2026-10-01.
+  Its frozen packaging baseline `6a392c15079f51c16a8e3c2a035915972aabd9ff` was
+  superseded by 62 later commits, including the project-scoped Memory Domain
+  and new public API/persistence contracts. Under the RC2 freeze rules those
+  changes had to leave the release line and be re-scoped, so RC2 release
+  convergence cannot be closed on the current source. `v0.6.0-rc2` was never
+  built, tagged, or released, and no release for it is claimed here.
+- Next release line: `v0.7.0-rc1`. It requires a scoped capability review for
+  the contract and capability expansion already present on `main`, plus a
+  separate explicit Release task for packaging evidence, version surfaces,
+  installer, tag, and publication.
 - Backend `APP_VERSION` (`src/backend/app/version.py`) is `0.6.0-rc1`.
   All package surface versions (frontend, desktop/electron, pyproject.toml)
   aligned to `0.6.0-rc1` as of 2026-06-20 architecture audit.
-- Release-state baseline branch: `main`. Phase 15 Agent-first convergence and
-  release-Gate fixes are tracked on that branch; the exact candidate identity
-  is carried by the package provenance and external Gate evidence rather than
-  duplicated as a self-referential source-document SHA. No tag or published
-  release is claimed here.
+- Release-state baseline branch: `main`. The current `main` head has green
+  remote CI (see Validation Baseline); candidate identity is carried by package
+  provenance and external Gate evidence rather than duplicated as a
+  self-referential source-document SHA. No tag or published release is claimed
+  here.
 - Local Git tags present:
+  - `v0.2.0`
   - `v0.3.0-rc1` tagged 2026-06-06
   - `v0.4.0-rc1` tagged 2026-06-10
   - `v0.5.0-rc1` tagged 2026-06-11
@@ -230,10 +239,15 @@ their tag state.
 - Full DICOM-to-reviewed-FC GUI E2E on real multi-subject data, true
   multi-subject workflow validation, group statistics, classification,
   clinical diagnosis, report editing, and auto-update are not current capabilities.
-- During the `v0.6.0-rc2` convergence window, `main` is frozen for new execution
-  paths, scientific algorithms, capability-level upgrades, public API expansion,
-  and dependency expansion. Only release-blocking fixes, tests, evidence, and
-  documentation corrections may enter without reopening capability review.
+- No release freeze window is currently active. The `v0.6.0-rc2` window was
+  terminated on 2026-10-01 after its frozen baseline was superseded by the
+  Memory Domain and the public API/persistence contract changes now on `main`.
+  Those additions are default-closed engineering scope and do not raise any
+  capability level. The next freeze may only be opened by an explicit
+  maintainer decision for the `v0.7.0-rc1` window; while open it admits only
+  release-blocking fixes, tests, evidence, and documentation corrections, and
+  new execution entries, algorithms, capability upgrades, public APIs, required
+  dependencies, or external-tool execution must be re-scoped instead.
 
 ## Validation Baseline
 
@@ -248,15 +262,17 @@ their tag state.
 - Expected optional skips commonly include missing `cupy` and missing
   `MEDIMAGE_EXTERNAL_BIDS_SMOKE_DIR`. `pydicom` is now a core dependency
   because the packaged desktop exposes the reviewed native DICOM workflow.
-- A previous RC2 working-tree baseline was validated on Windows with the
-  project test matrix. Current task-specific commands and results belong in
-  the Completion Report; stable project state does not carry rolling test
-  counts.
-- Exact packaging candidate `6a392c15079f51c16a8e3c2a035915972aabd9ff`
-  completed GitHub Actions run `29469529639` successfully. Its `backend`,
-  `frontend`, and `desktop` jobs all passed. This closes the remote-CI evidence
-  gate for that source candidate; later runtime-affecting commits require new
-  CI and packaging evidence.
+- Stable project state does not carry rolling test counts. Current task-specific
+  commands and results belong in the Completion Report.
+- The current `main` head `743fb1bb48a5b13fb90b6d1703326cbcb13ed7da` completed
+  GitHub Actions run `36845148426` on 2026-10-01 with `backend`, `frontend`,
+  `desktop`, and `windows-sandbox` all `success`. This is the remote-CI baseline
+  for the current source line; a CI pass alone does not qualify a release Gate.
+- The terminated RC2 packaging candidate
+  `6a392c15079f51c16a8e3c2a035915972aabd9ff` completed run `29469529639`
+  successfully. That result is historical evidence for that superseded commit:
+  any later runtime-affecting commit requires new CI plus fresh packaging
+  evidence, and old build results may not be reused.
 - Current task-level validation is recorded in the final Completion Report and
   the local phase execution record rather than appended here as a development
   diary.
@@ -304,39 +320,48 @@ their tag state.
   entry point.
 - Packaging output directories are generated artifacts unless explicitly
   promoted through a release artifact process.
-- The current dirty-tree canonical `win-unpacked` directory was rebuilt on
-  2026-08-24 without generating an installer. The visible packaged harness now
-  drives the BIDS-to-FC, DICOM-to-BIDS/preprocessing/FC, and failed-subject
-  recovery workflows in separate isolated workspace, `userData`, database, and
-  evidence directories. It enforces operation/approval bounds, reloadable FC
-  evidence, recovery-attempt lineage, unchanged rawdata and untouched-subject
-  hashes, zero renderer console errors, and owned-sidecar shutdown. The current
-  evidence is intentionally marked `clean_source=false`; it proves the local
-  harness and package behavior, not the formal exact-SHA release Gate.
+- The only packaging artifact currently present on this machine is a
+  dirty-tree diagnostic `desktop/electron/dist/win-unpacked/` directory. Its
+  embedded `resources/release/build-provenance.json` records `clean=false`,
+  Git SHA `4a587673bae0b90efd6ceb60293d7476c165bec3` (2026-09-12), and
+  `application_version` `0.6.0-rc1`; that commit is 10 commits behind `main`.
+  The directory carries only the provenance manifest, with no smoke result file,
+  screenshot, or evidence directory, so it evidences build success and nothing
+  beyond it. `desktop/packaging/dist/` does not exist, and no NSIS installer or
+  portable executable exists for any current candidate.
+- The visible packaged harness drives the BIDS-to-FC, DICOM-to-BIDS/preprocessing/FC,
+  and failed-subject recovery workflows in separate isolated workspace, `userData`,
+  database, and evidence directories, and enforces operation/approval bounds,
+  reloadable FC evidence, recovery-attempt lineage, unchanged rawdata and
+  untouched-subject hashes, zero renderer console errors, and owned-sidecar
+  shutdown. These are harness capabilities, not current-candidate results; the
+  harness exposes only `shell`, `bids`, `dicom`, and `recovery` workflows, and its
+  `taskkill` path is timeout cleanup rather than a verified forced-termination
+  and restart-reconciliation scenario.
 - Release packaging can now require both an expected commit and a clean tree.
   The package embeds a build-provenance manifest containing the Git SHA,
   cleanliness flag, application versions, and checksums of packaged inputs;
   the visible smoke copies that manifest plus the artifact inventory, rawdata
   manifests, screenshot, result, Gate summary, and logs into a write-once
-  evidence directory. SHA drift or a dirty source candidate fails closed.
-- On 2026-08-25 the clean exact-SHA unpacked candidate completed all three
-  visible packaged workflows with their write-once evidence directories. BIDS
-  used three explicit operations, DICOM used four, and recovery added one
-  explicit approval for only `sub-003`; each truthful outcome remained
-  `partial`, rawdata was unchanged, renderer console errors were zero, and the
-  owned sidecar stopped after exit. This closes the unpacked three-flow Gate,
-  but does not claim installer, tag, or published-release completion.
-- Packaging candidate `6a392c15079f51c16a8e3c2a035915972aabd9ff` was rebuilt
-  with the `mamba` Python 3.11.15 environment into a PyInstaller backend
-  sidecar, launcher, and Electron unpacked directory. Packaged smoke confirmed
-  backend readiness, a mounted React renderer, no renderer console errors, and
-  sidecar cleanup after application exit. The same packaged backend binary also
-  completed the governed three-subject DemoData API workflow with CuPy. The
-  directory build is exact-SHA evidence. The portable EXE also passed the same
-  shell smoke. After replacing the unstable assisted per-user NSIS mode with a
-  non-elevated one-click per-user mode, isolated install, installed-app smoke,
-  and silent uninstall passed. A visible-UI-driven real-data workflow remains
-  pending.
+  evidence directory. SHA drift or a dirty source candidate fails closed. The
+  cleanliness check is `git status --porcelain=v1 --untracked-files=all`, so any
+  untracked local file also blocks a `-ExpectedGitSha` or
+  `-RequireCleanWorktree` release build; it must be resolved rather than
+  bypassed.
+- Historical, non-reproducible packaging records: the 2026-08-25 clean
+  exact-SHA run that completed all three visible packaged workflows, and the
+  `6a392c15079f51c16a8e3c2a035915972aabd9ff` unpacked/portable/NSIS builds,
+  belong to superseded candidates. Their write-once evidence directories and
+  `desktop/packaging/dist/` outputs were not retained, so neither record is
+  verifiable from the current tree and neither may be reported as current
+  packaging evidence. In those runs each synthetic-fixture workflow outcome
+  stayed truthfully `partial`, rawdata was unchanged, renderer console errors
+  were zero, and the owned sidecar stopped after exit.
+- Exact-candidate packaging sidecar/API work and remote CI for
+  `6a392c15079f51c16a8e3c2a035915972aabd9ff` were completed in July 2026 and are
+  closed only for that commit. A visible-UI-driven real-data scientific workflow
+  was never proven; it is now a formally skipped release blocker rather than a
+  pending Gate of an active line.
 
 ## Known Limitations and Risks
 
@@ -361,10 +386,12 @@ their tag state.
   long-term docs should point to the current domain-router and `lib/api/`
   structure.
 - The canonical unpacked Electron app has automated hidden-renderer and visible
-  Agent-first workflow smokes. The visible synthetic BIDS, synthetic DICOM, and
-  bounded local-recovery fixtures pass on the current dirty diagnostic build;
-  this does not replace the clean exact-SHA release rerun or real-data/manual
-  scientific validation.
+  Agent-first workflow smokes. The visible BIDS, DICOM, and bounded local-recovery
+  fixtures use synthetic resources, so their truthful `partial` outcome validates
+  the governed interaction contract and never real-data or manual scientific
+  validation. The locally present package is a dirty diagnostic build with no
+  retained smoke result, so a clean exact-SHA rerun is still required before any
+  release claim.
 - Default Windows temp folders can retain locked pytest directories; use the
   active project interpreter and `--basetemp=.pytest_tmp`.
 - The desktop SQLite state store is ignored runtime state and can accumulate
@@ -375,22 +402,35 @@ their tag state.
   preprocessing, FC, and result-evidence interaction path with synthetic data.
   Preview/subset runs and synthetic-atlas FC remain labeled `preview_only` or
   `partial`; this is not real-data scientific validation.
-- The Phase 15 unpacked clean exact-SHA three-flow Gate is complete. Installer
-  checks, version alignment, tag, CI confirmation for the pushed candidate, and
-  publication remain separate pending release steps.
-- Failed-subject isolation and one approved local retry are now demonstrated by
-  the visible packaged synthetic three-subject recovery fixture. Forced process
-  termination and restart recovery for that same multi-subject fixture remain
-  separate release/lifecycle checks.
+- With RC2 terminated, the remaining release work is unscheduled scope for
+  `v0.7.0-rc1`: clean exact-SHA packaging rerun, installer checks, version
+  alignment, tag, and publication. Remote CI for the current `main` head is
+  confirmed; the Phase 15 three-flow pass is not attributable to it.
+- Failed-subject isolation and one approved local retry are demonstrated only
+  by the visible packaged synthetic three-subject recovery fixture. Forced
+  process termination and restart reconciliation for a multi-subject packaged
+  flow have no evidence and are a formally deferred release check; the packaged
+  smoke harness would need a new workflow for it.
+- Real three-subject DemoData scientific execution driven through the visible
+  Electron UI was never proven and is a formally skipped release blocker rather
+  than a pending Gate. Consequently `docs/项目概览/能力矩阵.md` keeps the
+  `visible Electron UI E2E pending` qualification, and no capability level is
+  raised by skipping it.
 
 ## Next Work
 
-1. Confirm remote CI for the pushed Phase 15 candidate and retain the local
-   exact-SHA provenance and three write-once evidence directories together.
-2. Validate forced termination and restart recovery for the packaged
-   multi-subject flow without modifying rawdata or untouched outputs.
-3. Align version surfaces and release documentation, run installer checks, and
-   publish `v0.6.0-rc2` only after every release Gate passes.
+1. Open `v0.7.0-rc1` only after a scoped capability review covers the Memory
+   Domain and the public API/persistence contract changes already present on
+   `main`.
+2. Freeze a new clean exact-SHA candidate, rebuild the Windows surfaces from it,
+   and record build success, sidecar health, packaged launch, renderer smoke, GUI
+   workflow, and real scientific execution as separate conclusions. Resolve any
+   untracked local file first, because the release build fails closed on one.
+3. Add the missing packaged forced-termination and restart-reconciliation
+   workflow, then validate it with an isolated workspace, `userData`, database,
+   and evidence directory without modifying rawdata or untouched outputs.
+4. Align version surfaces, produce installer and checksum evidence, and publish
+   only under explicit maintainer release authorization.
 
 ## Reference Documents
 
@@ -404,6 +444,7 @@ their tag state.
 - Release notes: `docs/发布记录/`
 - Safety boundaries: `docs/安全与审批/安全边界.md`
 - Run lifecycle: `docs/安全与审批/真实项目运行生命周期.md`
-- RC2 release convergence: `specs/阶段记录/阶段九/README.md`
+- Terminated RC2 release convergence, gate verdicts and formally skipped
+  blockers: `specs/阶段记录/已完成实施方案/阶段九/README.md`
 - Agent-first source implementation and deferred acceptance gates:
   `specs/阶段记录/已完成实施方案/阶段十/README.md`

@@ -286,9 +286,9 @@ Summary。忘记必须清除明文、保留最小 tombstone 并阻止旧来源�
 
 ### 5.8 桌面启动和打包结论必须分级
 
-- **触发条件**：修改 frontend build、sidecar、Electron、PyInstaller、启动健康检查或发行物。
-- **必须执行**：区分 build success、sidecar health、packaged launch、renderer smoke、人工 GUI workflow 和真实科学执行。packaged smoke 使用隔离 workspace/userData，并验证 sidecar ready、frontend index、React root、main landmark、无 renderer error、正常退出后 sidecar 停止；修改生命周期时还必须验证重复启动只保留一个 owner，以及主进程异常退出后 sidecar 自动停止。任何构建探测脚本都必须在返回前终止其完整 sidecar 进程树并确认构建 EXE 不再被占用。
-- **禁止事项**：不得把构建成功称为 GUI 验证；不得复用用户数据库/工作区；不得把 unpacked EXE 单独当作可携带应用，它依赖同目录 `resources/` 和 Electron 文件。
+- **触发条件**：修改 frontend build、sidecar、Electron、PyInstaller、启动健康检查或发行物；判定 release 关卡或阶段收敛状态。
+- **必须执行**：区分 build success、sidecar health、packaged launch、renderer smoke、人工 GUI workflow 和真实科学执行。packaged smoke 使用隔离 workspace/userData，并验证 sidecar ready、frontend index、React root、main landmark、无 renderer error、正常退出后 sidecar 停止；修改生命周期时还必须验证重复启动只保留一个 owner，以及主进程异常退出后 sidecar 自动停止。任何构建探测脚本都必须在返回前终止其完整 sidecar 进程树并确认构建 EXE 不再被占用。关卡与发布状态必须以当前候选重新取证：冻结基线之后的运行时、API、schema 或持久化契约变更使旧构建、CI、installer 与 smoke 证据失效，必须重判为“证据已失效”并记录证据归属的 SHA、产物清单和是否仍可复核，不得沿用旧结论。
+- **禁止事项**：不得把构建成功称为 GUI 验证；不得复用用户数据库/工作区；不得把 unpacked EXE 单独当作可携带应用，它依赖同目录 `resources/` 和 Electron 文件；不得把已作废候选上的 gate 结论当作当前发布依据，也不得把“终止一条发布线”写成“该版本已发布”。
 - **验证方式**：`npm --prefix desktop/electron run check`，按任务运行 Windows 打包脚本及隔离 packaged smoke，并在报告逐层说明证据。
 - **相关文件**：`desktop/electron/`、`desktop/packaging/`、`tests/unit/test_desktop_packaging_contract.py`、`docs/桌面与前端/桌面应用打包.md`。
 

@@ -5,7 +5,8 @@
 > 也不得作为当前行为来源。
 >
 > 归档边界：下表“仍未完成的证据”中，packaged、可见 Electron 三流程与重启投影已由阶段十五
-> 的 clean exact-SHA 验收（2026-08-25）覆盖；installer、版本面 `v0.6.0-rc2`、tag 与发布
+> 的 clean exact-SHA 验收（2026-08-25）覆盖；installer、版本面（`v0.6.0-rc2` 线已终止，
+> 下一发布线为 `v0.7.0-rc1`）、tag 与发布
 > 仍属独立的 Release 任务，记录在 `PROJECT_STATE.md` “Next Work”。
 >
 > 状态：Source implemented — packaged/release acceptance deferred
