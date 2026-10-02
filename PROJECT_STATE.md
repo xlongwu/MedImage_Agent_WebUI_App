@@ -274,8 +274,8 @@ their tag state.
   because the packaged desktop exposes the reviewed native DICOM workflow.
 - Stable project state does not carry rolling test counts. Current task-specific
   commands and results belong in the Completion Report.
-- The current `main` head `743fb1bb48a5b13fb90b6d1703326cbcb13ed7da` completed
-  GitHub Actions run `36845148426` on 2026-10-01 with `backend`, `frontend`,
+- The current `main` head `07716210e1894605751fa311fc57548377ce5922` completed
+  GitHub Actions run `36957573288` on 2026-10-02 with `backend`, `frontend`,
   `desktop`, and `windows-sandbox` all `success`. This is the remote-CI baseline
   for the current source line; a CI pass alone does not qualify a release Gate.
 - The terminated RC2 packaging candidate
