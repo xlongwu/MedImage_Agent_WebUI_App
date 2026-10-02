@@ -1,18 +1,30 @@
 # 13：多 Agent 协作评估方案
 
-> 状态：部分实现——仅离线脚手架，评估本身未运行，本阶段不闭合（2026-10-01 源码复核）。
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
+> 状态：范围闭环为「评估设计记录 + 离线 Gate 脚手架」，实质评估结论**正式延期并移交阶段十四**
+> （2026-10-02 归档审计与维护者决定）。本阶段不产出多 Agent 收益结论，也不含任何实施授权。
 > 已落地：离线 Gate 的合同与运行器（`schemas/agent_eval.py` 的 G0 相关模型、
 > `services/multi_agent_gate_runner.py`、`services/multi_agent_evaluation_service.py`）与对应
 > 单元测试；这些只证明门限判定逻辑可运行。
-> 未落地（本文的实质结论所必需）：`tests/fixtures/agent_eval/multi_agent/` 是**空目录**，
+> 延期所必需但当前为零证据：`tests/fixtures/agent_eval/multi_agent/` 是**空目录**，
 > `tests/integration/test_multi_agent_gate_runner.py` 使用 stub `_Executor`，因此 §6/§7 要求的真实
-> 脱敏评测从未发生；阶段十四的 G0/SC-01 要求至少 150 个独立 held-out 真实脱敏 case 通过置信门槛，
-> 当前零证据。生产多 Agent runtime 完全不存在（无 Team/Worker/Work Item 表、无多 Agent 路由，
+> 脱敏评测从未发生；阶段十四的 G0/SC-01 要求至少 150 个独立 held-out 真实脱敏 case 通过置信门槛。
+> 生产多 Agent runtime 完全不存在（无 Team/Worker/Work Item 表、无多 Agent 路由，
 > `AgentHarnessAttempt.mode` 固定 `single_agent`），其实施授权属于仍为 Proposed 的**阶段十四**，
 > 不得以补完本阶段的名义启动。
-> 过期前提：§2 「当前真正阻碍自动化的是单 Agent loop、**Action handler**、…」中的 Action handler
+> 本文 §14 的历史「Gate 通过」结论已**不可复核**，不得引用：其依赖的 synthetic fixture 已在提交
+> `de7acc1b` 删除（末版为 schema 2、10 例），而现行 `MultiAgentEvalManifest` 强制
+> `schema_version = Literal[3]` 且案例数 ≥30，`evaluate()` 还必须传入 `MultiAgentGateRunBundle`，
+> 因此 §14 给出的命令在当前源码下无法运行；§6.4 的推荐初值也从未由人工确认写入 manifest
+> （登记在 `specs/待人工审核校验清单.md` A-17）。
+> §2 「当前真正阻碍自动化的是单 Agent loop、**Action handler**、…」中的 Action handler
 > 一项已随 03 被取代。
-> 后续归属：真实脱敏评测集与生产实现均归阶段十四立项；本文保留为候选形态与边界的评估设计记录。
+> 后续归属：真实脱敏评测集与生产实现均归阶段十四立项（权威条款：阶段十四
+> `00_阶段规格与实施总览.md` §11.2、§11.4）；本文保留为候选形态与边界的评估设计记录。
+> 该评测所需的语料人工标注与联网授权已登记在 `specs/待人工审核校验清单.md` L-01…L-04、D-01、A-17。
 > 阶段：P2 候选；离线 Gate 通过不等同于多 Agent 实施授权。
 > 现有详细提案：`docs/架构与决策/多Agent协作运行时设计与实施计划.md`，本文决定是否值得继续该提案。
 

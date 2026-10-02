@@ -1,5 +1,16 @@
 # 03：Agent 动作合同与能力处理器改造方案
 
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
+> 归档审计（2026-10-02）：本文范围已由维护者于 2026-10-01 正式批准跳过，属于归档规则 1
+> 要求的"明确闭环结论"。归档**不是**实现授权：正文的六种 Action、
+> `ActionExecutionResult` 与 handler 合同均不在当前支持范围，重新启用只能按本文标头的三条触发
+> 条件另行立项，其中"可导出的人工标注 Trace 语料"已登记为待人工校验项
+> （`specs/待人工审核校验清单.md` L-01、D-01）。当前动作面以
+> `src/backend/app/schemas/agent_harness.py` 与 `runtime/agent_capability_catalog.py` 为准。
+
 > 状态：已被取代，并经维护者于 2026-10-01 批准正式跳过（不再作为待补完范围）。
 > 取代来源：`Agent简洁优化实施方案.md` §5.4（决策 G-08）主动缩减动作空间。当前
 > `schemas/agent_harness.py:AgentHarnessActionKind` 只有 `request_decision` 与 `draft_plan`，

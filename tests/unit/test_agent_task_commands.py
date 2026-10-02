@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -1549,3 +1549,274 @@ def test_goal_revision_detection_matches_leading_error_codes_only() -> None:
     assert not AgentPlanningService._requires_goal_revision(
         "NODE_CONTRACT_UNKNOWN: invented_node"
     )
+
+
+def _batch_reject_service(tmp_path):
+    """One lifecycle stopped in a single unresolved decision batch."""
+
+    def planner(**kwargs):
+        result = _planner(**kwargs)
+        result["plan"]["nodes"][0]["id"] = "functional_connectivity_subject"
+        result["plan"]["nodes"][0]["params"] = {
+            "atlas_path": "C:/research/demo/resources/atlas.nii.gz"
+        }
+        result["plan"]["nodes"][0]["backend"] = "gpu-experimental"
+        result["plan"]["metadata"] = {
+            "science_decisions": {"experimental_gpu": True, "cpu_backend": "python-cpu"}
+        }
+        return result
+
+    store, service = _service(tmp_path, planner=planner)
+    waiting = service.create(
+        project_id="project-1",
+        goal="Compute functional connectivity",
+        command_id="create-batch-reject",
+        actor="user",
+    )
+    assert waiting.state == "WAITING_FOR_SCIENCE_DECISION"
+    assert store.plans == {}
+    return store, service, waiting
+
+
+def _rebind_batch(store, waiting, *, updates, command_context=None):
+    batch = waiting.pending_decision_batch.model_copy(update=updates)
+    record = store.lifecycles[waiting.lifecycle_id]
+    record_updates = {"pending_decision_batch": batch}
+    if command_context is not None:
+        record_updates["command_context"] = {**record.command_context, **command_context}
+    store.lifecycles[waiting.lifecycle_id] = record.model_copy(update=record_updates)
+    return batch
+
+
+MIXED_ITEMS = (
+    DecisionItem(
+        item_id="repetition_time",
+        kind="repetition_time",
+        question="Repetition time in seconds?",
+        impact="Changes the temporal sampling of the series.",
+        answer_type="number",
+        min_value=0.5,
+        max_value=5.0,
+    ),
+    DecisionItem(
+        item_id="global_signal_regression",
+        kind="global_signal_regression",
+        question="Apply global signal regression?",
+        impact="Changes the nuisance strategy.",
+        answer_type="boolean",
+    ),
+    DecisionItem(
+        item_id="atlas",
+        kind="atlas",
+        question="Which parcellation atlas?",
+        impact="Changes the connectivity matrix.",
+        answer_type="option",
+        options=(
+            PendingDecisionOption(
+                id="schaefer", label="Schaefer 200", description="200 parcels, Yeo networks"
+            ),
+        ),
+    ),
+)
+
+VALID_MIXED_ANSWERS = [
+    {"item_id": "repetition_time", "value": "2.0"},
+    {"item_id": "global_signal_regression", "value": "true"},
+    {"item_id": "atlas", "value": "schaefer"},
+]
+
+
+@pytest.mark.parametrize(
+    ("expected_code", "batch_updates", "command_context", "answers"),
+    [
+        pytest.param(
+            "AGENT_DECISION_STALE",
+            {},
+            None,
+            [{"item_id": "atlas", "value": "schaefer"}],
+            id="batch-id-mismatch",
+        ),
+        pytest.param(
+            "AGENT_DECISION_BATCH_EXPIRED",
+            {"expires_at": datetime(2026, 7, 15, tzinfo=UTC)},
+            None,
+            VALID_MIXED_ANSWERS,
+            id="expired-batch",
+        ),
+        pytest.param(
+            "AGENT_DECISION_PLAN_STALE",
+            {"plan_hash_before": "sha256:plan-before"},
+            {"pending_plan_hash": "sha256:plan-changed"},
+            VALID_MIXED_ANSWERS,
+            id="plan-changed-under-batch",
+        ),
+        pytest.param(
+            "AGENT_DECISION_EVIDENCE_STALE",
+            {"evidence_snapshot_hash": "sha256:evidence-superseded"},
+            None,
+            VALID_MIXED_ANSWERS,
+            id="evidence-changed-under-batch",
+        ),
+    ],
+)
+def test_decision_batch_identity_and_staleness_rejections_stop_before_planning(
+    tmp_path, expected_code, batch_updates, command_context, answers
+) -> None:
+    store, service, waiting = _batch_reject_service(tmp_path)
+    if batch_updates or command_context:
+        _rebind_batch(store, waiting, updates=batch_updates, command_context=command_context)
+    batch_id = (
+        "decision_batch_other"
+        if expected_code == "AGENT_DECISION_STALE"
+        else waiting.pending_decision_batch.batch_id
+    )
+
+    with pytest.raises(SafetyError) as excinfo:
+        service.answer(
+            project_id="project-1",
+            lifecycle_id=waiting.lifecycle_id,
+            batch_id=batch_id,
+            answers=answers,
+            command_id="answer-reject",
+            actor="user",
+        )
+
+    assert excinfo.value.code == expected_code
+    # A rejected answer must not consume the batch, build a plan, or open a second decision.
+    assert store.lifecycles[waiting.lifecycle_id].pending_decision_batch is not None
+    assert store.plans == {}
+    assert [event.source_command for event in store.events[waiting.lifecycle_id]].count(
+        "science_decision_required"
+    ) == 1
+
+
+@pytest.mark.parametrize(
+    ("answers", "expected_fields"),
+    [
+        pytest.param(VALID_MIXED_ANSWERS[:2], {"atlas": "required"}, id="missing-required-item"),
+        pytest.param(
+            [*VALID_MIXED_ANSWERS[:2], {"item_id": "atlas", "value": "harvard"},],
+            {"atlas": "invalid_option"},
+            id="option-not-in-allowlist",
+        ),
+        pytest.param(
+            [
+                {"item_id": "repetition_time", "value": "2.0"},
+                {"item_id": "global_signal_regression", "value": "yes"},
+                {"item_id": "atlas", "value": "schaefer"},
+            ],
+            {"global_signal_regression": "invalid_boolean"},
+            id="boolean-not-true-false",
+        ),
+        pytest.param(
+            [
+                {"item_id": "repetition_time", "value": "0.1"},
+                {"item_id": "global_signal_regression", "value": "false"},
+                {"item_id": "atlas", "value": "schaefer"},
+            ],
+            {"repetition_time": "below_minimum"},
+            id="number-below-minimum",
+        ),
+        pytest.param(
+            [
+                {"item_id": "repetition_time", "value": "50"},
+                {"item_id": "global_signal_regression", "value": "false"},
+                {"item_id": "atlas", "value": "schaefer"},
+            ],
+            {"repetition_time": "above_maximum"},
+            id="number-above-maximum",
+        ),
+        pytest.param(
+            [
+                {"item_id": "repetition_time", "value": "fast"},
+                {"item_id": "global_signal_regression", "value": "false"},
+                {"item_id": "atlas", "value": "schaefer"},
+            ],
+            {"repetition_time": "invalid_number"},
+            id="number-not-parseable",
+        ),
+        pytest.param(
+            [*VALID_MIXED_ANSWERS, {"item_id": "overwrite_policy", "value": "write_new_run_directory"},],
+            {"overwrite_policy": "unknown_item"},
+            id="item-not-in-batch",
+        ),
+        pytest.param(
+            [
+                {"item_id": "repetition_time", "value": "2.0"},
+                {"item_id": "repetition_time", "value": "3.0"},
+                {"item_id": "global_signal_regression", "value": "true"},
+                {"item_id": "atlas", "value": "schaefer"},
+            ],
+            {"repetition_time": "duplicate_or_empty_item"},
+            id="duplicate-item-id",
+        ),
+        pytest.param(
+            [{"item_id": "", "value": "2.0"}, *VALID_MIXED_ANSWERS[1:]],
+            {"answers": "duplicate_or_empty_item", "repetition_time": "required"},
+            id="empty-item-id",
+        ),
+    ],
+)
+def test_decision_batch_field_level_errors_keep_the_original_batch(
+    tmp_path, answers, expected_fields
+) -> None:
+    store, service, waiting = _batch_reject_service(tmp_path)
+    batch = _rebind_batch(store, waiting, updates={"items": MIXED_ITEMS})
+
+    with pytest.raises(SafetyError) as excinfo:
+        service.answer(
+            project_id="project-1",
+            lifecycle_id=waiting.lifecycle_id,
+            batch_id=batch.batch_id,
+            answers=answers,
+            command_id="answer-invalid",
+            actor="user",
+        )
+
+    assert excinfo.value.code == "AGENT_DECISION_BATCH_INVALID"
+    assert excinfo.value.details["fields"] == expected_fields
+    retained = store.lifecycles[waiting.lifecycle_id].pending_decision_batch
+    assert retained is not None and retained.batch_id == batch.batch_id
+    assert store.plans == {}
+
+
+def test_answer_without_pending_batch_and_command_replay_stay_idempotent(tmp_path) -> None:
+    store, service, waiting = _batch_reject_service(tmp_path)
+    batch = waiting.pending_decision_batch
+
+    resolved = service.answer(
+        project_id="project-1",
+        lifecycle_id=waiting.lifecycle_id,
+        batch_id=batch.batch_id,
+        answers=[{"item_id": batch.items[0].item_id, "value": "use_cpu"}],
+        command_id="answer-once",
+        actor="user",
+    )
+    assert resolved.state == "WAITING_FOR_APPROVAL"
+    assert resolved.pending_decision_batch is None
+
+    with pytest.raises(SafetyError) as excinfo:
+        service.answer(
+            project_id="project-1",
+            lifecycle_id=waiting.lifecycle_id,
+            batch_id=batch.batch_id,
+            answers=[{"item_id": batch.items[0].item_id, "value": "use_cpu"}],
+            command_id="answer-twice",
+            actor="user",
+        )
+    assert excinfo.value.code == "AGENT_DECISION_NOT_PENDING"
+
+    # The same command id replays the persisted result instead of re-running planning.
+    events_before_replay = len(store.events[waiting.lifecycle_id])
+    plans_before_replay = dict(store.plans)
+    replayed = service.answer(
+        project_id="project-1",
+        lifecycle_id=waiting.lifecycle_id,
+        batch_id=batch.batch_id,
+        answers=[{"item_id": batch.items[0].item_id, "value": "use_cpu"}],
+        command_id="answer-once",
+        actor="user",
+    )
+    assert replayed.lifecycle_id == resolved.lifecycle_id
+    assert store.plans.keys() == plans_before_replay.keys()
+    assert len(store.events[waiting.lifecycle_id]) == events_before_replay

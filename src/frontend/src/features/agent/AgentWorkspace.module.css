@@ -47,53 +47,71 @@
   text-transform: uppercase;
 }
 
-.projectSummary {
+.taskCard {
   display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(480px, 1.6fr);
-  gap: 32px;
-  align-items: stretch;
-  padding: 24px 26px;
+  gap: 22px;
+  padding: 26px;
   border-top: 3px solid var(--color-accent);
 }
 
-.projectSummary h2,
+.taskCardHeader,
+.taskPanelHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.taskCardHeader > div:first-child,
+.taskPanelHeader > div:first-child {
+  min-width: 0;
+}
+
+.taskCardMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.taskGoal {
+  max-width: 720px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.taskContext {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.taskSection {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.taskCardHeader h2,
 .goalComposer h2,
-.currentAction h2,
-.nextAction h2,
-.resultSummary h2 {
+.taskAction h3,
+.taskRecovery h3,
+.taskResult h3 {
   margin: 5px 0;
   color: var(--text);
 }
 
-.projectSummary p,
+.taskCardHeader p,
+.taskPanelHeader p,
 .goalComposer p,
-.nextAction p,
-.resultSummary p,
+.taskAction p,
+.taskResult p,
 .technicalEvidence p {
   margin: 4px 0 0;
   color: var(--text-muted);
 }
 
-.summaryMetrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  align-items: stretch;
-  margin: 0;
-}
-
-.summaryMetrics > div {
-  height: 100%;
-  box-sizing: border-box;
-}
-
-.summaryMetrics div {
-  min-width: 0;
-  padding: 12px 14px;
-  border-left: 1px solid var(--color-divider);
-}
-
-.summaryMetrics dt,
 .technicalEvidence dt {
   color: var(--text-muted);
   font-size: 11px;
@@ -102,7 +120,6 @@
   text-transform: uppercase;
 }
 
-.summaryMetrics dd,
 .technicalEvidence dd {
   margin: 8px 0 0;
   font-weight: 650;
@@ -116,19 +133,6 @@
 .goalComposer form {
   display: grid;
   gap: 20px;
-}
-
-.stepNumber {
-  display: inline-grid;
-  width: 30px;
-  height: 30px;
-  margin-right: 12px;
-  place-items: center;
-  border: 1px solid var(--color-divider-strong);
-  border-radius: 50%;
-  color: var(--text-muted);
-  font-family: var(--font-family-mono);
-  font-size: 11px;
 }
 
 .goalField {
@@ -156,8 +160,6 @@
 
 .composerFooter,
 .actionFooter,
-.nextActionHeader,
-.resultHeader,
 .technicalHeader {
   display: flex;
   align-items: center;
@@ -175,28 +177,20 @@
   color: var(--color-danger);
 }
 
-.currentAction {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 22px 26px;
+.taskCardHeader h2 {
+  font-size: clamp(20px, 2.2vw, 28px);
+  font-weight: 650;
+  letter-spacing: -0.025em;
 }
 
-.harnessStatus {
+.harnessSummary {
   display: grid;
   gap: 8px;
 }
 
-.harnessStatus p {
+.harnessSummary p {
   margin: 0;
   color: var(--color-text-secondary);
-}
-
-.currentAction h2 {
-  font-size: clamp(20px, 2.2vw, 28px);
-  font-weight: 650;
-  letter-spacing: -0.025em;
 }
 
 .pulse {
@@ -213,16 +207,12 @@
   }
 }
 
-.macroProgress {
+.taskProgress {
   display: grid;
   gap: 16px;
-  padding: 18px 22px;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--surface-solid) 82%, transparent);
 }
 
-.macroProgress ol {
+.taskProgress ol {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
@@ -231,7 +221,7 @@
   list-style: none;
 }
 
-.macroProgress li {
+.taskProgress li {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -239,7 +229,7 @@
   font-size: 12px;
 }
 
-.macroProgress li > span {
+.taskProgress li > span {
   width: 8px;
   height: 8px;
   border: 1px solid var(--color-divider-strong);
@@ -247,62 +237,50 @@
   background: var(--surface-solid);
 }
 
-.macroProgress li[data-state="done"] > span {
+.taskProgress li[data-state="done"] > span {
   border-color: var(--color-success);
   background: var(--color-success);
 }
-.macroProgress li[data-state="current"] {
+.taskProgress li[data-state="current"] {
   color: var(--text);
   font-weight: 700;
 }
-.macroProgress li[data-state="current"] > span {
+.taskProgress li[data-state="current"] > span {
   border-color: var(--color-accent);
   background: var(--color-accent);
   box-shadow: none;
 }
 
-.macroProgress li[data-state="skipped"] {
+.taskProgress li[data-state="skipped"] {
   color: var(--text-muted);
 }
 
-.macroProgress li[data-state="skipped"] > span {
+.taskProgress li[data-state="skipped"] > span {
   border-style: dashed;
   background: var(--surface-muted);
 }
 
-.macroProgress li small {
+.taskProgress li small {
   font-size: 10px;
   font-weight: 700;
 }
 
-.nextAction {
-  display: grid;
-  gap: 22px;
-  padding: 28px;
-  border-color: color-mix(in srgb, var(--color-accent) 34%, var(--color-divider));
-}
-
-.recoveryCard {
+.taskAction,
+.taskRecovery,
+.taskResult {
   display: grid;
   gap: 20px;
-  padding: 28px;
-  border-color: color-mix(in srgb, var(--color-warning) 38%, var(--color-divider));
+  padding: 18px 0 0;
+  border-top: 1px solid var(--color-divider);
 }
 
-.recoveryHeader {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.recoveryHeader h2 {
+.taskPanelHeader h3 {
   display: inline;
-  margin: 0;
   font-size: 24px;
+  letter-spacing: -0.02em;
 }
-.recoveryHeader p {
-  margin: 8px 0 0 44px;
+.taskPanelHeader p {
+  margin: 8px 0 0;
   color: var(--text-muted);
 }
 
@@ -327,15 +305,6 @@
 .recoveryScope dd {
   margin: 6px 0 0;
   font-weight: 650;
-}
-
-.nextActionHeader > div:first-child {
-  min-width: 0;
-}
-.nextActionHeader h2 {
-  display: inline;
-  font-size: 24px;
-  letter-spacing: -0.02em;
 }
 
 .decisionOptions {
@@ -386,11 +355,6 @@
   border-radius: 8px;
   background: var(--surface-muted);
 }
-.nextAction form {
-  display: grid;
-  gap: 20px;
-}
-
 .decisionForm,
 .attentionReview {
   display: grid;
@@ -442,12 +406,6 @@
   gap: 8px;
 }
 
-.resultSummary {
-  display: grid;
-  gap: 16px;
-  padding: 26px;
-  border-left: 4px solid var(--color-success);
-}
 .resultMetrics {
   display: flex;
   flex-wrap: wrap;
@@ -604,9 +562,6 @@
 }
 
 @media (max-width: 1180px) {
-  .projectSummary {
-    grid-template-columns: 1fr;
-  }
   .approvalSummary {
     grid-template-columns: 1fr;
   }

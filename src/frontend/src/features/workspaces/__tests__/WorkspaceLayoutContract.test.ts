@@ -33,7 +33,20 @@ describe("workspace row-balance contract", () => {
     }
 
     const agent = readFileSync(resolve(agentDir, "AgentWorkspace.module.css"), "utf8");
-    expect(agent).toMatch(/\.projectSummary\s*{[\s\S]*?align-items:\s*stretch;/);
+    // §5.2: the Agent page now balances rows through one merged task card, and the
+    // retired per-panel card containers must not come back.
+    expect(agent).toMatch(/\.taskCard\s*{[\s\S]*?display:\s*grid;/);
+    for (const retired of [
+      ".projectSummary",
+      ".currentAction",
+      ".nextAction",
+      ".resultSummary",
+      ".recoveryCard",
+      ".harnessStatus",
+      ".stepNumber",
+    ]) {
+      expect(agent, retired).not.toContain(retired);
+    }
   });
 
   it("keeps the remaining Settings workspace free of retired row-span coupling", () => {

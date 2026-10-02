@@ -356,6 +356,109 @@ describe("AgentWorkspace", () => {
     expect(screen.getByText("GPU stage not allowlisted")).toBeInTheDocument();
   });
 
+  it("keeps preparing and running states free of any primary action", () => {
+    const base = approvalTask();
+    const running: AgentTaskResponse = {
+      ...base,
+      state: "running",
+      outcome: null,
+      current_action_code: "executing",
+      next_action: { type: "none", requires_user: false, decision_batch_id: null },
+      automation: {
+        level: "A2",
+        reason: "execution_or_validation_automatically",
+        requires_user: false,
+      },
+      approval_summary: null,
+      progress: {
+        ...base.progress,
+        phase: "execution",
+        percent: null,
+        completed_subjects: null,
+        total_subjects: null,
+      },
+    };
+
+    render(
+      <I18nProvider locale="en">
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={controller(running)}
+          dataStateLabel="Converted BIDS/NIfTI"
+          onOpenRuns={vi.fn()}
+          projectName="Demo Project"
+        />
+      </I18nProvider>,
+    );
+
+    expect(document.querySelectorAll('[data-primary-action="true"]')).toHaveLength(0);
+    // Unknown percent must render the indeterminate bar, never a fake 0% fill.
+    const bar = screen.getByRole("progressbar");
+    expect(bar).not.toHaveAttribute("aria-valuenow");
+    expect(bar.querySelector('[style*="width"]')).toBeNull();
+  });
+
+  it("merges task surfaces into one Level-1 card and keeps the harness trace at Level 3", () => {
+    render(
+      <I18nProvider locale="en">
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={controller(approvalTask())}
+          dataStateLabel="Converted BIDS/NIfTI"
+          onOpenRuns={vi.fn()}
+          projectName="Demo Project"
+        />
+      </I18nProvider>,
+    );
+
+    const taskCards = screen.getAllByRole("region", { name: "Current task" });
+    expect(taskCards).toHaveLength(1);
+    expect(
+      within(taskCards[0]).getByText("Waiting for approval of the reviewed plan."),
+    ).toBeInTheDocument();
+    expect(
+      within(taskCards[0]).getByText("Demo Project · Converted BIDS/NIfTI"),
+    ).toBeInTheDocument();
+    expect(within(taskCards[0]).getByLabelText("Task progress")).toBeInTheDocument();
+    expect(within(taskCards[0]).getByRole("button", { name: "Approve plan" })).toBeInTheDocument();
+    expect(
+      within(taskCards[0]).getByRole("heading", { name: "Review and approve execution" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Planning trace")).not.toBeInTheDocument();
+  });
+
+  it("prefills the read-only assistant from the task card without issuing any command", () => {
+    const onExplainTask = vi.fn();
+    const commands = {
+      answer: vi.fn(),
+      approve: vi.fn(),
+      approveRecovery: vi.fn(),
+      cancel: vi.fn(),
+      create: vi.fn(),
+    };
+
+    render(
+      <I18nProvider locale="en">
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={{ ...controller(approvalTask()), ...commands }}
+          dataStateLabel="Converted BIDS/NIfTI"
+          onExplainTask={onExplainTask}
+          onOpenRuns={vi.fn()}
+          projectName="Demo Project"
+        />
+      </I18nProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Explain this task" }));
+
+    expect(onExplainTask).toHaveBeenCalledTimes(1);
+    for (const command of Object.values(commands)) {
+      expect(command).not.toHaveBeenCalled();
+    }
+    expect(document.querySelectorAll('[data-primary-action="true"]')).toHaveLength(1);
+  });
+
   it("renders an empty goal composer without manual dry-run controls", () => {
     render(
       <I18nProvider locale="en">
@@ -621,8 +724,13 @@ describe("AgentWorkspace", () => {
     expect(screen.getByText("该结果仅包含方案，不包含数值计算结果。")).toBeInTheDocument();
     expect(screen.getByText("没有独立的 QC 校验记录。")).toBeInTheDocument();
     expect(screen.getByText("查看已保存的方案详情。")).toBeInTheDocument();
-    expect(screen.getAllByText("预处理方案已准备完成")).toHaveLength(2);
-    expect(screen.getByText("待处理项").closest("div")).toHaveTextContent("待处理项0");
+    // §5.2: the merged TaskCard renders the Level-2 result title once; the removed
+    // ProjectSummaryCard used to repeat it as a separate "recent result" metric.
+    expect(screen.getAllByText("预处理方案已准备完成")).toHaveLength(1);
+    // §5.2: attention items are no longer a numeric metric on the page. The merged
+    // TaskCard must expose no pending-attention affordance for a succeeded plan-only task.
+    expect(screen.queryByText("查看待处理项")).not.toBeInTheDocument();
+    expect(screen.queryByText("待处理项")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "查看结果" })).not.toBeInTheDocument();
     expect(screen.queryByText("等待你处理")).not.toBeInTheDocument();
     expect(screen.queryByText(/metadata-only plan/)).not.toBeInTheDocument();

@@ -1,9 +1,9 @@
-import { Badge, Button, Card } from "../../../components/ui";
+import { Badge, Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentTaskResponse } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
 
-export function NextActionCard({
+export function TaskActionPanel({
   mutating,
   onCancel,
   onOpenRuns,
@@ -42,12 +42,11 @@ export function NextActionCard({
           : null;
 
   return (
-    <Card className={styles.nextAction} tone="elevated">
-      <div className={styles.nextActionHeader}>
+    <section className={styles.taskAction}>
+      <div className={styles.taskPanelHeader}>
         <div>
-          <span className={styles.stepNumber}>03</span>
           <span className={styles.eyebrow}>{t("agent.nextAction")}</span>
-          <h2 tabIndex={-1}>{title}</h2>
+          <h3 tabIndex={-1}>{title}</h3>
           {description ? <p>{description}</p> : null}
         </div>
         {task.next_action.requires_user ? (
@@ -160,6 +159,6 @@ export function NextActionCard({
           ) : null}
         </div>
       </div>
-    </Card>
+    </section>
   );
 }

@@ -1,6 +1,12 @@
 # 10：Agent Trace、Replay 与评测体系方案
 
-> 状态：部分实现（2026-10-01 源码复核）。原标头「Implemented」对 Trace/Replay 成立、对评测集不成立。
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
+> 状态：已实现（Trace/Replay/评测 CLI 范围）＋ §5.3 案例级动作合同与 §5.4 一致率指标**正式延期**
+> （2026-10-02 归档审计与维护者决定；证据层级为源码 + 自动化回归，不含 packaged/release）。
+> 原标头「Implemented」对 Trace/Replay 成立、对评测集不成立，现按范围分别定性。
 > 已落地：`schemas/agent_trace.py` 的 Trace 合同（`AgentTraceBundle/Entry/Reference/Budget/Page` 等，
 > 显式 `incomplete`/`conflict`/`missing`，不自动补齐）、`services/agent_trace_service.py` 与纯 reducer
 > `services/agent_replay_service.py`（不调模型、不跑 handler）、只读端点
@@ -9,11 +15,18 @@
 > `scripts/run_agent_evaluation.py` 与基线比较。
 > 与本文的偏离：§11 指向的 `tests/fixtures/agent_eval/v1/manifest.json` 不存在——`v1/` 是空目录，
 > 当前权威评测集是 `v2/manifest.json`（`AgentEvalManifest.schema_version = Literal[2]`，24 个案例、
-> zh-CN 与 en 各 12）。未落地：§5.3 的「正常：成功执行」与「恢复：partial/failed/不可重载/恢复审批/
-> handoff」两类案例在 v2 中缺失，§5.4 的「恢复建议与 reference policy 一致率」指标在
-> `AgentEvalOutcome` 中无对应字段；案例未按 case 声明允许/禁止 Action，只在结果侧用通用字段。
+> zh-CN 与 en 各 12）。正式延期（维护者 2026-10-02 决定，归档前不与本轮混做）：§5.3 的「正常：成功
+> 执行」与「恢复：partial/failed/不可重载/恢复审批/handoff」两类案例、§5.4 的「恢复建议与 reference
+> policy 一致率」指标、以及 §5.3 要求的按 case 声明允许/禁止 Action（现仅在结果侧用通用字段）。
+> 三者都是纯代码可完成项，本轮明确**不在阶段十二实施**，重启条件是补齐真实 run 语料（清单 L-03）后
+> 由独立评测任务立项；本文标头即该延期结论的唯一权威位置。
+> 实施该延期时必须先修的内部矛盾：`AgentEvalCase.expect_execution` 默认 `False`，而
+> `services/agent_evaluation_runner.py:406` 用 `bool(tickets or run_links) != case.expect_execution`
+> 判定——在没有任何案例置为 `True` 的现状下，任何产生 ticket 或 run link 的案例都会被判进
+> `forbidden` 副作用，即「成功执行」类案例一旦补上就会恒判失败。不得在未修此处前宣称评测集可扩展。
 > §7 的「30+」精确计数与 §11 的通过数量按 `AGENTS.md` §7.5 不作为稳定文档内容保留。
 > 评测是离线证据：不构成分布式发布、GUI 或科学验证证据。
+> 上述缺失的两类案例需要人工从真实 run 导出并标注标签，登记在 `specs/待人工审核校验清单.md` L-03。
 > 依赖：03 Action result、05 计划版本、06 结果/恢复、07 Context、08 ModelCallRecord、09 Skill refs。
 
 ## 1. 目标

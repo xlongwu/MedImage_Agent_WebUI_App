@@ -57,6 +57,26 @@
   transition: width var(--motion-duration-standard) var(--ease-standard);
 }
 
+/* Unknown progress must not read as 0%: the plan requires an indeterminate bar instead. */
+.progressIndeterminate {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+  animation: uiProgressIndeterminate 1.4s var(--ease-standard) infinite;
+}
+
+@keyframes uiProgressIndeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}
+
 .buttonLabel {
   min-width: 0;
   overflow: hidden;

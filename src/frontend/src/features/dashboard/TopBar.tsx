@@ -107,14 +107,14 @@ export const TopBar = memo(function TopBar({
             <span className={styles.healthLabel}>{healthLabel}</span>
           </button>
           <Button
-            aria-label={t("nav.assistant")}
+            aria-label={t("assistant.explainEntry")}
             className={styles.assistantButton}
             leadingIcon={<SparkIcon />}
             onClick={onOpenAssistant}
-            title={`${t("nav.assistant")} (Ctrl+J)`}
+            title={`${t("assistant.explainEntry")} (Ctrl+J)`}
             variant="ghost"
           >
-            {t("nav.assistant")}
+            {t("assistant.explainEntry")}
           </Button>
           {attentionPending ? (
             <Button

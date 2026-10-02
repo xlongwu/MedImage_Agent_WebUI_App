@@ -5,7 +5,7 @@ import styles from "../AgentWorkspace.module.css";
 
 const phases = ["context", "planning", "execution", "validation", "complete"] as const;
 
-export function MacroProgress({
+export function TaskProgress({
   outcome,
   planOnly = false,
   progress,
@@ -22,7 +22,7 @@ export function MacroProgress({
   const percent = progress.percent ?? knownSubjectProgress;
 
   return (
-    <section className={styles.macroProgress} aria-label={t("agent.progress")}>
+    <section className={styles.taskProgress} aria-label={t("agent.progress")}>
       <ol>
         {phases.map((phase) => {
           const currentIndex = phases.indexOf(normalizePhase(progress.phase));

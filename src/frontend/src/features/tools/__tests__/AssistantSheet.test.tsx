@@ -69,10 +69,22 @@ function renderSheet(
 }
 
 describe("AssistantSheet", () => {
+  it("shows only the read-only boundary when no project is selected", () => {
+    renderSheet({ projectName: "" });
+
+    expect(
+      screen.getByText(
+        "Select a project and create a task to get explanations of its recorded evidence. Nothing here starts, approves or runs work.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Assistant suggestions")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Assistant context")).toHaveTextContent("No project selected");
+  });
+
   it("shows project context and separates suggestions from execution actions", () => {
     renderSheet();
 
-    expect(screen.getByRole("dialog", { name: "Assistant" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Explain the current task" })).toBeInTheDocument();
     expect(screen.getByLabelText("Assistant context")).toHaveTextContent("Demo Project");
     expect(screen.getByLabelText("Assistant context")).toHaveTextContent("Runs");
     expect(screen.getByLabelText("Assistant context")).toHaveTextContent("Preprocessing run");
@@ -114,7 +126,7 @@ describe("AssistantSheet", () => {
   it("renders assistant context and prompts in Chinese", () => {
     renderSheet({}, "zh-CN");
 
-    expect(screen.getByRole("dialog", { name: "助手" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "解释当前任务" })).toBeInTheDocument();
     expect(screen.getByLabelText("助手上下文")).toHaveTextContent("解释／总结／起草");
     expect(screen.getByLabelText("助手建议")).toHaveTextContent("解释所选运行诊断");
     expect(screen.getByRole("button", { name: "新对话" })).toBeInTheDocument();

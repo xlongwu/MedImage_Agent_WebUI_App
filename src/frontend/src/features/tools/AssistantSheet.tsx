@@ -72,7 +72,7 @@ export function AssistantSheet({
       description={t("assistant.description")}
       onOpenChange={onOpenChange}
       open={open}
-      title={t("nav.assistant")}
+      title={t("assistant.explainEntry")}
     >
       <div className={styles.sheetBody}>
         <section className={styles.contextPanel} aria-label={t("assistant.context")}>
@@ -102,25 +102,32 @@ export function AssistantSheet({
           </div>
         </section>
 
-        <section className={styles.suggestionPanel} aria-label={t("assistant.suggestions")}>
-          <div className={styles.panelHeader}>
-            <h3>{t("assistant.suggestedPrompts")}</h3>
-            <p>{t("assistant.promptBoundary")}</p>
+        {projectName ? (
+          <section className={styles.suggestionPanel} aria-label={t("assistant.suggestions")}>
+            <div className={styles.panelHeader}>
+              <h3>{t("assistant.suggestedPrompts")}</h3>
+              <p>{t("assistant.promptBoundary")}</p>
+            </div>
+            <div className={styles.promptGrid}>
+              {suggestedPrompts.map((prompt) => (
+                <button
+                  aria-label={prompt.text}
+                  key={prompt.text}
+                  type="button"
+                  onClick={() => onInput(prompt.text)}
+                >
+                  <span>{prompt.kind}</span>
+                  <strong>{prompt.text}</strong>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <div className={styles.actionBoundary}>
+            <strong>{t("assistant.noProject")}</strong>
+            <p>{t("assistant.noProjectBoundary")}</p>
           </div>
-          <div className={styles.promptGrid}>
-            {suggestedPrompts.map((prompt) => (
-              <button
-                aria-label={prompt.text}
-                key={prompt.text}
-                type="button"
-                onClick={() => onInput(prompt.text)}
-              >
-                <span>{prompt.kind}</span>
-                <strong>{prompt.text}</strong>
-              </button>
-            ))}
-          </div>
-        </section>
+        )}
 
         <div className={styles.actionBoundary}>
           <strong>{t("assistant.executionBoundary")}</strong>

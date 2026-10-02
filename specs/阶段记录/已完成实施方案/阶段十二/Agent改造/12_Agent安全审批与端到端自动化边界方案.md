@@ -1,5 +1,16 @@
 # 12：Agent 安全审批与端到端自动化边界方案
 
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
+> 归档审计（2026-10-02）：本文声明的安全与审批边界范围已闭环（能力字段、fail-closed 入口、
+> A2/A3/A4 不暴露给模型、重新审批矩阵与对应测试均在当前源码保持）。
+> 归档后本文仍是 Harness 的**未授权**清单，不构成本阶段之后的任何能力扩展或执行授权；
+> §2 关于六种 Action 只读与 §3 把 `finish` 当作可用 Action 的表述已被取代（见同目录 03 的取代说明）。
+> §7 的人工验收场景属 ③ 层未取证，见 `specs/待人工审核校验清单.md` A-12、P-03。
+> 当前行为以源码、测试、`PROJECT_STATE.md` 和 `docs/安全与审批/安全边界.md` 为准。
+
 > 状态：已实现（2026-10-01 源码复核），仅 §2 的一条前提已过期。
 > 已落地：`runtime/agent_capability_catalog.py:AgentCapability` 具备 §4.1 要求的全部字段
 > （`automation_level`、`allowed_states`、`allowed_context_sections`、`allowed_output_types`、
@@ -147,7 +158,7 @@ python -m pytest tests/unit/test_agent_harness_execution_boundary.py tests/unit/
 
 必须用 spy/有序日志证明：审批前无 dry-run/ticket/gateway/runner；审批后顺序正确；任何计划/scope 变化使旧审批失效；rawdata 和项目外写入在 runner 前拒绝。
 
-人工验收：用户能清楚知道系统正在自动做什么、为什么当前需要确认、确认授权的精确范围，以及哪些动作即使用户要求也不会执行。
+人工验收项已移入 `specs/待人工审核校验清单.md` A-12（该行为唯一权威）。
 
 ## 8. 实施顺序
 

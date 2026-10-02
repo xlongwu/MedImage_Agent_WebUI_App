@@ -2,13 +2,13 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { I18nProvider } from "../../../../i18n/I18nProvider";
-import { HarnessStatusCard } from "../HarnessStatusCard";
+import { HarnessSummary } from "../HarnessSummary";
 
-describe("HarnessStatusCard", () => {
+describe("HarnessSummary", () => {
   it("renders only the backend-projected status, budget, and redacted trace summary", () => {
     render(
       <I18nProvider locale="zh-CN">
-        <HarnessStatusCard
+        <HarnessSummary
           summary={{
             status: "WAITING_FOR_USER",
             model_calls_used: 1,
@@ -52,7 +52,7 @@ describe("HarnessStatusCard", () => {
   it("renders the next step and maps a structured stop code through i18n", () => {
     render(
       <I18nProvider locale="en">
-        <HarnessStatusCard
+        <HarnessSummary
           summary={{
             status: "STOPPED",
             model_calls_used: 1,
@@ -93,5 +93,46 @@ describe("HarnessStatusCard", () => {
     expect(
       screen.getByText("Planning path: openai_compatible → deterministic_goal_planner."),
     ).toBeInTheDocument();
+  });
+
+  it("falls back to the generic stop text instead of leaking an unmapped stop code", () => {
+    render(
+      <I18nProvider locale="en">
+        <HarnessSummary
+          summary={{
+            status: "STOPPED",
+            model_calls_used: 0,
+            model_calls_limit: 6,
+            action_proposals_used: 0,
+            action_proposals_limit: 8,
+            steps_used: 1,
+            steps_limit: 8,
+            repairs_used: 0,
+            repairs_limit: 1,
+            input_tokens_used: null,
+            input_tokens_limit: null,
+            output_tokens_used: null,
+            output_tokens_limit: null,
+            actual_provider: null,
+            next_step: null,
+            terminal_reason: "AGENT_HARNESS_RECOVERY_BUDGET_EXHAUSTED",
+            latest_step_id: "step-1",
+            latest_step_summary: null,
+            last_wake_reason: "create",
+            yield_count: 0,
+            fallback_from: null,
+            fallback_to: null,
+            fallback_reason: null,
+          }}
+        />
+      </I18nProvider>,
+    );
+
+    expect(
+      screen.getByText("Stopped safely: an unrecognized safe-stop condition occurred"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/the recovery budget was exhausted|AGENT_HARNESS_RECOVERY/),
+    ).not.toBeInTheDocument();
   });
 });

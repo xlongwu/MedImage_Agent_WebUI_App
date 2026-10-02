@@ -1,6 +1,7 @@
 import { useExecutionGraph } from "../../execution-graph/useExecutionGraph";
-import { Button, Card } from "../../../components/ui";
+import { Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
+import styles from "../AgentWorkspace.module.css";
 
 export function ExecutionGraphTaskSummary({
   baseUrl,
@@ -28,7 +29,7 @@ export function ExecutionGraphTaskSummary({
         ? t("executionGraph.currentParallel", { count: graph.current_node_ids.length })
         : null;
   return (
-    <Card>
+    <section className={styles.taskSection}>
       <strong>{t("executionGraph.flow")}</strong>
       <p>
         {label
@@ -40,6 +41,6 @@ export function ExecutionGraphTaskSummary({
       <Button size="sm" variant="secondary" onClick={onOpenRuns}>
         {t("executionGraph.open")}
       </Button>
-    </Card>
+    </section>
   );
 }

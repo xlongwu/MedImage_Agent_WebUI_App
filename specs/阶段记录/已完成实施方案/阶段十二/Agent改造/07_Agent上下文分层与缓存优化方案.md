@@ -1,9 +1,19 @@
 # 07：Agent 上下文分层与缓存优化方案
 
-> 状态：部分实现（2026-10-01 源码复核）。原标头「Implemented」偏高，现予下调。
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
+> 状态：已实现（2026-10-02 归档审计逐条复核；机制层六项必做要求均有实现与回归，不含 packaged/release）。
+> 标头原为「部分实现」是因初版把实现命名为 v2。复核同时推翻「偏离全部只是命名差异」这一说法：
+> 下列 `nonessential_context` 与 `budget` 两项是**机制与语义差异**，不是改名，按当前源码裁定为
+> 已被更简单的实现取代（逐 section 淘汰优于集中回退桶；used+limit 优于剩余额度），
+> 不得据本文原设计恢复。
 > 已落地：10 个固定 typed sections、`HarnessContextSources` 显式输入、逐分区
 > `source_hash/source_refs/section_hashes`、秘密与影像键过滤、32 KiB 上限、按 `context_hash`
-> 复用不可变 context 行、`AGENT_SKILL_UNAVAILABLE` 降级不影响 builder。
+> 复用不可变 context 行、`AGENT_SKILL_UNAVAILABLE` 降级不影响 builder。其中「按 `context_hash` 复用」
+> 当前只有源码级证据（`mock_store.py` 的 `INSERT OR IGNORE` 与 `agent_harness_service.py` 复用分支），
+> 无专属回归断言，不得写成 ② 层已覆盖。
 > 与本文的偏离（当前真实行为以源码为准）：Context 已是 **v3**
 > （`schemas/agent_harness.py` 的 `schema_version: Literal[3]`，标题与 §4/§6/§7 的「Context v2」过期）；
 > `omitted_fields` 实名 `omitted_sections`；§5.2 的 `nonessential_context` 回退不存在，实际是逐 section

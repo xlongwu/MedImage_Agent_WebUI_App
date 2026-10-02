@@ -1,18 +1,25 @@
 import { Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
-import type { AgentHarnessActivityPage, AgentTaskResponse } from "../../../lib/types/agentTask";
+import type {
+  AgentHarnessActivityPage,
+  AgentHarnessSummary,
+  AgentTaskResponse,
+} from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
+import { HarnessSummary } from "./HarnessSummary";
 import { TechnicalEvidence } from "./TechnicalEvidence";
 
 export function TaskDetails({
   advancedMode,
   harnessActivity,
+  harnessSummary,
   onLoadHarnessActivity,
   onOpenRuns,
   task,
 }: {
   advancedMode: boolean;
   harnessActivity: AgentHarnessActivityPage | null;
+  harnessSummary: AgentHarnessSummary | null | undefined;
   onLoadHarnessActivity: () => Promise<void>;
   onOpenRuns: () => void;
   task: AgentTaskResponse;
@@ -29,6 +36,7 @@ export function TaskDetails({
     >
       <summary>{t("agent.taskDetails")}</summary>
       <div className={styles.taskDetailsBody}>
+        {harnessSummary ? <HarnessSummary summary={harnessSummary} /> : null}
         <section>
           <h3>{t("agent.evidence")}</h3>
           {task.evidence_links.length ? (

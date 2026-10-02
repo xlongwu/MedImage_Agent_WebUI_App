@@ -202,10 +202,11 @@ export function Progress({ className, label, value, ...props }: ProgressProps) {
     >
       <span className={styles.progressLabel}>{label}</span>
       <span className={styles.progressTrack}>
-        <span
-          className={styles.progressValue}
-          style={{ width: normalized == null ? "0%" : `${normalized}%` }}
-        />
+        {normalized == null ? (
+          <span aria-hidden="true" className={styles.progressIndeterminate} />
+        ) : (
+          <span className={styles.progressValue} style={{ width: `${normalized}%` }} />
+        )}
       </span>
       <span className={styles.progressText}>{normalized == null ? "—" : `${normalized}%`}</span>
     </div>

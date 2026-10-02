@@ -1,5 +1,9 @@
 # 05：Planner 与版本化重规划改造方案
 
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
 > 状态：已实现（2026-10-01 复核确认；证据层级为源码 + focused 回归，不含 packaged/release）。
 > 与本文的偏离：规划链已从 `AgentTaskCommandService._plan()` 抽到 `services/agent_planning_service.py`
 > （`_build_planning_request()` 现在该文件内），Reviewed Plan 持久化入口实名
@@ -136,7 +140,7 @@ Planner 只能消费已绑定、已裁剪的结构化输入，不直接查询 me
 python -m pytest tests/unit/test_agent_task_commands.py tests/unit/test_approval_summary.py tests/unit/test_recovery_replan.py tests/unit/test_project_history_plans.py tests/unit/test_memory_retrieval.py --tb=short --basetemp=.pytest_tmp
 ```
 
-人工验收：Reviewer 能从当前任务查看计划版本、父计划、修订原因和输入证据；对旧版本的批准请求在 dry-run 前被拒绝。
+人工验收项已移入 `specs/待人工审核校验清单.md` A-08（该行为唯一权威）。
 
 ## 8. 实施顺序
 

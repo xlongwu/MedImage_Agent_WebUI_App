@@ -14,9 +14,10 @@ Harness 和确定性模式都只从项目级 Agent Task 命令进入。它们不
 运行证据分别由 Agent Task 投影与项目 Runs 提供。
 
 当前可验证的源码和 focused-test 基线见
-`specs/阶段记录/阶段十二/Agent改造/01_当前Agent基线与差距分析.md`。该基线不构成
+`specs/阶段记录/已完成实施方案/阶段十二/Agent改造/01_当前Agent基线与差距分析.md`（2026-08-09 历史快照，
+已于 2026-10-02 归档，不构成当前行为来源）。该基线不构成
 Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专属证据时，其状态为
-`unknown`。
+`unknown`，该待人工取证项登记在 `specs/待人工审核校验清单.md` P-02。
 
 ## 运行合同
 

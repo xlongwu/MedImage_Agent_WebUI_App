@@ -5,17 +5,15 @@ import type { I18nContextValue } from "../../i18n/context";
 import { useI18n } from "../../i18n/useI18n";
 import type { ProjectInventory } from "../../lib/projectWorkflow";
 import styles from "./AgentWorkspace.module.css";
-import { CurrentAction } from "./components/CurrentAction";
-import { DecisionBatchCard } from "./components/DecisionBatchCard";
-import { HarnessStatusCard } from "./components/HarnessStatusCard";
+import { DecisionBatchPanel } from "./components/DecisionBatchPanel";
 import { AgentOperationalHealthCard } from "./components/AgentOperationalHealthCard";
 import { GoalComposer } from "./components/GoalComposer";
-import { MacroProgress } from "./components/MacroProgress";
 import { isDecisionAction } from "./agentTaskActions";
-import { NextActionCard } from "./components/NextActionCard";
-import { ProjectSummaryCard } from "./components/ProjectSummaryCard";
-import { ResultSummaryCard } from "./components/ResultSummaryCard";
-import { RecoveryActionCard } from "./components/RecoveryActionCard";
+import { TaskActionPanel } from "./components/TaskActionPanel";
+import { TaskCard } from "./components/TaskCard";
+import { TaskProgress } from "./components/TaskProgress";
+import { TaskResultPanel } from "./components/TaskResultPanel";
+import { TaskRecoveryPanel } from "./components/TaskRecoveryPanel";
 import { TaskDetails } from "./components/TaskDetails";
 import { ExecutionGraphTaskSummary } from "./components/ExecutionGraphTaskSummary";
 import type { AgentTaskController } from "./useAgentTaskController";
@@ -194,6 +192,7 @@ export function AgentWorkspace({
   advancedMode,
   controller,
   inventory,
+  onExplainTask,
   onOpenRuns,
   onReopenAttention,
   projectName,
@@ -201,6 +200,7 @@ export function AgentWorkspace({
   advancedMode: boolean;
   controller: AgentTaskController;
   inventory: ProjectInventory | null;
+  onExplainTask?: () => void;
   onOpenRuns: () => void;
   onReopenAttention?: () => void;
   projectName: string;
@@ -210,6 +210,7 @@ export function AgentWorkspace({
       advancedMode={advancedMode}
       controller={controller}
       dataStateLabel={inventory?.dataStateLabel ?? "—"}
+      onExplainTask={onExplainTask}
       onOpenRuns={onOpenRuns}
       onReopenAttention={onReopenAttention}
       projectName={projectName}
@@ -221,6 +222,7 @@ export function AgentWorkspaceView({
   advancedMode,
   controller,
   dataStateLabel,
+  onExplainTask,
   onOpenRuns,
   onReopenAttention = () => {},
   projectName,
@@ -228,6 +230,7 @@ export function AgentWorkspaceView({
   advancedMode: boolean;
   controller: AgentTaskController;
   dataStateLabel: string;
+  onExplainTask?: () => void;
   onOpenRuns: () => void;
   onReopenAttention?: () => void;
   projectName: string;
@@ -259,7 +262,6 @@ export function AgentWorkspaceView({
         ) : null}
       </header>
 
-      <ProjectSummaryCard dataStateLabel={dataStateLabel} projectName={projectName} task={task} />
       <AgentOperationalHealthCard
         advancedMode={advancedMode}
         baseUrl={controller.baseUrl}
@@ -309,51 +311,59 @@ export function AgentWorkspaceView({
           <Skeleton height={220} />
         </section>
       ) : !task ? (
-        <GoalComposer disabled={controller.mutating} onSubmit={controller.create} />
+        <GoalComposer
+          dataStateLabel={dataStateLabel}
+          disabled={controller.mutating}
+          onSubmit={controller.create}
+          projectName={projectName}
+        />
       ) : (
         <>
-          <CurrentAction
-            nextActionType={task.next_action.type}
-            outcome={task.outcome}
-            progress={task.progress}
-            state={task.state}
-          />
-          {task.harness_summary ? <HarnessStatusCard summary={task.harness_summary} /> : null}
-          <MacroProgress outcome={task.outcome} planOnly={planOnly} progress={task.progress} />
-          <ExecutionGraphTaskSummary
-            baseUrl={controller.baseUrl ?? ""}
-            onOpenRuns={onOpenRuns}
-            projectId={controller.projectId ?? null}
-            runId={task.technical_details?.run_id}
-          />
-          {task.recovery && task.next_action.type === "approve_recovery" ? (
-            <RecoveryActionCard
-              mutating={controller.mutating}
-              onAbandon={() => controller.cancel(t("agent.recovery.abandonReason"))}
-              onOpenDetails={onOpenRuns}
-              onReopenAttention={onReopenAttention}
-              recovery={task.recovery}
-            />
-          ) : task.state === "completed" && planOnly ? null : isDecisionAction(task) ? (
-            <DecisionBatchCard onReopenAttention={onReopenAttention} />
-          ) : (
-            <NextActionCard
-              key={task.next_action.decision_batch_id ?? task.next_action.type}
-              mutating={controller.mutating}
-              onCancel={controller.cancel}
-              onOpenRuns={onOpenRuns}
-              onReopenAttention={onReopenAttention}
-              task={task}
-            />
-          )}
-          {task.result_summary ? (
-            <ResultSummaryCard
+          <TaskCard
+            dataStateLabel={dataStateLabel}
+            onExplain={onExplainTask}
+            projectName={projectName}
+            task={task}
+          >
+            <TaskProgress outcome={task.outcome} planOnly={planOnly} progress={task.progress} />
+            <ExecutionGraphTaskSummary
               baseUrl={controller.baseUrl ?? ""}
               onOpenRuns={onOpenRuns}
-              result={task.result_summary}
-              explanation={task.result_explanation}
+              projectId={controller.projectId ?? null}
+              runId={task.technical_details?.run_id}
             />
-          ) : null}
+            {task.recovery && task.next_action.type === "approve_recovery" ? (
+              <TaskRecoveryPanel
+                mutating={controller.mutating}
+                onAbandon={() => controller.cancel(t("agent.recovery.abandonReason"))}
+                onOpenDetails={onOpenRuns}
+                onReopenAttention={onReopenAttention}
+                recovery={task.recovery}
+              />
+            ) : task.state === "completed" && planOnly ? null : isDecisionAction(task) ? (
+              <DecisionBatchPanel
+                key={task.decision_batch?.batch_id ?? task.next_action.type}
+                onReopenAttention={onReopenAttention}
+              />
+            ) : (
+              <TaskActionPanel
+                key={task.next_action.decision_batch_id ?? task.next_action.type}
+                mutating={controller.mutating}
+                onCancel={controller.cancel}
+                onOpenRuns={onOpenRuns}
+                onReopenAttention={onReopenAttention}
+                task={task}
+              />
+            )}
+            {task.result_summary ? (
+              <TaskResultPanel
+                baseUrl={controller.baseUrl ?? ""}
+                onOpenRuns={onOpenRuns}
+                result={task.result_summary}
+                explanation={task.result_explanation}
+              />
+            ) : null}
+          </TaskCard>
           {task.state === "completed" && task.outcome !== "canceled" && !task.result_summary ? (
             <EmptyState
               title={t("agent.resultUnavailable")}
@@ -363,6 +373,7 @@ export function AgentWorkspaceView({
           <TaskDetails
             advancedMode={advancedMode}
             harnessActivity={controller.harnessActivity}
+            harnessSummary={task.harness_summary}
             onLoadHarnessActivity={controller.loadHarnessActivity}
             onOpenRuns={onOpenRuns}
             task={task}

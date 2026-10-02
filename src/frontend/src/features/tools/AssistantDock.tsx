@@ -31,11 +31,11 @@ export function AssistantDock({
 }) {
   const { t } = useI18n();
   return (
-    <aside className={styles.dock} aria-label={t("nav.assistant")}>
+    <aside className={styles.dock} aria-label={t("assistant.explainEntry")}>
       <header className={styles.header}>
         <div>
           <span>{activePageLabel}</span>
-          <h2>{t("nav.assistant")}</h2>
+          <h2>{t("assistant.explainEntry")}</h2>
           <p>{projectName || t("assistant.noProject")}</p>
         </div>
         <button aria-label={t("assistant.close")} onClick={onClose} type="button">

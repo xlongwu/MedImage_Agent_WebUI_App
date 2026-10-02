@@ -1,6 +1,11 @@
 # 08：Agent 预算账本与模型调用治理方案
 
-> 状态：部分实现（2026-10-01 源码复核）。原标头「Implemented」偏高，现予下调。
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
+> 状态：已实现（2026-10-02 范围闭环；证据层级为源码 + focused 回归，不含 packaged/release）。
+> 原「Implemented」曾偏高，因 §5/§6 的恢复预算维度未落地；该维度现已裁定为不实施，故闭环。
 > 已落地：`ModelCallRecord` 全量账本字段（含 `phase`、`skill_hashes`/`skill_error_codes`、
 > `model_profile_hash`、`network_called` 等本文未列的扩展）、attempt 级 steps/model calls/proposals/
 > repairs/token/active-seconds 计数、按 phase 的调用分配、审批前零副作用的原子结算与崩溃对账、
@@ -8,9 +13,14 @@
 > 与本文的偏离：时间预算实名 `max_active_seconds`（环境变量
 > `MEDIMAGE_AGENT_HARNESS_MAX_ACTIVE_SECONDS`，累计 active interval），不是 `max_wall_seconds`；
 > `AgentHarnessSummary` 暴露 step/call/proposal/repair/token 的 used+limit，但不含时间预算。
-> 未落地：§5 的恢复预算维度——`max_recovery_attempts` 与
-> `MEDIMAGE_AGENT_HARNESS_MAX_RECOVERY_ATTEMPTS` 在全仓不存在，恢复配额仍是 lifecycle 级
-> `schemas/recovery.py:RecoveryQuota`；因此 §6 声明的 `RECOVERY_BUDGET_EXHAUSTED` 也不存在。
+> 已被取代、不得据以恢复：§5 的 attempt 级恢复预算维度（`max_recovery_attempts`、
+> `MEDIMAGE_AGENT_HARNESS_MAX_RECOVERY_ATTEMPTS`）与 §6 的停止码 `RECOVERY_BUDGET_EXHAUSTED`。
+> `Agent简洁优化实施方案.md` 已确定「复用 lifecycle retry quota，不新增第二套恢复预算」，
+> 恢复配额继续由 `schemas/recovery.py:RecoveryQuotaLimits` 单一权威承担。2026-10-02 维护者拍板
+> （`specs/待人工审核校验清单.md` D-05）选择**删除前端死表面**而不是补后端维度：此前该码只有
+> 前端映射与双语词条而无后端生产者，现已删除映射与 `recoveryBudgetExhausted` 词条，
+> 未映射停止码统一回退到通用安全文案，回归断言在
+> `src/frontend/src/features/agent/components/__tests__/HarnessSummary.test.tsx`。
 > §12 的精确测试计数按 `AGENTS.md` §7.5 不作为稳定文档内容保留。
 > 依赖：02 有限循环、07 Context v2；10 消费本方案记录进行 replay/评测。
 
@@ -136,7 +146,8 @@
 python -m pytest tests/unit/test_agent_harness_service.py tests/unit/test_agent_harness_lease.py tests/unit/test_planner_llm_provider.py tests/unit/test_llm_provider.py --tb=short --basetemp=.pytest_tmp
 ```
 
-覆盖单次调用、repair、超时、无 usage、fallback、并发、重启对账和各预算上限。人工验收要求前端能说明“用了哪个路径、多少预算、为何停止”，但不显示秘密、完整 prompt 或原始响应。
+覆盖单次调用、repair、超时、无 usage、fallback、并发、重启对账和各预算上限。人工验收项已移入
+`specs/待人工审核校验清单.md` A-10（该行为唯一权威）。
 
 ## 10. 实施顺序
 

@@ -106,17 +106,26 @@ their tag state.
   attempt, expose the recorded fallback path, then use a fresh deterministic
   planning hash without reusing an Approval Summary; config/schema/budget
   failures still stop structurally. The 2026-08-09 source/entry/focused-test
-  baseline is recorded in `specs/阶段记录/阶段十二/Agent改造/01_当前Agent基线与差距分析.md`;
+  baseline is recorded in
+  `specs/阶段记录/已完成实施方案/阶段十二/Agent改造/01_当前Agent基线与差距分析.md` (archived
+  2026-10-02 as a historical snapshot, not a source of current behavior);
   no Harness-specific packaged smoke or formal release evidence was located,
-  so those two release surfaces remain `unknown` rather than inferred.
+  so those two release surfaces remain `unknown` rather than inferred. The
+  plan's §阶段 6.B three-arm online evaluation was never authorized and has no
+  three-arm or per-case repeat implementation entry point.
 - The Harness Product Skill source implementation provides exactly one
   static packaged procedure: `planning_evidence_review.v1`. The strict registry
   verifies manifest/hash/capability and
   Context-section constraints, records only Skill references in audit state,
   and falls back to the base safety prompt when a resource is unavailable. This
   is prompt-governance only: it does not add data, approval, execution, or
-  scientific-computation capability. Source-level regression coverage exists;
-  packaged smoke/release evidence remains separate and is not inferred here.
+  scientific-computation capability. Maintainer decision on 2026-10-02 formally
+  contracts the Product Skill range to this single procedure: the planned
+  `result_explanation.v1` and `recovery_review.v1` are not projected, because
+  the Harness action surface no longer has `explain_result` or
+  `propose_recovery` handlers for them to govern. Source-level regression
+  coverage exists; packaged smoke/release evidence remains separate and is not
+  inferred here.
 - A read-only, redacted Agent Trace and pure Replay capability is available for
   the controlled Harness. Trace bundles reconstruct canonical context/action/
   result/lifecycle/evidence references and report missing or conflicting
@@ -143,6 +152,18 @@ their tag state.
   non-terminal runs continue under a bounded single-owner monitor. Read-side
   Agent Task APIs remain side-effect free, and recovery remains a separate
   explicit approval.
+- The Agent workspace now renders one merged Level-1 task card (`TaskCard`) that
+  carries the status badge, goal line, project and data-preparation context
+  line, real subject progress, and the single primary action. The
+  `ProjectSummaryCard`, `CurrentAction` and `HarnessStatusCard` containers are
+  removed; progress, action, recovery and result panels render inside the card
+  without their own shells, and the redacted Harness budget and stop-reason
+  projection moved to Level-3 `TaskDetails`. The top-bar Assistant entry is
+  labelled "Explain the current task" and shows only its read-only boundary when
+  no project is selected; the task card's explain action only prefills the
+  read-only assistant input. Neither issues create/answer/approve commands.
+  Visible GUI and packaged walkthrough evidence for this hierarchy is still not
+  taken (`specs/待人工审核校验清单.md` A-13, P-03).
 - Agent planning now uses one immutable `PlanningRequest` for initial planning,
   answered decisions, goal revision, and recovery replan. Reviewed Plans retain
   revision number, parent plan, reason, planning-input hash, and EvidenceSnapshot
@@ -227,10 +248,11 @@ their tag state.
   `MEDIMAGE_MULTI_AGENT_ENABLED` flag exists, and the offline G0 scaffolding
   (`agent_review_role_registry.py`, `agent_review_context_projector.py`,
   `agent_review_finding_aggregator.py`, `structured_agent_model_adapter.py`,
-  `multi_agent_gate_runner.py`) executes no real provider call and is backed by
-  an empty fixture directory. That scaffolding evidences nothing: no capability
-  level is `computed` or `validated` by it, and Phase 14 is formally deferred
-  before its G0 gate rather than approved, implemented, or disproven
+  `multi_agent_gate_runner.py`, `multi_agent_evaluation_service.py`, and
+  `scripts/run_multi_agent_evaluation.py`) executes no real provider call and is
+  backed by an empty fixture directory. That scaffolding evidences nothing: no
+  capability level is `computed` or `validated` by it, and Phase 14 is formally
+  deferred before its G0 gate rather than approved, implemented, or disproven
   (`specs/阶段记录/阶段十四/生产多Agent架构/00_阶段规格与实施总览.md` §11).
 - Reviewed preprocessing uses in-project Python kernels. MATLAB, SPM, and
   DPABI executables are outside the supported execution path.
@@ -495,3 +517,8 @@ met.
   blockers: `specs/阶段记录/已完成实施方案/阶段九/README.md`
 - Agent-first source implementation and deferred acceptance gates:
   `specs/阶段记录/已完成实施方案/阶段十/README.md`
+- Items that only a human can verify or decide (visible GUI and packaged
+  evidence, independent scientific reference validation, manual corpus
+  labelling, and maintainer authorization choices) are consolidated in
+  `specs/待人工审核校验清单.md`. This file stays the authority for current
+  release scheduling; the registry only tracks those manual gates.

@@ -13,6 +13,8 @@
 
 本节是本文件唯一的实施范围权威。下方 §1～§29 保留为**设计推理与目标形态记录**，其中的现状描述若与本节冲突，以本节及其 `file:line` 证据为准。本节由 2026-10-02 的逐节源码复核和维护者对 §0.4 四项决策的批准产生；未获批准的条目不构成待办、实现授权或当前行为描述。
 
+2026-10-02 归档审计：本节裁定**无一条被后续提交推翻**，锚点层面的偏离已就地校正（§0.2 §7 行的注册表方法锚点与 `max_model_calls`、§0.2 §17 行与 §0.5-③ 的消费者清单、§0.3 §19 的文件计数）。本阶段**不归档**，因为 §0.4-D1 唯一获批包 §17 仍是 NOT IMPLEMENTED（`schemas/sandbox.py:38,79` 未改、provider 无网络实现）。本文件中需要人工取证或人工拍板的条目集中登记在 `specs/待人工审核校验清单.md`：§17 见 D-03，§12/G0 见 L-01…L-04 与 D-01，§18 的前端信息层级部分已随阶段十二 简洁方案 §5.2（清单 D-06）于 2026-10-02 落到源码，剩余只在 ③ 层人工走查（清单 A-13）。
+
 ## 0.1 裁定的证据层级约定
 
 下表证据全部为**① 源码实现与注册**层级（必要时附自动化回归②）。本文件不声称、也不因本裁定获得 ③ packaged/release 或 ④ 科学验证层级的任何结论（`AGENTS.md` §5.7、§5.8）。科学能力等级一律以 `docs/项目概览/能力矩阵.md` 为准。
@@ -23,10 +25,10 @@
 
 | 节 | 主题 | 判定 | 源码锁定与缺失项 |
 |---|---|---|---|
-| §4 优化一 | Capability-based Action Space（A0～A3、§4.3 Schema 扩展、§20 v3） | **未实现-建议跳过**（经批准，见 §0.4-D2） | `schemas/agent_harness.py:25` 仍为 `Literal["request_decision", "draft_plan"]`；`runtime/agent_capability_catalog.py:27-35` 仅登记这两个 A1；`tests/unit/test_agent_harness_service.py:107-115` 把 `read_evidence`/`explain_result`/`propose_recovery`/`finish` 被拒**固化为回归断言**。§4.3 提议的 12 个字段中 7 个已存在（`agent_capability_catalog.py:11-19`），新增 `risk_class`/`allowed_tool_refs`/`requires_policy_check`/`requires_human_approval`/`max_calls_per_task`/`data_access_class`/`result_schema_ref` 在全仓 0 命中，且**无任何当前消费者**。 |
+| §4 优化一 | Capability-based Action Space（A0～A3、§4.3 Schema 扩展、§20 v3） | **未实现-建议跳过**（经批准，见 §0.4-D2） | `schemas/agent_harness.py:25` 仍为 `Literal["request_decision", "draft_plan"]`；`runtime/agent_capability_catalog.py:27-35` 仅登记这两个 A1；`tests/unit/test_agent_harness_service.py` 的 `test_two_typed_actions_parse_and_removed_actions_or_extra_fields_are_rejected` 把 `read_evidence`/`explain_result`/`propose_recovery`/`finish` 被拒**固化为回归断言**。§4.3 提议的 12 个字段中 7 个已存在（`agent_capability_catalog.py:11-19`），新增 `risk_class`/`allowed_tool_refs`/`requires_policy_check`/`requires_human_approval`/`max_calls_per_task`/`data_access_class`/`result_schema_ref` 在全仓 0 命中，且**无任何当前消费者**。 |
 | §5 优化二 | Read-only Observation Tool Layer（模型自主拉取） | **未实现-建议跳过**（经批准，见 §0.4-D2） | 提案 §19 的 `agent_read_tool_registry.py`、`services/agent_read_tool_service.py`、`schemas/agent_tool.py` 全仓 **0 命中**。同等**信息面**已由服务端在调用模型前组装：`services/agent_evidence_service.py:42/168/221/228`（`build_snapshot`/`select_for_context`/`select_for_purpose`/`read_for_context`）。差异只是「由谁发起拉取」，属 `AGENTS.md` §1.3 边界扩展。 |
 | §6 优化三 | Sentinel-like AgentPolicyService | **未实现-建议跳过**（重复抽象，见 §0.4-D3） | fail-closed 策略入口**已集中**在 `runtime/agent_capability_catalog.py:39-53` `assert_capability_allowed()`（含 `automation_level not in {"A0","A1"}`、`requires_current_approval`、`side_effect_class` 白名单）与 `:54-69` `assert_capability_context_and_output_allowed()`，并向下接 Approval Gate → Execution Ticket → 唯一 Gateway。ALLOW/ASK/DENY 三态在动作面只有 2 个 A1 kind 时**没有可判别的输入**。`services/agent_policy_service.py`、`schemas/agent_policy.py` 0 命中。 |
-| §7 优化四 | 扩展 Scientific Skill | **部分实现**（底座已实现，新 Skill 未立项） | 严格注册表与 manifest 合同**已实现**：`agent_skills/registry.py:47-95`（`load`/`validate_all`/`_validate`）、`agent_skills/schemas.py:16-30` `SkillManifest` 已含 `allowed_actions`/`allowed_states`/`required_context_sections`/`output_schema_ref`/`content_hash`，`:33-36` 只持久化 `SkillContextRef`。§2.2.3「当前内置 Skill 只有 `planning_evidence_review.v1`」**与源码一致**（`registry.py:17-19` `BUILTIN_SKILL_IDS` 恰好 1 项）。§7.2 的 8 个新 Skill 与 §7.4 的 `allowed_tool_refs`/`data_access_classes`/`max_model_calls`/`max_tool_calls` 四个字段未实现，且前两项依赖被跳过的 §5/§16。归属仍为阶段十二-`09` 未闭合项。 |
+| §7 优化四 | 扩展 Scientific Skill | **部分实现**（底座已实现，新 Skill 未立项） | 严格注册表与 manifest 合同**已实现**：`agent_skills/registry.py` 的 `load()`（`:53`）、`validate_all()`（`:80`）与 `_validate()`（`:96`）、`agent_skills/schemas.py:16-30` `SkillManifest` 已含 `allowed_actions`/`allowed_states`/`required_context_sections`/`output_schema_ref`/`content_hash`，`:33-36` 只持久化 `SkillContextRef`。§2.2.3「当前内置 Skill 只有 `planning_evidence_review.v1`」**与源码一致**（`registry.py:17-19` `BUILTIN_SKILL_IDS` 恰好 1 项）。§7.2 的 8 个新 Skill 未实现；§7.4 的 `allowed_tool_refs`/`data_access_classes`/`max_tool_calls` 三个 Skill 级字段未实现，且前两项依赖被跳过的 §5/§16——2026-10-02 校正：`max_model_calls` **并非全仓不存在**，它已作为 Harness attempt 预算存在于 `core/config_schema.py:126,157`，缺的只是 SkillManifest 上的同名字段。归属已随阶段十二-`09` 闭环：清单 D-04 于 2026-10-02 由维护者决定**不立项、正式收缩为 1 个 Skill**，因此这些字段与 8 个新 Skill 均不再是待办。 |
 | §8 优化五 | Deterministic Skill Router | **未实现-建议跳过** | `runtime/agent_skill_router.py`、`services/agent_skill_router_service.py` 0 命中。**按用途的确定性选择已存在**且位于 Context 层：`services/agent_harness_context_service.py:39-49` `required_by_purpose`/`optional_order_by_purpose`、`:127` `purpose_for()`。在 Skill 只有 1 个、动作只有 2 个的前提下，Router **没有可路由的分叉**，属 `AGENTS.md` §3.0 禁止的预建间接层。 |
 | §9 优化六 | 两层 Context（Base + On-demand Evidence） | **部分实现**；按需**拉取**部分**未实现-建议跳过** | Base/On-demand 的**服务端裁剪已实现**：`schemas/agent_harness.py:298-305` 有 `required_sections`/`included_sections`/`omitted_sections`/`complete`，`agent_harness_context_service.py:204-222` 按优先级裁剪并记 `{name}:byte_budget` 省略原因。§9.4 `AgentEvidenceSlice` 的溯源字段**已等价存在**于 `agent_harness.py:264-267`（`source_refs`/`source_hash`/`data`）+ 逐节 `section_hashes`，仅缺 `data_class`。因此本节真实剩余量只有「模型自主发起拉取」，随 §0.4-D2 判定为跳过。 |
 | §10 优化七 | 完整 Lifecycle Loop + §10.1 Result Reflection | **部分实现**（**核心不变量已实现**，模型动作未实现） | §10.2「模型只写文本、真值归系统」已落实为结构化字段：`schemas/agent_task.py:252-267` `AgentResultExplanation` 携带 `outcome`/计数/`artifact_refs`/`criteria`/`limitation_codes`/`recommended_action_code` 真值，并把模型文本限于 `generated_text` + `generated_text_status: not_requested｜accepted｜conflict_rejected`；`services/agent_task_result_summary.py:109-174` `_guard_generated_text()` 在冲突时丢弃文本并记 `conflict_rejected`。前后端消费者齐备（`AgentWorkspace.tsx`、`ResultSummaryCard.tsx`）。缺的只是 `explain_result`/`propose_next_step` 两个**动作 kind**，它们正是 §0.4-D2 拒绝扩展、并被回归测试固化拒绝的项。 |
@@ -36,22 +38,22 @@
 | §14 优化十一 | 统一 Human Attention Policy | **未实现-建议跳过**（与阶段十五已批准决策冲突） | 阶段十五 `00` §D1/Phase B **明确批准**把 attention 协调器保持为“仅浏览器内的 action-key/dismissal hook”，理由是不落库、不改审批哈希；当前实现即 `src/frontend/src/features/agent/attentionAction.ts:3-6`（`decision｜approval｜recovery`，注释第 18-19 行）。§14.1 的 `EXPORT_APPROVAL`/`SECURITY_WARNING` **没有生产者**（导出动作不存在；`EXECUTION_ENVIRONMENT_CHANGED` 只是错误码，见 `services/execution_environment_service.py:102,159`）。`schemas/agent_attention.py`、`services/agent_attention_service.py` 0 命中。 |
 | §15 优化十二 | Memory Taxonomy | **部分实现**，且 §15.1 **实质已实现** | §15.1 九个字段全部有对应实现，只是命名不同：`memory_type`→`schemas/memory.py:77` `kind`、`scope`→`:76` `scope_type: Literal["project"]`、`source_ref`→`:82` `source: MemorySource`、`confidence`→`:88`、`sensitivity`→`:89`、`requires_confirmation`→`:91` `requires_review` + `MemoryRevision:113` `confirmation_status`/`:118` `confirmation_event_id`，`MemoryItem` 另有 `:137-138` `valid_from`/`valid_until`。§15 提议的 6 个类型名与现存 `:10-16` 六类（`user_preference`/`project_decision`/`environment_fact`/`workflow_lesson`/`error_lesson`/`presentation_preference`）**语义重叠但不得并列为第二套分类**（`AGENTS.md` §3.6：独立 memory SQLite 是唯一长期记忆权威）。 |
 | §16 优化十三 | Medical Data Taint Policy | **部分实现**；§16.3 部分**未实现-随 §0.4-D2 跳过** | 记忆侧外发门**已实现**：`schemas/memory.py:19` `MemorySensitivity = public｜project_internal｜restricted｜rejected`，`services/memory_repository.py:575,606,641` 在检索/投影处以 SQL + 读时二次校验阻止 `restricted`/`rejected` 离开仓库。模型侧的同等控制是**字段白名单**而非 taint 标签：`agent_harness_context_service.py:105-112` 逐节允许字段、`agent_evidence.py` 全文无 `data_class`。§16.3 的 `data_class` 只在**新增读工具**上才有挂载点，因此其剩余量完全依赖被跳过的 §5。 |
-| §17 优化十四 | Windows Sandbox 网络隔离 | **未实现-获批立项**（本阶段唯一获批实施包，见 §0.4-D1） | 真实缺口，且不依赖任何能力扩展：`schemas/sandbox.py:38,79` 把 `network_isolation` 声明为 `Literal["not_enforced"] = "not_enforced"`——**类型上无法表达“已强制”**；`runtime/windows_process_sandbox.py` 全文无一处网络相关实现（只有 `:191-202` Job Object 限额/`_KILL_ON_JOB_CLOSE` 与 `:204-257` 受限令牌 4 个 SID）；`sandbox_policy_service.py:72`、`execution_environment_service.py:159`、`desktop_backend_entry.py:360` 三处固定自检报 `not_enforced`，并被 4 个测试断言（`tests/integration/test_windows_process_sandbox.py:38` 等）。**范围事实需一并修正**：见 §0.5。 |
-| §18 优化十五 | Trace → 用户可读 Explainability | **部分实现** | 后端已实现且已对外：`services/agent_trace_service.py:20` `calculate_trace_integrity_hash()`、`:37/74` `get()`/`page()`，端点 `api/agent_task_routes.py:176-184` `GET /{task_id}/trace`（docstring 明示“paginated, redacted … advanced review only”）。§18.2 的高级字段**前端已在展示**：`features/agent/components/TechnicalEvidence.tsx:12-38` 逐行输出 `plan_hash`/`evidence_snapshot_hash`/`goal_hash`/`planning_inputs_hash`/`ticket_id`/`run_id`/`memory_context_hash` 等。剩余量是 §18.1 的**叙事式分层展示**与默认折叠策略，属前端信息层级工作，与阶段十二 简洁方案 §5.2「单一 `TaskCard` 信息层级」为**同一未闭合项**，不得另立第二条改造线。 |
+| §17 优化十四 | Windows Sandbox 网络隔离 | **未实现-获批立项**（本阶段唯一获批实施包，见 §0.4-D1） | 真实缺口，且不依赖任何能力扩展：`schemas/sandbox.py:38,79` 把 `network_isolation` 声明为 `Literal["not_enforced"] = "not_enforced"`——**类型上无法表达“已强制”**；`runtime/windows_process_sandbox.py` 全文无一处网络相关实现（只有 `:191-202` Job Object 限额/`_KILL_ON_JOB_CLOSE` 与 `:204-257` 受限令牌 4 个 SID）；`sandbox_policy_service.py:72`、`execution_environment_service.py:159`、`desktop_backend_entry.py:360` 三处固定自检报 `not_enforced`，并被 4 个测试文件中的 5 处断言/夹具固定（`tests/api/test_sandbox_attempt_api.py:23,65`、`tests/integration/test_windows_process_sandbox.py:38`、`tests/unit/test_desktop_backend_entry.py:116`、`tests/unit/test_execution_ticket.py:220`）；消费者还有路由透传 `api/sandbox_routes.py:24` 与前端类型 `src/frontend/src/lib/types/sandbox.ts:23`（2026-10-02 复核补齐，见 §0.5-③）。**范围事实需一并修正**：见 §0.5。 |
+| §18 优化十五 | Trace → 用户可读 Explainability | **部分实现** | 后端已实现且已对外：`services/agent_trace_service.py:20` `calculate_trace_integrity_hash()`、`:37/74` `get()`/`page()`，端点 `api/agent_task_routes.py:176-184` `GET /{task_id}/trace`（docstring 明示“paginated, redacted … advanced review only”）。§18.2 的高级字段**前端已在展示**：`features/agent/components/TechnicalEvidence.tsx:12-38` 逐行输出 `plan_hash`/`evidence_snapshot_hash`/`goal_hash`/`planning_inputs_hash`/`ticket_id`/`run_id`/`memory_context_hash` 等。剩余量是 §18.1 的**叙事式分层展示**与默认折叠策略，属前端信息层级工作，与阶段十二 简洁方案 §5.2「单一 `TaskCard` 信息层级」为**同一条改造线**；该线已于 2026-10-02 按清单 D-06 的拍板落到源码（`components/TaskCard.tsx` 为唯一视觉卡片、Harness 投影移入 Level-3 `TaskDetails`，见简洁方案标头），本节的剩余差异只在 ③ 层可见 GUI 走查（清单 A-13），不得另立第二条改造线，也不得把它写成 ① ② 层未闭合。 |
 
 ## 0.3 结构性章节与 Phase 归属
 
 | 节 | 判定 | 归属 |
 |---|---|---|
-| §19 推荐代码结构 | 未实现 | 所列 **12 个新文件全仓 0 命中**（`schemas/agent_action.py`、`agent_tool.py`、`agent_policy.py`、`agent_attention.py`、`agent_event.py`、`runtime/agent_read_tool_registry.py`、`agent_skill_router.py`、`services/agent_policy_service.py`、`agent_read_tool_service.py`、`agent_skill_router_service.py`、`agent_attention_service.py`、`agent_event_service.py`、`agent_result_reflection_service.py`、`agent_recovery_review_service.py`）。其中多数是 §5/§6/§8/§13/§14 的别名，随其一并跳过；不得作为“目录骨架”预先落地。 |
-| §20 ActionEnvelope v3 | 未实现-建议跳过 | 与 §0.4-D2 同一决策；`tests/unit/test_agent_harness_service.py:107-115` 是直接反例。其“Execute/Shell/FileWrite/Network/IssueTicket 永不进入 Union”一条**已经成立**，因为 Union 只有 2 个成员。 |
+| §19 推荐代码结构 | 未实现 | 所列 **14 个新文件全仓 0 命中**（`schemas/agent_action.py`、`agent_tool.py`、`agent_policy.py`、`agent_attention.py`、`agent_event.py`、`runtime/agent_read_tool_registry.py`、`agent_skill_router.py`、`services/agent_policy_service.py`、`agent_read_tool_service.py`、`agent_skill_router_service.py`、`agent_attention_service.py`、`agent_event_service.py`、`agent_result_reflection_service.py`、`agent_recovery_review_service.py`）。其中多数是 §5/§6/§8/§13/§14 的别名，随其一并跳过；不得作为“目录骨架”预先落地。 |
+| §20 ActionEnvelope v3 | 未实现-建议跳过 | 与 §0.4-D2 同一决策；`tests/unit/test_agent_harness_service.py` 的 `test_two_typed_actions_parse_and_removed_actions_or_extra_fields_are_rejected` 是直接反例。其“Execute/Shell/FileWrite/Network/IssueTicket 永不进入 Union”一条**已经成立**，因为 Union 只有 2 个成员。 |
 | §21 运行状态机 | 未实现；且**其自我保留意见已采纳** | `schemas/agent_lifecycle.py:14-40` 的 25 个状态中**没有** `INSPECTING`/`REFLECTING`。§21 末段“优先采用保守方案（lifecycle state 不变，用 Harness step kind 表示）”与本裁定一致，但 `schemas/agent_harness.py:240` 的 `AgentHarnessStep.kind` 目前复用动作枚举、没有 inspection/reflection kind，故保守方案同样未实现。另需更正：§21 的线性链省略了现存的 `WAITING_FOR_SCIENCE_DECISION`、`DIAGNOSING`、`RETRYING`、`RECOVERING`、`SUCCEEDED`/`FAILED`/`CANCELED`，**不得当作当前状态机描述**。 |
 | §22.1～§22.3、§22.5 | 未实现（其验证对象不存在） | 依赖 §5/§6/§8 与模型动作；§22.5 的部分不变量已由 `agent_recovery_command_service.py:39` 与 lifecycle 迁移表覆盖。 |
 | §22.4 | **已实现** | `AgentResultExplanation` 真值字段 + `generated_text_status` + `_guard_generated_text()`（§10 行证据）。 |
 | §22.6 | **已被取代** | 归阶段十四 `01` 的 G0；其新增指标（含 “mean read-tool calls”）依赖被跳过的 §5。 |
 | §23 Phase 1（Observation） | 未立项-经批准跳过 | §0.4-D2 |
 | §23 Phase 2（Policy Layer） | 未立项-经批准跳过 | §0.4-D3 |
-| §23 Phase 3（Skill Expansion） | 部分立项-归**阶段十二-09** | 剩余 2 个 Product Skill 是阶段十二未闭合项；本阶段不重复承接，也不得建第二个 Skill 台账。 |
+| §23 Phase 3（Skill Expansion） | 部分立项-归**阶段十二-09** | 剩余 2 个 Product Skill 已随清单 D-04 于 2026-10-02 决定不立项，阶段十二-`09` 范围据此收缩并闭环归档；本阶段不重复承接，也不得建第二个 Skill 台账。 |
 | §23 Phase 4（Context Retrieval） | 未立项-经批准跳过 | §0.4-D2；服务端裁剪部分已在 §9 行判定为已实现。 |
 | §23 Phase 5（Result Reflection） | 不变量已实现；动作未立项 | 真值守护见 §10；`explain_result` 动作随 §0.4-D2 跳过。 |
 | §23 Phase 6（Recovery Reviewer） | 未立项-经批准跳过 | 确定性候选 + 独立审批链已在 §11；模型审查动作随 §0.4-D2 跳过。 |
@@ -70,7 +72,7 @@
 | ID | 决策 | 影响 | 重启条件 |
 |---|---|---|---|
 | **D1** | 本阶段唯一获批实施包是 **§17 Windows Sandbox 网络隔离硬化**。§4/§5/§6/§8/§9.2/§13/§14/§19/§20/§21 全部延期。 | §17 属基础设施硬化，不新增科学/执行能力，不改变任何能力等级。 | 见 §0.5。 |
-| **D2** | **不接受**“给模型只读拉取能力”（§5 读工具 + §9.2 On-demand Evidence + §20 `InspectAction`）。证据继续**只能由服务端在调用模型前组装**。 | 维持 `AGENTS.md` §1.3 的“LLM 只能规划/解释/校验/提出动作”边界；保持 `tests/unit/test_agent_harness_service.py:107-115` 的拒绝断言有效；与阶段十二 G-08（`Agent简洁优化实施方案.md` §5.4，`Agent改造/03` 标头）的反向收敛决定一致。 | 同时满足三条才可重开：① 有可度量证据表明服务端预组装在真实任务上**遗漏了阻断性科学事实**（须来自可导出的人工标注 Trace 语料，不得来自合成 fixture）；② 单独立项并同步 Tool Catalog、Approval Gate、审计、安全 allowlist、API/前端能力展示与测试；③ 维护者显式承担 `AGENTS.md` §3.2 受保护模块改动风险。 |
+| **D2** | **不接受**“给模型只读拉取能力”（§5 读工具 + §9.2 On-demand Evidence + §20 `InspectAction`）。证据继续**只能由服务端在调用模型前组装**。 | 维持 `AGENTS.md` §1.3 的“LLM 只能规划/解释/校验/提出动作”边界；保持 `tests/unit/test_agent_harness_service.py` 的 `test_two_typed_actions_parse_and_removed_actions_or_extra_fields_are_rejected` 的拒绝断言有效；与阶段十二 G-08（`Agent简洁优化实施方案.md` §5.4，`阶段十二/Agent改造/03` 标头）的反向收敛决定一致。 | 同时满足三条才可重开：① 有可度量证据表明服务端预组装在真实任务上**遗漏了阻断性科学事实**（须来自可导出的人工标注 Trace 语料，不得来自合成 fixture）；② 单独立项并同步 Tool Catalog、Approval Gate、审计、安全 allowlist、API/前端能力展示与测试；③ 维护者显式承担 `AGENTS.md` §3.2 受保护模块改动风险。 |
 | **D3** | **跳过** §6 `AgentPolicyService`，不新增策略服务或 `AgentPolicyDecision`/`policy_hash` schema。 | 策略权威保持为 `assert_capability_allowed()` + Approval Gate + Execution Ticket + 唯一 Execution Gateway 这一条链，避免第二个策略判决点。 | 动作面因 D2 重启而真实扩大、且 `assert_capability_allowed()` 出现**跨 handler 的重复判断**时；届时应先扩展现有函数而不是新建服务。 |
 | **D4** | 文档处置：**保持单文件**，加本节裁定表并就地更正矛盾描述；不拆子方案目录、不归档。 | 避免为一份只有一个获批实施项的提案引入 3 个索引与全部交叉引用的移动风险。 | 若 §0.4-D1 实施完成且 §17 闭环，本文件按 `specs/索引.md` 生命周期规则整体移入 `已完成实施方案/`。 |
 
@@ -80,8 +82,8 @@
 
 - **该 provider 当前没有生产消费者。** `runtime/node_contract_registry.py:664-668` 只对 `backend in {"matlab-spm","dpabi"}` 给出 `process_mode="sandbox_process"`，而这些外部后端的契约 `executable` 为 `False`（`:583,589` 等），`services/sandbox_policy_service.py:56` 对无 executable 的契约 `continue`，因此 `SandboxPolicySet` 在生产配置下为**空集**。
 - 直接后果：网络隔离**无法**用“真实科学节点跑一遍”来取证；可取证的最强层级是 **provider 级实测**——由 `tests/integration/test_windows_process_sandbox.py` 与 CI `windows-sandbox` job 用探针进程验证“沙箱内出站连接失败、沙箱外成功”的对照，且必须证明原有文件系统写入/超时/进程树终止保证未退化。
-- 因此 §17 的验收必须包含：① 先补 characterization 测试锁定现有 provider 公共行为；② 把 `schemas/sandbox.py` 的 `Literal["not_enforced"]` 改为可表达真实施加状态并**由自检实测得出**，禁止用常量或硬编码标签冒充（`AGENTS.md` §3.6 末段关于“由对象自身内容导出的哈希/指纹”同一原则）；③ 三处自检输出与 4 个既有断言同步切换且不保留 `not_enforced` 兼容读取（`AGENTS.md` §3.0）；④ 不得因此开启 MATLAB/SPM/DPABI 或任何外部执行入口。
-- 实施机制（受限令牌去除网络权限 / Job Object 网络速率控制 / AppContainer 无 capability 启动）之间的隔离强度与副作用差异很大，属于需要维护者单独确认的架构选择，见本轮 Completion Report 的 Remaining risks。
+- 因此 §17 的验收必须包含：① 先补 characterization 测试锁定现有 provider 公共行为；② 把 `schemas/sandbox.py` 的 `Literal["not_enforced"]` 改为可表达真实施加状态并**由自检实测得出**，禁止用常量或硬编码标签冒充（`AGENTS.md` §3.6 末段关于“由对象自身内容导出的哈希/指纹”同一原则）；③ 全部当前消费者同步切换且不保留 `not_enforced` 兼容读取（`AGENTS.md` §3.0、§3.4）：后端三处自检 `sandbox_policy_service.py:72`、`execution_environment_service.py:159`、`desktop_backend_entry.py:360`，加类型定义 `schemas/sandbox.py:38,79`，加**2026-10-02 复核补齐的两个遗漏消费者**——路由透传 `api/sandbox_routes.py:24` 与前端类型 `src/frontend/src/lib/types/sandbox.ts:23`；测试侧 `not_enforced` 共 5 处、分布在 4 个文件（`tests/api/test_sandbox_attempt_api.py:23,65`、`tests/integration/test_windows_process_sandbox.py:38`、`tests/unit/test_desktop_backend_entry.py:116`、`tests/unit/test_execution_ticket.py:220`）；④ 不得因此开启 MATLAB/SPM/DPABI 或任何外部执行入口。
+- 实施机制（受限令牌去除网络权限 / Job Object 网络速率控制 / AppContainer 无 capability 启动）之间的隔离强度与副作用差异很大，属于需要维护者单独确认的架构选择，已登记为 `specs/待人工审核校验清单.md` D-03（该条同时收录探针实测的人工判读与 SDK 结构体核实）。
 - **2026-10-02 已做的机制探测（结论：Job Object 网络速率控制在当前环境不可用）**：在 `10.0.26200`
   上用 ctypes 直接调用 `SetInformationJobObject`，对 `JobObjectNetRateControlInformation` 的候选
   information class 13/14/15、结构体尺寸 37/38/40 共九种组合**全部返回 `ERROR_BAD_LENGTH`(24)**，
@@ -558,7 +560,8 @@ Plan
 # 4. 优化一：扩展 Capability-based Action Space
 
 > **裁定（2026-10-02）：未实现-建议跳过。** 见 §0.2 §4 行与 §0.4-D2。A2/A3 分级在动作面被
-> `tests/unit/test_agent_harness_service.py:107-115` 固化拒绝的前提下没有可落地的中间态。
+> `tests/unit/test_agent_harness_service.py 的
+`test_two_typed_actions_parse_and_removed_actions_or_extra_fields_are_rejected`` 固化拒绝的前提下没有可落地的中间态。
 > 本节保留为分级设计参考，不是待办。
 
 
@@ -1071,7 +1074,8 @@ Agent Proposal
 > `registry.py:47-95` 严格注册表（manifest/hash/capability/Context-section 校验、`validate_all`）与
 > `agent_skills/schemas.py:16-30` `SkillManifest`（已有 `allowed_actions`/`allowed_states`/
 > `required_context_sections`/`output_schema_ref`/`content_hash`）。剩余工作是**新增 Skill 内容**，
-> 归属阶段十二-`09` 未闭合项，本阶段不重复承接、不另建 Skill 台账。§7.2 中含 `inspect_*` 允许动作的
+> 剩余工作归属阶段十二-`09`，该文档已于 2026-10-02 按清单 D-04 的「不立项、正式收缩为 1 个 Skill」
+> 决定闭环归档；本阶段不重复承接、不另建 Skill 台账。§7.2 中含 `inspect_*` 允许动作的
 > 示例随 §0.4-D2 失效；§7.4 的 `allowed_tool_refs`/`data_access_classes` 同上。
 
 ## 7.1 当前问题
@@ -1339,7 +1343,8 @@ class AgentEvidenceSlice(BaseModel):
 > 与 `generated_text` + `generated_text_status: not_requested｜accepted｜conflict_rejected` 分离，
 > `services/agent_task_result_summary.py:109-174` `_guard_generated_text()` 在文本与真值冲突时丢弃文本并
 > 记 `conflict_rejected`。因此 §2.1.3 的判定成立，§10 的剩余量只有 `explain_result`/`propose_next_step`
-> 两个**动作 kind**，它们正是 §0.4-D2 拒绝、且被 `tests/unit/test_agent_harness_service.py:107-115`
+> 两个**动作 kind**，它们正是 §0.4-D2 拒绝、且被 `tests/unit/test_agent_harness_service.py 的
+`test_two_typed_actions_parse_and_removed_actions_or_extra_fields_are_rejected``
 > 固化为拒绝断言的项。§10 顶部的 Observe→…→Reflect 闭环图不得读作当前调用链。
 
 目标：
@@ -1911,7 +1916,9 @@ Context Egress Policy
 > `Literal["not_enforced"] = "not_enforced"`——**类型上无法表达“已强制”**；
 > `runtime/windows_process_sandbox.py` 全文没有一处网络相关实现（只有 `:191-202` 的 Job Object 资源限额与
 > `:204-257` 的受限令牌）；`sandbox_policy_service.py:72`、`execution_environment_service.py:159`、
-> `desktop_backend_entry.py:360` 三处自检固定上报 `not_enforced`，并被 4 个测试断言。
+> `desktop_backend_entry.py:360` 三处自检固定上报 `not_enforced`，并被 4 个测试文件中的 5 处断言/夹具固定；
+> 消费者还包括路由透传 `api/sandbox_routes.py:24` 与前端类型 `src/frontend/src/lib/types/sandbox.ts:23`
+> （完整切换清单见 §0.5-③）。
 >
 > **必须同时修正的范围前提**：本节把该缺口描述为“外部 CLI/connector/subprocess 上线前必须补”，但复核发现
 > **该 provider 当前没有生产消费者**——`runtime/node_contract_registry.py:664-668` 只对
@@ -1969,7 +1976,8 @@ Agent Process
 > `evidence_snapshot_hash`、`goal_hash`、`planning_inputs_hash`、`parent_plan_hash`、`ticket_id`、
 > `run_id`、`observation_id`、`evaluation_id`、`memory_context_hash` 及记忆门控状态。
 > 剩余量只有 §18.1 的**叙事式分层展示与默认折叠**，这与阶段十二 `Agent简洁优化实施方案.md` §5.2
-> “单一 `TaskCard` 信息层级”是**同一个未闭合项**，必须并入该条推进，不得另立第二条前端信息层级改造线。
+> “单一 `TaskCard` 信息层级”是**同一条改造线**；该线已于 2026-10-02 落到源码并随阶段十二归档，
+> 必须并入该条推进，不得另立第二条前端信息层级改造线。
 > 本节未获本轮立项（§0.4-D1 只批 §17）。
 
 当前底层已经有：
@@ -2091,7 +2099,8 @@ src/backend/app/
 
 > **裁定（2026-10-02）：未实现-建议跳过（§0.4-D2）。** 当前 Union 只有 `RequestDecisionAction` 与
 > `DraftPlanAction` 两个成员（`schemas/agent_harness.py:25`），且
-> `tests/unit/test_agent_harness_service.py:107-115` 显式断言 `read_evidence`/`explain_result`/
+> `tests/unit/test_agent_harness_service.py 的
+`test_two_typed_actions_parse_and_removed_actions_or_extra_fields_are_rejected`` 显式断言 `read_evidence`/`explain_result`/
 > `propose_recovery`/`finish` 解析即抛错。本节末段“Execute/Shell/FileWrite/Network/IssueTicket 永不进入
 > Union”**已经是事实**，不需要新增约束来保证。
 

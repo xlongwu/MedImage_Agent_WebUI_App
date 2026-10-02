@@ -1,10 +1,30 @@
 # Agent 简洁优化实施方案
 
-> 状态：部分实现（2026-10-01 源码复核，含当日完成的 §5.3 实施）。逐条结论：
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
+> 状态：已实现（2026-10-02 源码复核；§5.1—§5.4、§5.6—§5.10 全部落地，证据层级为源码 +
+> 前端 format/typecheck/lint/test/build 与 focused 回归，不含 packaged/release 与可见 GUI 走查）。
+> 逐条结论：
 > §5.1 顶层导航收敛为 Projects/Agent/Runs/Settings —— 已实现
 > （`features/navigation/GlobalNavigationRail.tsx`）；
-> §5.2 单一 `TaskCard` 合并 —— **未实现**，`AgentWorkspace.tsx` 仍渲染多张同级卡片，
-> `TaskCard.tsx` 不存在，未列入本轮范围；
+> §5.2 单一 `TaskCard` 合并 —— 已实现（2026-10-02，维护者拍板本轮实施）：
+> `components/TaskCard.tsx` 是唯一视觉卡片，`ProjectSummaryCard.tsx`/`CurrentAction.tsx`/
+> `HarnessStatusCard.tsx` 已删除，`MacroProgress.tsx`→`TaskProgress.tsx`、
+> `NextActionCard.tsx`→`TaskActionPanel.tsx`、`RecoveryActionCard.tsx`→`TaskRecoveryPanel.tsx`、
+> `ResultSummaryCard.tsx`→`TaskResultPanel.tsx`、`DecisionBatchCard.tsx`→`DecisionBatchPanel.tsx`
+> 均去掉 `Card` 外壳，01～04 步骤编号已移除，Harness 脱敏预算与停止码投影移入 Level-3
+> `TaskDetails`（`components/HarnessSummary.tsx`）；卡片以 `role="region"`＋`agent.taskCard.label`
+> 作为唯一任务区，`WorkspaceLayoutContract.test.ts` 固化新布局并禁止旧卡片容器回潮。
+> 与本文的偏离：§5.2 表内的"Panel 不创建独立 Card"已满足，但 `AgentOperationalHealthCard`
+> 仍保留独立卡片外壳（属环境健康而非任务层级，未在 §7.2 清单内）。
+> §5.2 边界情况的证据（2026-10-02 归档审计补齐）：`components/ui/primitives.tsx` 的 `Progress`
+> 在 `value == null` 时改为渲染 `.progressIndeterminate` 动画条而不再画 0% 伪进度，回归为
+> `primitives.test.tsx` 与 `AgentWorkspace.test.tsx` 的
+> `keeps preparing and running states free of any primary action`（后者同时断言 running 态零个
+> `data-primary-action`）；canceled 终态样式与"无查看结果主动作"由既有
+> `renders goal revision and canceled terminal states in Chinese without stale actions` 覆盖。
 > §5.3 结构化公共合同 —— 已实现：删除 `current_action` 与 `next_action.title/description/
 > disabled_reason`，新增 `task_kind`/`execution_performed`，审批范围改为
 > `registered_subject_count`/`selected_subject_ids`/`node_ids`，结果改为 `summary_code`/
@@ -19,16 +39,28 @@
 > `planning_lease_owner`/`planning_generation`/`claim_planning` 与
 > `MEDIMAGE_AGENT_TASK_RESCAN_SECONDS` 未采用：经 2026-10-01 复核确认属于等价实现取代计划字段名，
 > 不再补建第二套并发权威；运行期不周期 rescan（worker 按 `next_due` 唤醒，rescan 只在启动时执行，
-> `RESCAN_LIMIT = 100` 是项目数上限而非扫描周期，>100 项目的续扫缺口归 `Harness优化` H05）；
+> `RESCAN_LIMIT = 100` 是项目数上限而非扫描周期，>100 项目的续扫缺口归 `Harness优化` 方案
+> §阶段 3.B 的启动扫描续扫（`specs/待人工审核校验清单.md` D-10）——**不是** H05，H05 指
+> OBSERVING/EVALUATING 中间状态被启动扫描跳过，已闭合）；
 > §5.7 决定批次 —— 已实现，但上限按方案 04 的 6 而非本文的 8，错误码实名 `AGENT_DECISION_*`；
 > §5.8 结果与恢复保持确定性 —— 顺序保持，但「不增加 Harness wake」已被后续实现取代：
 > `services/agent_task_reconciler.py` 现在会在终态协调后以 `run_reconciled` 唤醒 Harness（见方案 06）；
-> §5.9 降低 Assistant 入口权重 —— 未实现，TopBar 仍使用 `nav.assistant` 原文案；
+> §5.9 降低 Assistant 入口权重 —— 已实现（2026-10-02）：入口文案键由 `nav.assistant` 改为
+> `assistant.explainEntry`（"Explain the current task"/"解释当前任务"），Goal Composer 保持唯一
+> 任务入口；未选中项目时 `AssistantSheet` 只呈现 `assistant.noProjectBoundary` 只读边界、
+> 不再渲染提示建议面板；`TaskCard` 的"解释此任务"按钮只调用 `assistant.setInput` 预填当前
+> task/state/run 上下文并打开入口，不提交 create/answer/approve 命令；请求仍只走
+> `/api/assistant/chat`（`lib/api/assistant.ts`）。回归在 `AssistantSheet.test.tsx` 与
+> `AgentWorkspace.test.tsx`。
 > §5.10 审计与详情 —— 已实现但字段位置不同：`action_result_code` 在 step 上，wake reason 与
 > provider 只在 attempt/ModelCallRecord 层，未在 step 重复。
 > §12 决策 2 的 `202 Accepted` 未采纳：create/answer 返回 200 + 完整投影，但规划本身已移出 HTTP 请求
 > （`AgentPlanningService.create()` 只持久化并 `scheduler.notify()`），语义目标已达成。
 > 本文其余精确测试计数按 `AGENTS.md` §7.5 不作为稳定文档内容保留。
+> 2026-10-02 归档审计：本文 §5.4 所取代的 `01`、`03` 与源码范围已闭环的 `11`、`12` 移入
+> `specs/阶段记录/已完成实施方案/阶段十二/Agent改造/`，下文按编号引用它们时以该路径为准。
+> 本文 §5.2 的信息层级取舍已由维护者于 2026-10-02 拍板并实施（D-06 源码层闭环）；
+> §9.4 的九条人工走查仍未取证，登记在 `specs/待人工审核校验清单.md` A-13 与 P-03。
 > 任务模式：Architecture / Refactor + Feature Bundle。
 > 本文职责：收敛 Agent 默认交互和后台推进方式，作为后续开发的直接实施依据；本文不授权修改生产代码。
 > 方案关系：`00_Agent改造总体方案.md` 至 `04_项目证据收集与科学决策自动化方案.md` 提供背景和候选设计。本文选择其中当前必须完成的部分，并明确删除或延期的内容；在本文获批前，不改变已有方案状态。
@@ -825,15 +857,8 @@ pytest 后按 `AGENTS.md` 只清理仓库根直接子项 `.pytest_cache/` 和 `.
 
 ### 9.4 人工验收
 
-- 选择项目后直接进入 Agent；
-- 普通用户不需要理解 Data、Plan、Preprocessing、QC、Results、Harness 或 node；
-- 无科学歧义时，只需“提交目标 + 审批执行”；
-- 有多个科学问题时，只额外提交一次决定批次；
-- 一次审批后不需要点击 monitor、validate、refresh 或 report；
-- 结果页能明确区分 computed、partial、metadata-only、failed 和 plan-only；
-- 所有技术证据仍能从 Runs 或 Task Details 到达；
-- 页面刷新、服务重启和重复命令不产生重复执行；
-- rawdata 内容、大小和修改时间保持不变。
+九条走查内容已整体移入 `specs/待人工审核校验清单.md` 的 A-13 与其细则清单，该清单是唯一权威；
+本文不再重复列举，避免同一待办出现互不一致的版本。
 
 ## 10. 实施顺序和 Gate
 

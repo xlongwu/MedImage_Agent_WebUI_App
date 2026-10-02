@@ -1,4 +1,3 @@
-import { Badge, Card } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { MessageKey } from "../../../i18n/messages/en";
 import type { AgentHarnessSummary } from "../../../lib/types/agentTask";
@@ -10,7 +9,6 @@ const TERMINAL_REASON_KEYS: Readonly<Record<string, MessageKey>> = {
   AGENT_HARNESS_MODEL_CALL_BUDGET_EXHAUSTED: "agent.harness.reason.modelCallBudgetExhausted",
   AGENT_HARNESS_ACTION_PROPOSAL_BUDGET_EXHAUSTED: "agent.harness.reason.actionBudgetExhausted",
   AGENT_HARNESS_REPAIR_BUDGET_EXHAUSTED: "agent.harness.reason.repairBudgetExhausted",
-  AGENT_HARNESS_RECOVERY_BUDGET_EXHAUSTED: "agent.harness.reason.recoveryBudgetExhausted",
   AGENT_HARNESS_INPUT_TOKEN_BUDGET_EXHAUSTED: "agent.harness.reason.inputTokenBudgetExhausted",
   AGENT_HARNESS_OUTPUT_TOKEN_BUDGET_EXHAUSTED: "agent.harness.reason.outputTokenBudgetExhausted",
   AGENT_HARNESS_ACTIVE_TIME_BUDGET_EXHAUSTED: "agent.harness.reason.activeTimeBudgetExhausted",
@@ -31,21 +29,12 @@ const TERMINAL_REASON_KEYS: Readonly<Record<string, MessageKey>> = {
   MODEL_FINISHED: "agent.harness.reason.modelFinished",
 };
 
-export function HarnessStatusCard({ summary }: { summary: AgentHarnessSummary }) {
+export function HarnessSummary({ summary }: { summary: AgentHarnessSummary }) {
   const { t } = useI18n();
   return (
-    <Card className={styles.harnessStatus} aria-label={t("agent.harness.title")}>
-      <div className={styles.cardHeading}>
-        <div>
-          <span className={styles.eyebrow}>{t("agent.harness.eyebrow")}</span>
-          <h2>{t("agent.harness.title")}</h2>
-        </div>
-        <Badge
-          tone={summary.status === "STOPPED" || summary.status === "FAILED" ? "warning" : "info"}
-        >
-          {t(`agent.harness.status.${summary.status}`)}
-        </Badge>
-      </div>
+    <section className={styles.harnessSummary} aria-label={t("agent.harness.title")}>
+      <h3>{t("agent.harness.title")}</h3>
+      <p>{t(`agent.harness.status.${summary.status}`)}</p>
       <p>
         {t("agent.harness.budget", {
           steps: summary.steps_used,
@@ -90,6 +79,6 @@ export function HarnessStatusCard({ summary }: { summary: AgentHarnessSummary })
           })}
         </p>
       ) : null}
-    </Card>
+    </section>
   );
 }

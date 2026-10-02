@@ -1,5 +1,9 @@
 # 02：持久化 Agent 循环与调度器改造方案
 
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
 > 状态：已实现（2026-10-01 源码复核；证据层级为源码 + focused 回归，不含 packaged/release）。
 > 当前实现：`services/agent_harness_service.py` 的 `run_until_blocked()` 与 `HarnessLoopResult`
 > （`yielded`/`stopped`/`run_reconciled`）、attempt 的 `last_wake_reason`/`last_wake_fingerprint`/
@@ -10,6 +14,12 @@
 > `services/agent_task_scheduler.py`；配置前缀是 `MEDIMAGE_AGENT_HARNESS_...`（如
 > `MEDIMAGE_AGENT_HARNESS_MAX_STEPS_PER_WAKEUP`），不是文中的 `AGENT_TASK_...`。
 > 依赖：01 基线完成；03 的 Action handler 可按接口并行准备，但共享文件由单一 owner 修改。
+> 循环回归的实际锚点（2026-10-02 归档审计校正）：`run_until_blocked`/`max_steps_per_wakeup`/
+> `yield_count` 的名字不出现在 `tests/`，多步推进与关停是经命令行入口间接断言的——
+> `tests/integration/test_harness_review_baseline.py` 的 `planner.calls >= 2`（一次 wake 连续推进多步）、
+> `scheduler.shutdown()` 返回值与 `test_future_retry_wakes_the_worker_without_a_new_command` 共同覆盖
+> §8-1/2/8-8；不得因符号名未出现而判为无覆盖，也不得把它读成逐步 yield 上限的专项断言
+> （`max_steps_per_wakeup` 达到上限后保持 `READY` 重排队这一条仍无专项回归）。
 
 ## 1. 目标
 
@@ -163,7 +173,7 @@ provider 不可用时允许转到当前确定性 Planner，但必须：
 python -m pytest tests/unit/test_agent_harness_service.py tests/unit/test_agent_harness_lease.py tests/unit/test_agent_task_reconciler.py tests/integration/test_agent_harness_lifecycle.py --tb=short --basetemp=.pytest_tmp
 ```
 
-人工验收：一个无需补充输入的规划任务创建后自动到达 `WAITING_FOR_APPROVAL`，页面刷新和服务重启不产生重复 step 或计划。
+人工验收项已移入 `specs/待人工审核校验清单.md` A-06（该行为唯一权威）。
 
 ## 9. 实施顺序
 

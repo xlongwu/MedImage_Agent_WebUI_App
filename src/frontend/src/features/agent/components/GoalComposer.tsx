@@ -5,11 +5,15 @@ import { useI18n } from "../../../i18n/useI18n";
 import styles from "../AgentWorkspace.module.css";
 
 export function GoalComposer({
+  dataStateLabel,
   disabled,
   onSubmit,
+  projectName,
 }: {
+  dataStateLabel: string;
   disabled: boolean;
   onSubmit: (goal: string) => Promise<void>;
+  projectName: string;
 }) {
   const { t } = useI18n();
   const [goal, setGoal] = useState("");
@@ -34,9 +38,11 @@ export function GoalComposer({
     <Card className={styles.goalComposer} role="region" aria-label={t("agent.goalTitle")}>
       <form onSubmit={handleSubmit}>
         <div>
-          <span className={styles.stepNumber}>01</span>
           <h2>{t("agent.goalTitle")}</h2>
           <p>{t("agent.goalDescription")}</p>
+          <p className={styles.taskContext}>
+            {projectName} · {dataStateLabel}
+          </p>
         </div>
         <label className={styles.goalField}>
           <span>{t("agent.goalLabel")}</span>

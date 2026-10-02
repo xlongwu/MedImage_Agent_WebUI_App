@@ -1,6 +1,11 @@
 # 06：Observation、Reflector 与恢复闭环方案
 
-> 状态：部分实现（2026-10-01 源码复核），其中 §4.2/§4.3 的扩展 Action 部分已随 03 一并正式跳过。
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
+> 状态：已实现（2026-10-02 源码范围闭环；证据层级为源码 + focused 回归，不含 packaged/release）。
+> §4.2/§4.3 的扩展 Action 部分已随 03 一并正式跳过，§5 的 attempt 级恢复预算已被取代（见下）。
 > 已落地：`services/agent_task_reconciler.py` 在 deterministic 终态协调后以 `run_reconciled` 幂等唤醒
 > Harness（命令/monitor owner 才发送，GET 投影不发送）；`schemas/agent_task.py:AgentResultExplanation`
 > 提供确定性结果解释，`services/agent_task_result_summary.py:_guard_generated_text()` 用
@@ -10,9 +15,12 @@
 > 兼容 validator 已删除。
 > 未落地且已随 03 跳过：`explain_result`/`propose_recovery` 处理器（结果说明与恢复建议仍由确定性
 > 服务产出，Harness 动作面只有 `request_decision`/`draft_plan`）。
-> 未落地：§5 的 attempt 级 `recovery_attempts_used` 恢复预算——恢复配额当前是 lifecycle 级
-> （`schemas/recovery.py:RecoveryQuota`：`max_lifecycle_recovery_attempts/max_node_attempts/
-> max_subject_node_attempts/max_replans/max_recovery_wall_seconds`），未在 Harness attempt 上重复记账。
+> 已被取代、不得据以恢复：§5 的 attempt 级 `recovery_attempts_used` 恢复预算与 §4 表格中的该行。
+> `Agent简洁优化实施方案.md` 明确「复用现有模型调用、proposal、wall time、lease 和 lifecycle
+> retry quota，不新增第二套恢复预算」，恢复配额继续由 lifecycle 级
+> `schemas/recovery.py:RecoveryQuotaLimits`（`max_lifecycle_recovery_attempts/max_node_attempts/
+> max_subject_node_attempts/max_replans/max_recovery_wall_seconds`）单一权威承担；
+> 与维护者在 `specs/待人工审核校验清单.md` D-05 的拍板一致（删除前端死表面，不补 attempt 维度）。
 > 依赖：02 事件唤醒、03 Action handler、05 计划版本。
 
 ## 1. 目标
@@ -150,7 +158,7 @@ Reflector 只能选择“解释、补读证据、展示已生成恢复、转人�
 python -m pytest tests/unit/test_agent_task_reconciler.py tests/unit/test_observation_collector.py tests/unit/test_goal_evaluator.py tests/unit/test_agent_task_result_summary.py tests/unit/test_recovery_execution.py tests/integration/test_agent_harness_lifecycle.py --tb=short --basetemp=.pytest_tmp
 ```
 
-人工验收：审批一次后，成功 run 自动显示结果和证据；失败 run 自动显示 diagnosis/recovery，但点击审批前不会重新执行。
+人工验收项已移入 `specs/待人工审核校验清单.md` A-09（该行为唯一权威）。
 
 ## 9. 实施顺序
 

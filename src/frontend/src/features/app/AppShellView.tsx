@@ -375,6 +375,15 @@ export function AppShellView({
                 advancedMode={appState.advancedMode}
                 controller={agentTaskController}
                 inventory={projectInventory}
+                onExplainTask={() => {
+                  const task = agentTaskController.task;
+                  assistant.setInput(
+                    task
+                      ? `${t("assistant.prompt.agentExplain")}: ${task.goal_summary} (state: ${task.state}, run: ${task.technical_details?.run_id ?? "—"})`
+                      : t("assistant.prompt.agentExplain"),
+                  );
+                  setAssistantOpen(true);
+                }}
                 onOpenRuns={() => {
                   if (selectedProjectId) navigation.openWorkspace(selectedProjectId, "runs");
                 }}

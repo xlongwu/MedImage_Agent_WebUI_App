@@ -1,9 +1,9 @@
-import { Badge, Button, Card } from "../../../components/ui";
+import { Badge, Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentTaskRecoverySummary } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
 
-export function RecoveryActionCard({
+export function TaskRecoveryPanel({
   mutating,
   onAbandon,
   onOpenDetails,
@@ -18,12 +18,11 @@ export function RecoveryActionCard({
 }) {
   const { t } = useI18n();
   return (
-    <Card className={styles.recoveryCard} tone="elevated">
-      <header className={styles.recoveryHeader}>
+    <section className={styles.taskRecovery}>
+      <header className={styles.taskPanelHeader}>
         <div>
-          <span className={styles.stepNumber}>03</span>
           <span className={styles.eyebrow}>{t("agent.nextAction")}</span>
-          <h2>{t("agent.recovery.title")}</h2>
+          <h3>{t("agent.recovery.title")}</h3>
           <p>{recovery.diagnosis}</p>
         </div>
         <Badge tone="warning">{t("agent.recovery.approvalRequired")}</Badge>
@@ -73,6 +72,6 @@ export function RecoveryActionCard({
           </Button>
         </div>
       </div>
-    </Card>
+    </section>
   );
 }

@@ -49,7 +49,7 @@ describe("TopBar", () => {
       screen.queryByRole("navigation", { name: "Primary navigation" }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Assistant" }));
+    await user.click(screen.getByRole("button", { name: "Explain the current task" }));
     expect(openAssistant).toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Inspector" }));

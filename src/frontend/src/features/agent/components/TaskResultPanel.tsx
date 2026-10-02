@@ -1,4 +1,4 @@
-import { Badge, Button, Card } from "../../../components/ui";
+import { Badge, Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentResultExplanation, AgentTaskResultSummary } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
@@ -9,7 +9,7 @@ import {
   getAgentRecommendedActionKey,
 } from "./agentTaskMessages";
 
-export function ResultSummaryCard({
+export function TaskResultPanel({
   baseUrl,
   onOpenRuns,
   result,
@@ -34,12 +34,11 @@ export function ResultSummaryCard({
   const recommendedActionKey = getAgentRecommendedActionKey(result.recommended_action_code);
   const exportDisabledKey = getAgentExportDisabledKey(result.export_disabled_code);
   return (
-    <Card className={styles.resultSummary}>
-      <div className={styles.resultHeader}>
+    <section className={styles.taskResult}>
+      <div className={styles.taskPanelHeader}>
         <div>
-          <span className={styles.stepNumber}>04</span>
           <span className={styles.eyebrow}>{t("agent.resultSummary")}</span>
-          <h2>{title}</h2>
+          <h3>{title}</h3>
         </div>
         <Badge
           tone={
@@ -136,6 +135,6 @@ export function ResultSummaryCard({
       {!result.report_export_uri && exportDisabledKey ? (
         <small>{t(exportDisabledKey)}</small>
       ) : null}
-    </Card>
+    </section>
   );
 }

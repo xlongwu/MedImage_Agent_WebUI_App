@@ -1,6 +1,11 @@
 # 09：Agent Skills 注册与工作规程方案
 
-> 状态：部分实现（2026-10-01 源码复核）。机制已完成，Product Skill 内容只交付首期 1 个。
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
+> 状态：已实现（2026-10-02 范围收缩后闭环；证据层级为源码 + focused 回归，不含 packaged/release）。
+> 机制已完成，Product Skill 内容按维护者决定固定为首期 1 个，§4 的另两个不再立项。
 > 已落地：`agent_skills/registry.py`（静态 `BUILTIN_SKILL_IDS` allowlist、不扫描目录、启动校验唯一
 > ID/hash/capability/预算）、`loader.py`、`schemas.py`、`AGENT_SKILL_UNAVAILABLE` 安全降级、
 > `SkillContextRef` 绑定到 `Context.skill_refs`/`Step.skill_refs`/`ModelCallRecord.skill_hashes`，
@@ -12,7 +17,14 @@
 > 见 03 的取代说明）。2026-10-01 复核时仓库内曾残留 `agent_skills/result_explanation.v1/` 与
 > `agent_skills/recovery_review.v1/` 两个**未被 Git 跟踪的空目录**（无内容，却极易被误读为已交付，
 > 本轮审计即被其误导），已删除；目录清单现与 `BUILTIN_SKILL_IDS` 严格一致。
-> 依赖：03 Action 合同、07 Context v2、08 模型记录。
+> 依赖：03 Action 合同（已归档至
+> `specs/阶段记录/已完成实施方案/阶段十二/Agent改造/03_Agent动作合同与能力处理器改造方案.md`）、
+> 07 Context v2、08 模型记录。
+> §4 剩余两个 Product Skill 已由维护者在 2026-10-02 正式决定**不立项**（
+> `specs/待人工审核校验清单.md` D-04 状态改为"正式收缩"）：`result_explanation.v1` 与
+> `recovery_review.v1` 的触发 Action（`explain_result`/`propose_recovery`）已随 `03` 移除，
+> 立项只会产生没有消费者的规程。本文范围据此收缩为「机制 + 1 个 Skill」即闭环；
+> 若将来恢复执行后解释类动作，必须重新立项而不是沿用本文 §4。
 > 注意：本方案中的 Product Skill 与仓库 `.agents/skills/` 开发工具无关，二者不得互相加载。
 
 ## 1. 目标

@@ -1,5 +1,18 @@
 # 01：当前 Agent 基线与差距分析
 
+> 归档状态：本文于 2026-10-02 随阶段十二 `Agent改造` 整目录归档，只记录当时的范围与验收依据；
+> 当前行为一律以源码、测试、`PROJECT_STATE.md` 和专项文档为准，需要人工取证或人工拍板的条目集中在
+> `specs/待人工审核校验清单.md`。
+
+> 归档审计（2026-10-02）：本文声明的当前范围已闭环——它是一次性基线快照，其"当前行为"主张
+> 全部被取代，因此作为历史审计记录归档。归档不外推为发布结论：本文 §5 的 `release_evidence=unknown`
+> 至今未变，Harness 的 packaged/GUI 与发布证据仍是待人工校验项，集中登记在
+> `specs/待人工审核校验清单.md`（P-02，以及 A-01…A-05 的 Harness 人工验收场景）。Harness 的当前源码与入口合同以
+> `docs/规划与运行时/受控单AgentHarness.md` 和当前源码为准；总览与逐份结论以同目录的
+> `00_Agent改造总体方案.md` 及各子方案标头为准（本文已于 2026-10-02 随阶段十二 `Agent改造`
+> 整目录归档）。当前行为一律以源码、测试和
+> `PROJECT_STATE.md` 为准。
+
 > 状态：已被取代（2026-08-09 基线快照；2026-10-01 源码复核）。
 > 本文 §2/§5 的「当前」描述对应阶段十一末的源码：六种 Action、`runtime/agent_harness_scheduler.py`、
 > `AgentTaskCommandService._plan()` 已分别被 `schemas/agent_harness.py:AgentHarnessActionKind`（两种）+

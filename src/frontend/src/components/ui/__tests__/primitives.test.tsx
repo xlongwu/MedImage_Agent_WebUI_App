@@ -73,6 +73,16 @@ describe("ui primitives", () => {
     );
   });
 
+  it("renders an indeterminate bar instead of a fake 0% fill when progress is unknown", () => {
+    render(<Progress label="Overall progress" value={null} />);
+
+    const bar = screen.getByRole("progressbar", { name: "Overall progress" });
+    expect(bar).not.toHaveAttribute("aria-valuenow");
+    expect(screen.getByText("—")).toBeInTheDocument();
+    // A determinate fill is the only thing that sets an inline width; none must be painted here.
+    expect(bar.querySelector('[style*="width"]')).toBeNull();
+  });
+
   it("renders controlled dialog and closes with Escape", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
