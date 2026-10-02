@@ -19,8 +19,6 @@ describe("HarnessStatusCard", () => {
             steps_limit: 8,
             repairs_used: 0,
             repairs_limit: 1,
-            recovery_attempts_used: 0,
-            recovery_attempts_limit: 2,
             input_tokens_used: null,
             input_tokens_limit: null,
             output_tokens_used: null,
@@ -43,10 +41,12 @@ describe("HarnessStatusCard", () => {
     expect(screen.getByRole("heading", { name: "规划追踪" })).toBeInTheDocument();
     expect(screen.getByText("等待你处理")).toBeInTheDocument();
     expect(
-      screen.getByText("步骤：1/8；模型调用：1/6；动作提议：1/8；每步修复：0/1；恢复：0/2。"),
+      screen.getByText("步骤：1/8；模型调用：1/6；动作提议：1/8；每步修复：0/1。"),
     ).toBeInTheDocument();
     expect(screen.getByText("实际规划路径：rule_based。")).toBeInTheDocument();
     expect(screen.getByText("需要确认图谱。")).toBeInTheDocument();
+    // The harness budget line must never interpolate absent backend fields.
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
   });
 
   it("renders the next step and maps a structured stop code through i18n", () => {
@@ -63,8 +63,6 @@ describe("HarnessStatusCard", () => {
             steps_limit: 8,
             repairs_used: 0,
             repairs_limit: 1,
-            recovery_attempts_used: 0,
-            recovery_attempts_limit: 2,
             input_tokens_used: 12,
             input_tokens_limit: 100,
             output_tokens_used: 3,

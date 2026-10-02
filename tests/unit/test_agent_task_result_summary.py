@@ -40,8 +40,8 @@ def test_result_summary_downgrades_reload_failure_and_explains_limitations() -> 
         evaluation=evaluation,
     )
     assert summary.outcome == "partial"
-    assert any("preview" in item.lower() for item in summary.limitations)
-    assert any("metadata" in item.lower() for item in summary.limitations)
+    assert summary.summary_code == "result.partial"
+    assert summary.limitation_codes == ("preview_only", "metadata_only")
 
 
 def test_result_summary_accepts_satisfied_required_evidence_when_only_optional_source_is_missing() -> None:
@@ -95,7 +95,7 @@ def test_result_summary_reports_completed_subject_with_scientific_limitations() 
     assert summary.outcome == "partial"
     assert summary.completed_subjects == 1
     assert summary.failed_subjects == 0
-    assert any("simplified" in item.lower() for item in summary.limitations)
+    assert "simplified" in summary.limitation_codes
 
 
 def test_result_summary_rejects_cross_run_binding() -> None:

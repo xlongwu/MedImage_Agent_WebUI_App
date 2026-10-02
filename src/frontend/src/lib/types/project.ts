@@ -10,12 +10,11 @@ export interface ProjectSummary {
     task_id: string;
     state: "preparing" | "waiting_for_user" | "running" | "needs_attention" | "completed";
     outcome: "succeeded" | "partial" | "failed" | "canceled" | "indeterminate" | null;
+    task_kind: import("./agentTask").AgentTaskKind;
     goal_summary: string;
-    current_action: string;
     current_action_code: import("./agentTask").AgentTaskCurrentActionCode;
     requires_user: boolean;
-    result_title: string | null;
-    recent_activity: string;
+    result_summary_code: import("./agentTask").AgentTaskResultSummaryCode | null;
     updated_at: string;
   } | null;
 }

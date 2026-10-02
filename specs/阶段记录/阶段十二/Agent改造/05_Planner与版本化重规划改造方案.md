@@ -1,6 +1,10 @@
 # 05：Planner 与版本化重规划改造方案
 
-> 状态：Implemented，已完成代码与回归验证；仍按项目流程接受人工 Review。
+> 状态：已实现（2026-10-01 复核确认；证据层级为源码 + focused 回归，不含 packaged/release）。
+> 与本文的偏离：规划链已从 `AgentTaskCommandService._plan()` 抽到 `services/agent_planning_service.py`
+> （`_build_planning_request()` 现在该文件内），Reviewed Plan 持久化入口实名
+> `planner/reviewed_plan_store.py:save_reviewed_plan()`（不是 `persist_reviewed_plan()`）；文件清单需补
+> `services/agent_planning_service.py` 与 `schemas/planning.py`。
 > 依赖：04 提供 EvidenceSnapshot 和决定批次；06 的恢复重规划复用本文合同。
 
 ## 1. 目标

@@ -1,6 +1,17 @@
 # 09：Agent Skills 注册与工作规程方案
 
-> 状态：Draft，待人工 Review。
+> 状态：部分实现（2026-10-01 源码复核）。机制已完成，Product Skill 内容只交付首期 1 个。
+> 已落地：`agent_skills/registry.py`（静态 `BUILTIN_SKILL_IDS` allowlist、不扫描目录、启动校验唯一
+> ID/hash/capability/预算）、`loader.py`、`schemas.py`、`AGENT_SKILL_UNAVAILABLE` 安全降级、
+> `SkillContextRef` 绑定到 `Context.skill_refs`/`Step.skill_refs`/`ModelCallRecord.skill_hashes`，
+> 并由 `desktop/packaging/pyinstaller_backend.spec` 打包现存 Skill。
+> 与本文的偏离：当前只有 `planning_evidence_review.v1` 一个 Skill（`allowed_actions =
+> ["request_decision","draft_plan"]`），§4 承诺的 `result_explanation.v1` 与 `recovery_review.v1`
+> 未实现，`tests/unit/test_agent_skill_documentation.py` 与打包契约测试也按 1 个固化；
+> `AgentSkillLoader` 的入口实名 `load_for_state(state, context)`，不按 Action 选择（动作面已缩到两种，
+> 见 03 的取代说明）。2026-10-01 复核时仓库内曾残留 `agent_skills/result_explanation.v1/` 与
+> `agent_skills/recovery_review.v1/` 两个**未被 Git 跟踪的空目录**（无内容，却极易被误读为已交付，
+> 本轮审计即被其误导），已删除；目录清单现与 `BUILTIN_SKILL_IDS` 严格一致。
 > 依赖：03 Action 合同、07 Context v2、08 模型记录。
 > 注意：本方案中的 Product Skill 与仓库 `.agents/skills/` 开发工具无关，二者不得互相加载。
 

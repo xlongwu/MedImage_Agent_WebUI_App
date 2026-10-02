@@ -105,11 +105,13 @@ def test_summary_binds_selected_subject_and_changes_hash_with_scope(tmp_path) ->
         now=NOW,
     )
 
-    assert first.dataset_summary == "1 selected subject: sub-001"
+    assert first.registered_subject_count == 2
+    assert first.selected_subject_ids == ("sub-001",)
+    assert changed.selected_subject_ids == ("sub-002",)
     assert first.sections[0].summary == (
         "Approve exactly 1 reviewed node(s) for subject sub-001."
     )
-    assert first.schema_version == 4
+    assert first.schema_version == 5
     assert first.resource_policy == {
         "cpu_policy": {"mode": "auto"},
         "compute_policy": {"backend": "auto", "allow_cpu_fallback": True},

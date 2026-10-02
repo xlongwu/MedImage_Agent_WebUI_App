@@ -1,6 +1,17 @@
 # 08：Agent 预算账本与模型调用治理方案
 
-> 状态：Implemented，已完成代码、focused backend 和 frontend 回归验证；仍按项目流程接受人工 Review。
+> 状态：部分实现（2026-10-01 源码复核）。原标头「Implemented」偏高，现予下调。
+> 已落地：`ModelCallRecord` 全量账本字段（含 `phase`、`skill_hashes`/`skill_error_codes`、
+> `model_profile_hash`、`network_called` 等本文未列的扩展）、attempt 级 steps/model calls/proposals/
+> repairs/token/active-seconds 计数、按 phase 的调用分配、审批前零副作用的原子结算与崩溃对账、
+> 分维度 `*_BUDGET_EXHAUSTED` 停止码、`LLMProviderResult` 的 usage/latency/request ID。
+> 与本文的偏离：时间预算实名 `max_active_seconds`（环境变量
+> `MEDIMAGE_AGENT_HARNESS_MAX_ACTIVE_SECONDS`，累计 active interval），不是 `max_wall_seconds`；
+> `AgentHarnessSummary` 暴露 step/call/proposal/repair/token 的 used+limit，但不含时间预算。
+> 未落地：§5 的恢复预算维度——`max_recovery_attempts` 与
+> `MEDIMAGE_AGENT_HARNESS_MAX_RECOVERY_ATTEMPTS` 在全仓不存在，恢复配额仍是 lifecycle 级
+> `schemas/recovery.py:RecoveryQuota`；因此 §6 声明的 `RECOVERY_BUDGET_EXHAUSTED` 也不存在。
+> §12 的精确测试计数按 `AGENTS.md` §7.5 不作为稳定文档内容保留。
 > 依赖：02 有限循环、07 Context v2；10 消费本方案记录进行 replay/评测。
 
 ## 1. 目标

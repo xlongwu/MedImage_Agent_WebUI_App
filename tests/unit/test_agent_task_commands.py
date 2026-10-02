@@ -851,7 +851,7 @@ def test_subject_decision_rebuilds_reviewed_plan_and_approval_scope(tmp_path) ->
     node = reviewed.payload["plan"]["nodes"][0]
     summary = reviewed.payload["approval_summary"]
     assert node["params"]["subject_id"] == "sub-001"
-    assert summary["dataset_summary"] == "1 selected subject: sub-001"
+    assert summary["selected_subject_ids"] == ["sub-001"]
     assert summary["sections"][0]["summary"] == (
         "Approve exactly 1 reviewed node(s) for subject sub-001."
     )

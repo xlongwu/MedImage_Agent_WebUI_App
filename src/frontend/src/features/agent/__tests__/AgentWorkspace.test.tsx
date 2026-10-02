@@ -9,21 +9,19 @@ import type { AgentTaskController } from "../useAgentTaskController";
 
 function approvalTask(): AgentTaskResponse {
   return {
-    schema_version: 1,
+    schema_version: 2,
     task_id: "task-1",
     project_id: "project-1",
     state: "waiting_for_user",
     outcome: null,
+    task_kind: "execution",
+    execution_performed: false,
     goal_summary: "Preprocess three subjects and generate FC",
-    current_action: "The reviewed plan is ready for approval.",
     current_action_code: "waiting_approval",
     next_action: {
       type: "approve_execution",
-      title: "Approve the processing plan",
-      description: "Review the bounded write scope before execution.",
       requires_user: true,
       decision_batch_id: null,
-      disabled_reason: null,
     },
     automation: {
       level: "A1",
@@ -44,8 +42,9 @@ function approvalTask(): AgentTaskResponse {
       execution_environment_snapshot_id: "environment-1",
       execution_environment_hash: "environment-hash-1",
       goal: "Preprocess three subjects and generate FC",
-      dataset_summary: "3 subjects · converted BIDS",
-      execution_summary: "Reviewed native preprocessing and FC",
+      registered_subject_count: 3,
+      selected_subject_ids: [],
+      node_ids: ["native_preproc", "fc"],
       write_roots: ["project://derivatives", "project://runs"],
       rawdata_read_only: true,
       external_tools: [],
@@ -274,12 +273,13 @@ describe("AgentWorkspace", () => {
       ...approvalTask(),
       approval_summary: {
         ...approvalTask().approval_summary!,
-        dataset_summary: "2 registered subject(s)",
-        execution_summary: "4 reviewed node(s); no dispatch before approval",
+        registered_subject_count: 2,
+        selected_subject_ids: [],
+        node_ids: ["dc", "realign", "smooth", "native_fc"],
       },
     };
 
-    render(
+    const { rerender } = render(
       <I18nProvider locale="zh-CN">
         <AgentWorkspaceView
           advancedMode={false}
@@ -291,10 +291,33 @@ describe("AgentWorkspace", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByText("2 名已登记受试者")).toBeInTheDocument();
+    expect(screen.getByText("2 名已登记受试者；覆盖全部数据范围")).toBeInTheDocument();
     expect(screen.getByText("4 个审核节点；批准前不会调度执行")).toBeInTheDocument();
     expect(screen.queryByText(/registered subject/)).not.toBeInTheDocument();
     expect(screen.queryByText(/reviewed node/)).not.toBeInTheDocument();
+
+    // A plan bound to a subject subset renders the selected-subject wording from
+    // the structured ids instead of a backend sentence.
+    rerender(
+      <I18nProvider locale="zh-CN">
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={controller({
+            ...task,
+            approval_summary: {
+              ...task.approval_summary!,
+              selected_subject_ids: ["sub-001", "sub-002"],
+            },
+          })}
+          dataStateLabel="Converted BIDS/NIfTI"
+          onOpenRuns={vi.fn()}
+          projectName="Demo Project"
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("已选择 2 名（共登记 2 名）")).toBeInTheDocument();
+    expect(screen.queryByText("2 名已登记受试者；覆盖全部数据范围")).not.toBeInTheDocument();
   });
 
   it("shows one primary action and keeps technical evidence behind Advanced Mode", () => {
@@ -361,14 +384,11 @@ describe("AgentWorkspace", () => {
     const task: AgentTaskResponse = {
       ...approvalTask(),
       state: "waiting_for_user",
-      current_action: "One subject failed and a bounded recovery is ready.",
+      current_action_code: "recovery",
       next_action: {
         type: "approve_recovery",
-        title: "Retry only the failed subject",
-        description: "Successful subjects will not be rerun.",
         requires_user: true,
         decision_batch_id: null,
-        disabled_reason: null,
       },
       recovery: {
         proposal_id: "recovery-1",
@@ -409,25 +429,23 @@ describe("AgentWorkspace", () => {
       ...approvalTask(),
       state: "needs_attention",
       outcome: "partial",
+      current_action_code: "attention",
       next_action: {
         type: "view_attention",
-        title: "Review failed subject",
-        description: null,
         requires_user: true,
         decision_batch_id: null,
-        disabled_reason: null,
       },
       result_summary: {
         outcome: "partial",
-        title: "Two of three subjects completed",
-        summary: "FC was generated for two subjects; sub-003 is excluded.",
-        qc_summary: "Two subjects passed QC",
+        summary_code: "result.partial",
+        validation_checks_passed: 2,
+        validation_checks_failed: 1,
         completed_subjects: 2,
         failed_subjects: 1,
         excluded_subjects: 1,
         total_subjects: 3,
-        limitations: ["Group interpretation is incomplete"],
-        recommended_action: "Review the recovery proposal",
+        limitation_codes: ["partial", "simplified"],
+        recommended_action_code: "review_technical_evidence",
         artifacts: [],
       },
       result_explanation: {
@@ -438,8 +456,8 @@ describe("AgentWorkspace", () => {
         total_subjects: 3,
         artifact_refs: [],
         criteria: [],
-        limitations: ["Group interpretation is incomplete"],
-        recommended_action: "Review the recovery proposal",
+        limitation_codes: ["partial", "simplified"],
+        recommended_action_code: "review_technical_evidence",
         generated_text:
           "One subject needs recovery review before the cohort result can be interpreted.",
         generated_text_status: "accepted",
@@ -459,7 +477,24 @@ describe("AgentWorkspace", () => {
     );
 
     expect(screen.getByText("Partially completed")).toBeInTheDocument();
-    expect(screen.getByText("Group interpretation is incomplete")).toBeInTheDocument();
+    // Next-action wording is now mapped from the structured action type, and the
+    // limitation rows from the structured limitation codes.
+    expect(screen.getByRole("heading", { name: "Review attention items" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Inspect the evidence and choose a safe next step."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Only part of the reviewed subject or artifact scope completed."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("A scientifically simplified method was used; review its limitations."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Research goal not fully satisfied" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Review technical evidence and the bounded recovery proposal."),
+    ).toBeInTheDocument();
     expect(screen.getByText("Evidence-based explanation")).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -484,15 +519,15 @@ describe("AgentWorkspace", () => {
       },
       result_summary: {
         outcome: "partial",
-        title: "Research goal not fully satisfied",
-        summary: "Some reviewed evidence failed or remained incomplete.",
-        qc_summary: "1 validation check(s) passed; 0 failed.",
+        summary_code: "result.partial",
+        validation_checks_passed: 1,
+        validation_checks_failed: 0,
         completed_subjects: 1,
         failed_subjects: 0,
         excluded_subjects: 0,
         total_subjects: 1,
-        limitations: ["A scientifically simplified method was used; review its limitations."],
-        recommended_action: "Review technical evidence and the bounded recovery proposal.",
+        limitation_codes: ["simplified"],
+        recommended_action_code: "review_technical_evidence",
         artifacts: [],
       },
     };
@@ -512,7 +547,10 @@ describe("AgentWorkspace", () => {
     expect(screen.getByRole("heading", { name: "研究目标未完全满足" })).toBeInTheDocument();
     expect(screen.getByText("部分已审核证据失败或仍不完整。")).toBeInTheDocument();
     expect(screen.getByText("使用了科学上简化的方法；请审阅其限制。")).toBeInTheDocument();
+    expect(screen.getByText("1 项校验通过；0 项失败。")).toBeInTheDocument();
+    expect(screen.getByText("查看技术证据和受限的恢复建议。")).toBeInTheDocument();
     expect(screen.queryByText("Research goal not fully satisfied")).not.toBeInTheDocument();
+    expect(screen.queryByText(/simplified method/)).not.toBeInTheDocument();
     expect(screen.getByText("执行处理").closest("li")).toHaveAttribute("data-state", "done");
     expect(screen.getByText("验证结果").closest("li")).toHaveAttribute("data-state", "done");
     expect(screen.getByText("完成").closest("li")).toHaveAttribute("data-state", "current");
@@ -523,14 +561,12 @@ describe("AgentWorkspace", () => {
       ...approvalTask(),
       state: "completed",
       outcome: "succeeded",
-      current_action: "The research goal has defensible result evidence.",
+      task_kind: "plan_only",
+      current_action_code: "completed",
       next_action: {
         type: "review_results",
-        title: "Review results",
-        description: null,
         requires_user: false,
         decision_batch_id: null,
-        disabled_reason: null,
       },
       progress: {
         phase: "complete",
@@ -543,15 +579,15 @@ describe("AgentWorkspace", () => {
       approval_summary: null,
       result_summary: {
         outcome: "succeeded",
-        title: "Preprocessing plan prepared",
-        summary: "A metadata-only plan was saved.",
-        qc_summary: null,
+        summary_code: "result.plan_only",
+        validation_checks_passed: null,
+        validation_checks_failed: null,
         completed_subjects: null,
         failed_subjects: null,
         excluded_subjects: null,
         total_subjects: null,
-        limitations: ["Metadata only"],
-        recommended_action: "Review the plan",
+        limitation_codes: ["metadata_only"],
+        recommended_action_code: "review_saved_plan",
         artifacts: [
           {
             artifact_id: "plan-1",
@@ -582,24 +618,25 @@ describe("AgentWorkspace", () => {
     expect(screen.getByText("验证结果").closest("li")).toHaveAttribute("data-state", "skipped");
     expect(screen.getByText("0 项计算")).toBeInTheDocument();
     expect(screen.getByText("1 份审核方案")).toBeInTheDocument();
+    expect(screen.getByText("该结果仅包含方案，不包含数值计算结果。")).toBeInTheDocument();
+    expect(screen.getByText("没有独立的 QC 校验记录。")).toBeInTheDocument();
+    expect(screen.getByText("查看已保存的方案详情。")).toBeInTheDocument();
     expect(screen.getAllByText("预处理方案已准备完成")).toHaveLength(2);
     expect(screen.getByText("待处理项").closest("div")).toHaveTextContent("待处理项0");
     expect(screen.queryByRole("heading", { name: "查看结果" })).not.toBeInTheDocument();
     expect(screen.queryByText("等待你处理")).not.toBeInTheDocument();
+    expect(screen.queryByText(/metadata-only plan/)).not.toBeInTheDocument();
   });
 
   it("renders goal revision and canceled terminal states in Chinese without stale actions", () => {
     const revisionTask: AgentTaskResponse = {
       ...approvalTask(),
       state: "waiting_for_user",
-      current_action: "Waiting for one reviewed decision.",
+      current_action_code: "waiting_input",
       next_action: {
         type: "revise_goal",
-        title: "Revise the research goal",
-        description: "The goal did not match a supported workflow.",
         requires_user: true,
         decision_batch_id: "batch-revise",
-        disabled_reason: null,
       },
       decision_batch: {
         batch_id: "batch-revise",
@@ -644,14 +681,11 @@ describe("AgentWorkspace", () => {
       ...revisionTask,
       state: "completed",
       outcome: "canceled",
-      current_action: "The task needs attention before it can continue.",
+      current_action_code: "attention",
       next_action: {
         type: "none",
-        title: "Task canceled",
-        description: null,
         requires_user: false,
         decision_batch_id: null,
-        disabled_reason: null,
       },
       decision_batch: null,
     };
@@ -681,11 +715,8 @@ describe("AgentWorkspace", () => {
       ...approvalTask(),
       next_action: {
         type: "answer_science_decision",
-        title: "Answer decisions",
-        description: null,
         requires_user: true,
         decision_batch_id: "batch-choices",
-        disabled_reason: null,
       },
       decision_batch: {
         batch_id: "batch-choices",
@@ -796,11 +827,8 @@ describe("AgentWorkspace", () => {
       ...approvalTask(),
       next_action: {
         type: "approve_recovery",
-        title: "Approve recovery",
-        description: "A bounded recovery is ready.",
         requires_user: true,
         decision_batch_id: null,
-        disabled_reason: null,
       },
       recovery: {
         proposal_id: "recovery-1",

@@ -19,7 +19,7 @@ class ApprovalSummarySection(BaseModel):
 class ApprovalSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: int = 4
+    schema_version: int = 5
     summary_hash: str
     project_id: str
     reviewed_plan_id: str
@@ -47,8 +47,8 @@ class ApprovalSummary(BaseModel):
     memory_influence_summary: tuple[str, ...] = ()
     goal_contract_hash: str
     goal: str
-    dataset_summary: str
-    execution_summary: str
+    registered_subject_count: int = Field(ge=0)
+    selected_subject_ids: tuple[str, ...] = ()
     write_roots: tuple[str, ...]
     rawdata_read_only: bool = True
     node_ids: tuple[str, ...] = ()

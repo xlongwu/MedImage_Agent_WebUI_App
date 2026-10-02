@@ -1,6 +1,18 @@
 # 06：Observation、Reflector 与恢复闭环方案
 
-> 状态：Draft，待人工 Review。
+> 状态：部分实现（2026-10-01 源码复核），其中 §4.2/§4.3 的扩展 Action 部分已随 03 一并正式跳过。
+> 已落地：`services/agent_task_reconciler.py` 在 deterministic 终态协调后以 `run_reconciled` 幂等唤醒
+> Harness（命令/monitor owner 才发送，GET 投影不发送）；`schemas/agent_task.py:AgentResultExplanation`
+> 提供确定性结果解释，`services/agent_task_result_summary.py:_guard_generated_text()` 用
+> `generated_text_status`（`not_requested`/`accepted`/`conflict_rejected`）实现冲突丢弃保护——这是
+> §4.3 要求的守卫，但以结构化状态字段而非文中的 `AGENT_EXPLANATION_CONFLICT` 错误码表达；
+> `AgentHarnessStep.observation_ref/evaluation_ref` 已存在；§5 要求的 legacy `observation` 字段与
+> 兼容 validator 已删除。
+> 未落地且已随 03 跳过：`explain_result`/`propose_recovery` 处理器（结果说明与恢复建议仍由确定性
+> 服务产出，Harness 动作面只有 `request_decision`/`draft_plan`）。
+> 未落地：§5 的 attempt 级 `recovery_attempts_used` 恢复预算——恢复配额当前是 lifecycle 级
+> （`schemas/recovery.py:RecoveryQuota`：`max_lifecycle_recovery_attempts/max_node_attempts/
+> max_subject_node_attempts/max_replans/max_recovery_wall_seconds`），未在 Harness attempt 上重复记账。
 > 依赖：02 事件唤醒、03 Action handler、05 计划版本。
 
 ## 1. 目标

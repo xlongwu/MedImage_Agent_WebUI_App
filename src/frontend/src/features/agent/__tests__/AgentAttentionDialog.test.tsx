@@ -8,21 +8,19 @@ import type { AgentTaskController } from "../useAgentTaskController";
 
 function task(projectId = "project-1"): AgentTaskResponse {
   return {
-    schema_version: 1,
+    schema_version: 2,
     task_id: "task-1",
     project_id: projectId,
     state: "waiting_for_user",
     outcome: null,
+    task_kind: "execution",
+    execution_performed: false,
     goal_summary: "Generate FC",
-    current_action: "Awaiting a scientific decision",
     current_action_code: "waiting_science_decision",
     next_action: {
       type: "answer_science_decision",
-      title: "Answer decision",
-      description: null,
       requires_user: true,
       decision_batch_id: "batch-1",
-      disabled_reason: null,
     },
     automation: { level: "A1", reason: "user_decision_required", requires_user: true },
     progress: {
@@ -152,11 +150,8 @@ describe("AgentAttentionDialog", () => {
       ...task(),
       next_action: {
         type: "approve_execution",
-        title: "Approve execution",
-        description: null,
         requires_user: true,
         decision_batch_id: null,
-        disabled_reason: null,
       },
       decision_batch: null,
       approval_summary: {
@@ -164,8 +159,9 @@ describe("AgentAttentionDialog", () => {
         execution_environment_snapshot_id: "environment-a",
         execution_environment_hash: "environment-hash-a",
         goal: "Generate FC",
-        dataset_summary: "One subject",
-        execution_summary: "Native FC",
+        registered_subject_count: 1,
+        selected_subject_ids: [],
+        node_ids: ["native_fc"],
         write_roots: ["project://derivatives"],
         rawdata_read_only: true,
         external_tools: [],
@@ -184,6 +180,10 @@ describe("AgentAttentionDialog", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Approve and start execution" });
     expect(dialog).toHaveTextContent("project://derivatives");
+    // The dataset and execution rows are now rendered from structured counts, not
+    // backend English summaries.
+    expect(dialog).toHaveTextContent("1 registered subjects; full dataset in scope");
+    expect(dialog).toHaveTextContent("1 reviewed node(s); no dispatch before approval");
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Approve and continue automatically" }),
     );

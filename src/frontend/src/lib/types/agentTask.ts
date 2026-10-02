@@ -40,6 +40,19 @@ export type AgentTaskCurrentActionCode =
   | "completed"
   | "attention";
 
+export type AgentTaskKind = "execution" | "plan_only";
+
+export type AgentTaskResultSummaryCode =
+  | "result.succeeded"
+  | "result.partial"
+  | "result.failed"
+  | "result.indeterminate"
+  | "result.plan_only";
+
+export type AgentTaskRecommendedActionCode = "review_technical_evidence" | "review_saved_plan";
+
+export type AgentTaskExportDisabledCode = "no_registered_report";
+
 export type AgentTaskDecisionKind =
   | "missing_input"
   | "goal_revision"
@@ -118,11 +131,8 @@ export type AgentTaskDecisionBatch = {
 
 export type AgentTaskNextAction = {
   type: AgentTaskNextActionType;
-  title: string;
-  description: string | null;
   requires_user: boolean;
   decision_batch_id: string | null;
-  disabled_reason: string | null;
 };
 
 export type AgentTaskAutomation = {
@@ -157,8 +167,9 @@ export type AgentTaskApprovalSummary = {
   execution_environment_snapshot_id: string;
   execution_environment_hash: string;
   goal: string;
-  dataset_summary: string;
-  execution_summary: string;
+  registered_subject_count: number;
+  selected_subject_ids: string[];
+  node_ids: string[];
   write_roots: string[];
   rawdata_read_only: boolean;
   external_tools: string[];
@@ -189,19 +200,19 @@ export type AgentTaskArtifactSummary = {
 
 export type AgentTaskResultSummary = {
   outcome: AgentTaskOutcome;
-  title: string;
-  summary: string;
-  qc_summary: string | null;
+  summary_code: AgentTaskResultSummaryCode;
+  validation_checks_passed: number | null;
+  validation_checks_failed: number | null;
   completed_subjects: number | null;
   failed_subjects: number | null;
   excluded_subjects: number | null;
   total_subjects: number | null;
-  limitations: string[];
-  recommended_action: string | null;
+  limitation_codes: string[];
+  recommended_action_code: AgentTaskRecommendedActionCode | null;
   artifacts: AgentTaskArtifactSummary[];
   report_artifact_id?: string | null;
   report_export_uri?: string | null;
-  export_disabled_reason?: string | null;
+  export_disabled_code?: AgentTaskExportDisabledCode | null;
 };
 
 export type AgentResultCriterion = {
@@ -219,8 +230,8 @@ export type AgentResultExplanation = {
   total_subjects: number | null;
   artifact_refs: AgentTaskArtifactSummary[];
   criteria: AgentResultCriterion[];
-  limitations: string[];
-  recommended_action: string | null;
+  limitation_codes: string[];
+  recommended_action_code: AgentTaskRecommendedActionCode | null;
   generated_text: string | null;
   generated_text_status: "not_requested" | "accepted" | "conflict_rejected";
 };
@@ -292,8 +303,6 @@ export type AgentHarnessSummary = {
   steps_limit: number;
   repairs_used: number;
   repairs_limit: number;
-  recovery_attempts_used: number;
-  recovery_attempts_limit: number;
   input_tokens_used: number | null;
   input_tokens_limit: number | null;
   output_tokens_used: number | null;
@@ -365,13 +374,14 @@ export type AgentHarnessActivityPage = {
 };
 
 export type AgentTaskResponse = {
-  schema_version: 1;
+  schema_version: 2;
   task_id: string;
   project_id: string;
   state: AgentTaskPublicState;
   outcome: AgentTaskOutcome | null;
+  task_kind: AgentTaskKind;
+  execution_performed: boolean;
   goal_summary: string;
-  current_action: string;
   current_action_code: AgentTaskCurrentActionCode;
   next_action: AgentTaskNextAction;
   automation: AgentTaskAutomation;
@@ -389,7 +399,7 @@ export type AgentTaskResponse = {
 };
 
 export type AgentTaskListResponse = {
-  schema_version: 1;
+  schema_version: 2;
   items: AgentTaskResponse[];
   total: number;
 };

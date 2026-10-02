@@ -1,6 +1,19 @@
 # 10：Agent Trace、Replay 与评测体系方案
 
-> 状态：Implemented，已完成源码、focused backend 回归与人工 Review 待办；不代表发布或科学验证。
+> 状态：部分实现（2026-10-01 源码复核）。原标头「Implemented」对 Trace/Replay 成立、对评测集不成立。
+> 已落地：`schemas/agent_trace.py` 的 Trace 合同（`AgentTraceBundle/Entry/Reference/Budget/Page` 等，
+> 显式 `incomplete`/`conflict`/`missing`，不自动补齐）、`services/agent_trace_service.py` 与纯 reducer
+> `services/agent_replay_service.py`（不调模型、不跑 handler）、只读端点
+> `GET /api/projects/{p}/agent/tasks/{t}/trace` 与 `/harness`、`tests/fixtures/agent_harness_replay.json`
+> 的中英回放案例、`services/agent_evaluation_service.py` + `agent_evaluation_runner.py` +
+> `scripts/run_agent_evaluation.py` 与基线比较。
+> 与本文的偏离：§11 指向的 `tests/fixtures/agent_eval/v1/manifest.json` 不存在——`v1/` 是空目录，
+> 当前权威评测集是 `v2/manifest.json`（`AgentEvalManifest.schema_version = Literal[2]`，24 个案例、
+> zh-CN 与 en 各 12）。未落地：§5.3 的「正常：成功执行」与「恢复：partial/failed/不可重载/恢复审批/
+> handoff」两类案例在 v2 中缺失，§5.4 的「恢复建议与 reference policy 一致率」指标在
+> `AgentEvalOutcome` 中无对应字段；案例未按 case 声明允许/禁止 Action，只在结果侧用通用字段。
+> §7 的「30+」精确计数与 §11 的通过数量按 `AGENTS.md` §7.5 不作为稳定文档内容保留。
+> 评测是离线证据：不构成分布式发布、GUI 或科学验证证据。
 > 依赖：03 Action result、05 计划版本、06 结果/恢复、07 Context、08 ModelCallRecord、09 Skill refs。
 
 ## 1. 目标

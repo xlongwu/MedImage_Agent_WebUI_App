@@ -2,7 +2,6 @@ import { Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentTaskResponse } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
-import { getAgentApprovalMessage } from "./agentTaskMessages";
 
 export function ExecutionApprovalReview({
   mutating,
@@ -16,10 +15,6 @@ export function ExecutionApprovalReview({
   const { t } = useI18n();
   const summary = task.approval_summary;
   if (!summary) return null;
-  const localize = (value: string) => {
-    const parsed = getAgentApprovalMessage(value);
-    return parsed ? t(parsed.key, { count: parsed.count }) : value;
-  };
 
   return (
     <div className={styles.attentionReview}>
@@ -30,11 +25,20 @@ export function ExecutionApprovalReview({
         </div>
         <div>
           <span>{t("agent.approvalData")}</span>
-          <strong>{localize(summary.dataset_summary)}</strong>
+          <strong>
+            {summary.selected_subject_ids.length
+              ? t("agent.approvalSelectedSubjects", {
+                  selected: summary.selected_subject_ids.length,
+                  registered: summary.registered_subject_count,
+                })
+              : t("agent.approvalRegisteredSubjects", {
+                  count: summary.registered_subject_count,
+                })}
+          </strong>
         </div>
         <div>
           <span>{t("agent.approvalExecution")}</span>
-          <strong>{localize(summary.execution_summary)}</strong>
+          <strong>{t("agent.approvalReviewedNodes", { count: summary.node_ids.length })}</strong>
         </div>
         <div>
           <span>{t("agent.approvalWrites")}</span>
@@ -84,14 +88,11 @@ export function ExecutionApprovalReview({
           </div>
         ))}
       </div>
-      {task.next_action.disabled_reason ? (
-        <p className={styles.inlineError}>{task.next_action.disabled_reason}</p>
-      ) : null}
       <div className={styles.attentionAction}>
         <Button
           data-agent-action="approve_execution"
           data-primary-action="true"
-          disabled={mutating || Boolean(task.next_action.disabled_reason)}
+          disabled={mutating}
           onClick={() => void onApprove().catch((): void => {})}
           variant="primary"
         >

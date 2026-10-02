@@ -10,13 +10,6 @@ from src.backend.app.schemas.agent_task import (
     AgentTaskResultSummary,
 )
 
-_LIMITATION_TEXT = {
-    "partial": "Only part of the reviewed subject or artifact scope completed.",
-    "preview_only": "This is a preview result and is not a full-dataset result.",
-    "simplified": "A scientifically simplified method was used; review its limitations.",
-    "metadata_only": "Only metadata evidence exists; no declared numerical result was computed.",
-}
-
 
 class AgentTaskResultSummaryService:
     def build(self, *, lifecycle, observation, evaluation) -> AgentTaskResultSummary:
@@ -67,37 +60,31 @@ class AgentTaskResultSummaryService:
             *observation.completeness.blocking_facts,
             *observation.completeness.conflicts,
         ]))
-        limitations = tuple(_LIMITATION_TEXT.get(item, item) for item in raw_limitations)
         validation_failures = sum(item.status == "failed" for item in observation.validations)
-        qc_summary = (
-            f"{len(observation.validations) - validation_failures} validation check(s) passed; "
-            f"{validation_failures} failed."
-            if observation.validations
-            else "No separate QC validation record was available."
-        )
         if complete:
             outcome = "succeeded"
-            title = "Research goal satisfied"
-            summary = "The goal is supported by complete, registered, reloadable numerical evidence."
+            summary_code = "result.succeeded"
         elif evaluation.status == "not_satisfied" or failed:
             outcome = "partial" if artifacts or completed else "failed"
-            title = "Research goal not fully satisfied"
-            summary = "Some reviewed evidence failed or remained incomplete."
+            summary_code = "result.partial" if outcome == "partial" else "result.failed"
         else:
             outcome = "partial" if artifacts else "indeterminate"
-            title = "Result needs attention"
-            summary = "Evidence is incomplete, conflicting, or not reloadable."
+            summary_code = "result.partial" if outcome == "partial" else "result.indeterminate"
         return AgentTaskResultSummary(
             outcome=outcome,
-            title=title,
-            summary=summary,
-            qc_summary=qc_summary,
+            summary_code=summary_code,
+            validation_checks_passed=(
+                len(observation.validations) - validation_failures
+                if observation.validations
+                else None
+            ),
+            validation_checks_failed=validation_failures if observation.validations else None,
             completed_subjects=completed,
             failed_subjects=failed,
             excluded_subjects=excluded,
             total_subjects=total,
-            limitations=limitations,
-            recommended_action=None if complete else "Review technical evidence and the bounded recovery proposal.",
+            limitation_codes=raw_limitations,
+            recommended_action_code=None if complete else "review_technical_evidence",
             artifacts=artifacts,
             report_artifact_id=report.artifact_id if report else None,
             report_export_uri=(
@@ -106,10 +93,10 @@ class AgentTaskResultSummaryService:
                 if report is not None and lifecycle.run_id
                 else None
             ),
-            export_disabled_reason=(
+            export_disabled_code=(
                 None
                 if report is not None and lifecycle.run_id
-                else "No registered report artifact is available for this task."
+                else "no_registered_report"
             ),
         )
 
@@ -157,8 +144,8 @@ class AgentTaskResultSummaryService:
                 )
                 for item in evaluation.criterion_results
             ),
-            limitations=summary.limitations,
-            recommended_action=summary.recommended_action,
+            limitation_codes=summary.limitation_codes,
+            recommended_action_code=summary.recommended_action_code,
             generated_text=accepted_text,
             generated_text_status=text_status,
         )

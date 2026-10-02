@@ -257,8 +257,9 @@ class AgentTaskReadModel:
             project_id=lifecycle.project_id,
             state=public_state,
             outcome=outcome,
+            task_kind="plan_only" if self._plan_only(lifecycle, plan) else "execution",
+            execution_performed=bool(lifecycle.run_id),
             goal_summary=goal,
-            current_action=self._current_action(public_state, state),
             current_action_code=self._current_action_code(public_state, state),
             next_action=next_action,
             automation=self._automation(public_state=public_state, next_action=next_action),
@@ -458,25 +459,13 @@ class AgentTaskReadModel:
     def _result_summary(self, lifecycle, observation, evaluation) -> AgentTaskResultSummary | None:
         if lifecycle.reviewed_plan_id:
             plan = self.store.get_reviewed_plan(lifecycle.reviewed_plan_id)
-            payload = plan.payload if plan is not None and isinstance(plan.payload, dict) else {}
-            plan_payload = payload.get("plan") if isinstance(payload.get("plan"), dict) else {}
-            metadata = plan_payload.get("metadata") if isinstance(plan_payload.get("metadata"), dict) else {}
-            if (
-                lifecycle.state == "SUCCEEDED"
-                and metadata.get("plan_only") is True
-                and payload.get("execution_status") == "NOT_EXECUTED_PLAN_ONLY"
-            ):
+            if lifecycle.state == "SUCCEEDED" and self._plan_only(lifecycle, plan):
                 from src.backend.app.schemas.agent_task import AgentTaskArtifactSummary
 
                 return AgentTaskResultSummary(
                     outcome="succeeded",
-                    title="Preprocessing plan prepared",
-                    summary=(
-                        "A reviewed metadata-only preprocessing plan was created. "
-                        "No numerical computation ran and rawdata was not modified."
-                    ),
-                    limitations=("Metadata-only plan; no numerical result was produced.",),
-                    recommended_action="Review the saved plan details.",
+                    summary_code="result.plan_only",
+                    recommended_action_code="review_saved_plan",
                     artifacts=(
                         AgentTaskArtifactSummary(
                             artifact_id=lifecycle.reviewed_plan_id,
@@ -559,67 +548,31 @@ class AgentTaskReadModel:
             if decision_kind == "goal_revision":
                 return AgentTaskNextAction(
                     type="revise_goal",
-                    title="Revise the research goal",
-                    description="The current goal did not match a supported bounded workflow.",
                     requires_user=True,
                     decision_batch_id=decision_batch_id,
                 )
             return AgentTaskNextAction(
                 type="provide_input",
-                title="Provide the required project input",
-                description="Planning will resume after the missing project evidence is supplied.",
                 requires_user=True,
                 decision_batch_id=decision_batch_id,
             )
         if state == "WAITING_FOR_SCIENCE_DECISION":
             return AgentTaskNextAction(
                 type="answer_science_decision",
-                title="Answer the scientific decision",
-                description="The answer changes the reviewed scientific plan and its hashes.",
                 requires_user=True,
                 decision_batch_id=decision_batch_id,
             )
         if state == "CANCELED":
-            return AgentTaskNextAction(
-                type="none",
-                title="Task canceled",
-                description=None,
-                requires_user=False,
-            )
+            return AgentTaskNextAction(type="none", requires_user=False)
         if state == "WAITING_FOR_APPROVAL" and approval_summary is not None:
-            return AgentTaskNextAction(
-                type="approve_execution",
-                title="Review and approve execution",
-                description="Approve the bounded reviewed plan after checking its scope and limitations.",
-                requires_user=True,
-            )
+            return AgentTaskNextAction(type="approve_execution", requires_user=True)
         if state in {"RECOVERY_PROPOSED", "WAITING_FOR_RECOVERY_APPROVAL", "WAITING_FOR_RETRY_APPROVAL"} and recovery:
-            return AgentTaskNextAction(
-                type="approve_recovery",
-                title="Review the recovery proposal",
-                description="Only the displayed recovery scope can be approved.",
-                requires_user=True,
-            )
+            return AgentTaskNextAction(type="approve_recovery", requires_user=True)
         if public_state == "completed":
-            return AgentTaskNextAction(
-                type="review_results",
-                title="Review results",
-                description=None,
-                requires_user=False,
-            )
+            return AgentTaskNextAction(type="review_results", requires_user=False)
         if public_state == "needs_attention":
-            return AgentTaskNextAction(
-                type="view_attention",
-                title="Review attention items",
-                description="Inspect the evidence and choose a safe next step.",
-                requires_user=True,
-            )
-        return AgentTaskNextAction(
-            type="none",
-            title="No action required",
-            description=None,
-            requires_user=False,
-        )
+            return AgentTaskNextAction(type="view_attention", requires_user=True)
+        return AgentTaskNextAction(type="none", requires_user=False)
 
     @staticmethod
     def _decision_items(lifecycle) -> tuple[AgentTaskDecision, ...]:
@@ -684,18 +637,17 @@ class AgentTaskReadModel:
             return None
 
     @staticmethod
-    def _current_action(public_state: str, internal_state: str) -> str:
-        if public_state == "preparing":
-            return "Preparing the reviewed research workflow."
-        if public_state == "waiting_for_user":
-            return "Waiting for one reviewed decision."
-        if public_state == "running":
-            return "Processing the approved research workflow."
-        if public_state == "completed":
-            return "The research goal has defensible result evidence."
-        if internal_state not in _STATE_MAP:
-            return "This task uses an unsupported internal state and needs review."
-        return "The task needs attention before it can continue."
+    def _plan_only(lifecycle, plan) -> bool:
+        if plan is None or not isinstance(plan.payload, dict):
+            return False
+        payload = plan.payload
+        plan_payload = payload.get("plan") if isinstance(payload.get("plan"), dict) else {}
+        metadata = plan_payload.get("metadata") if isinstance(plan_payload.get("metadata"), dict) else {}
+        return bool(
+            metadata.get("plan_only") is True
+            and payload.get("execution_status") == "NOT_EXECUTED_PLAN_ONLY"
+            and lifecycle.reviewed_plan_id is not None
+        )
 
     @staticmethod
     def _current_action_code(public_state: str, internal_state: str) -> str:

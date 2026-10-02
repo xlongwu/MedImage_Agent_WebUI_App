@@ -483,7 +483,7 @@ class AgentPlanningService:
             key: value
             for key, value in summary.model_dump(mode="json").items()
             if key in {
-                "summary_hash", "execution_environment_snapshot_id", "execution_environment_hash", "goal", "dataset_summary", "execution_summary", "write_roots",
+                "summary_hash", "execution_environment_snapshot_id", "execution_environment_hash", "goal", "registered_subject_count", "selected_subject_ids", "node_ids", "write_roots",
                 "rawdata_read_only", "external_tools", "limitations", "science_changes", "sections", "expires_at",
                 "memory_context_hash", "memory_refs", "memory_influence_summary",
                 "planning_inputs_hash", "revision_no", "parent_reviewed_plan_id", "parent_plan_hash", "revision_reason", "resource_policy",
@@ -850,7 +850,7 @@ class AgentPlanningService:
             key: value
             for key, value in summary.model_dump(mode="json").items()
             if key in {
-                "summary_hash", "execution_environment_snapshot_id", "execution_environment_hash", "goal", "dataset_summary", "execution_summary", "write_roots",
+                "summary_hash", "execution_environment_snapshot_id", "execution_environment_hash", "goal", "registered_subject_count", "selected_subject_ids", "node_ids", "write_roots",
                 "rawdata_read_only", "external_tools", "limitations", "science_changes", "sections", "expires_at",
                 "memory_context_hash", "memory_refs", "memory_influence_summary",
                 "planning_inputs_hash", "revision_no", "parent_reviewed_plan_id", "parent_plan_hash", "revision_reason", "resource_policy",

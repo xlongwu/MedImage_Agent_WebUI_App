@@ -57,6 +57,13 @@ AgentTaskCurrentActionCode = Literal[
     "waiting_science_decision", "waiting_approval", "executing",
     "validating", "recovery", "completed", "attention",
 ]
+AgentTaskKind = Literal["execution", "plan_only"]
+AgentTaskResultSummaryCode = Literal[
+    "result.succeeded", "result.partial", "result.failed",
+    "result.indeterminate", "result.plan_only",
+]
+AgentTaskRecommendedActionCode = Literal["review_technical_evidence", "review_saved_plan"]
+AgentTaskExportDisabledCode = Literal["no_registered_report"]
 AgentTaskEvidenceType = Literal[
     "task_details",
     "reviewed_plan",
@@ -88,11 +95,8 @@ class AgentTaskNextAction(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     type: AgentTaskNextActionType
-    title: str
-    description: str | None = None
     requires_user: bool
     decision_batch_id: str | None = None
-    disabled_reason: str | None = None
 
 
 class AgentTaskAutomation(BaseModel):
@@ -182,8 +186,9 @@ class AgentTaskApprovalSummary(BaseModel):
     execution_environment_snapshot_id: str
     execution_environment_hash: str
     goal: str
-    dataset_summary: str
-    execution_summary: str
+    registered_subject_count: int = Field(ge=0)
+    selected_subject_ids: tuple[str, ...] = ()
+    node_ids: tuple[str, ...] = ()
     write_roots: tuple[str, ...]
     rawdata_read_only: bool = True
     external_tools: tuple[str, ...] = ()
@@ -218,19 +223,19 @@ class AgentTaskResultSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     outcome: AgentTaskOutcome
-    title: str
-    summary: str
-    qc_summary: str | None = None
+    summary_code: AgentTaskResultSummaryCode
+    validation_checks_passed: int | None = Field(default=None, ge=0)
+    validation_checks_failed: int | None = Field(default=None, ge=0)
     completed_subjects: int | None = Field(default=None, ge=0)
     failed_subjects: int | None = Field(default=None, ge=0)
     excluded_subjects: int | None = Field(default=None, ge=0)
     total_subjects: int | None = Field(default=None, ge=0)
-    limitations: tuple[str, ...] = ()
-    recommended_action: str | None = None
+    limitation_codes: tuple[str, ...] = ()
+    recommended_action_code: AgentTaskRecommendedActionCode | None = None
     artifacts: tuple[AgentTaskArtifactSummary, ...] = ()
     report_artifact_id: str | None = None
     report_export_uri: str | None = None
-    export_disabled_reason: str | None = None
+    export_disabled_code: AgentTaskExportDisabledCode | None = None
 
 
 class AgentResultCriterion(BaseModel):
@@ -256,8 +261,8 @@ class AgentResultExplanation(BaseModel):
     total_subjects: int | None = Field(default=None, ge=0)
     artifact_refs: tuple[AgentTaskArtifactSummary, ...] = ()
     criteria: tuple[AgentResultCriterion, ...] = ()
-    limitations: tuple[str, ...] = ()
-    recommended_action: str | None = None
+    limitation_codes: tuple[str, ...] = ()
+    recommended_action_code: AgentTaskRecommendedActionCode | None = None
     generated_text: str | None = Field(default=None, max_length=2048)
     generated_text_status: Literal["not_requested", "accepted", "conflict_rejected"] = "not_requested"
 
@@ -328,13 +333,14 @@ class AgentTaskTechnicalDetails(BaseModel):
 class AgentTaskResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     task_id: str
     project_id: str
     state: AgentTaskPublicState
     outcome: AgentTaskOutcome | None = None
+    task_kind: AgentTaskKind
+    execution_performed: bool
     goal_summary: str
-    current_action: str
     current_action_code: AgentTaskCurrentActionCode
     next_action: AgentTaskNextAction
     automation: AgentTaskAutomation
@@ -354,7 +360,7 @@ class AgentTaskResponse(BaseModel):
 class AgentTaskListResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     items: tuple[AgentTaskResponse, ...]
     total: int = Field(ge=0)
 

@@ -42,12 +42,11 @@ function renderPage(overrides: Partial<ComponentProps<typeof ProjectsPage>> = {}
           task_id: "task-2",
           state: "completed",
           outcome: "succeeded",
+          task_kind: "execution",
           goal_summary: "Run FC",
-          current_action: "Task completed",
           current_action_code: "completed",
           requires_user: false,
-          result_title: "FC outputs are ready",
-          recent_activity: "Task completed",
+          result_summary_code: "result.succeeded",
           updated_at: "2026-06-14T10:00:00Z",
         },
       }),
@@ -82,6 +81,20 @@ describe("ProjectsPage", () => {
     await user.type(screen.getByRole("searchbox", { name: /search projects/i }), "nothing");
 
     expect(screen.getByText("No projects match the current filters.")).toBeInTheDocument();
+
+    // The search haystack no longer carries action prose: the backend projects a
+    // stable code, so the rendered "current action" text must not be searchable.
+    await user.clear(screen.getByRole("searchbox", { name: /search projects/i }));
+    await user.type(screen.getByRole("searchbox", { name: /search projects/i }), "Task completed");
+
+    expect(screen.getByText("No projects match the current filters.")).toBeInTheDocument();
+
+    // The goal summary remains searchable.
+    await user.clear(screen.getByRole("searchbox", { name: /search projects/i }));
+    await user.type(screen.getByRole("searchbox", { name: /search projects/i }), "Run FC");
+
+    expect(screen.getByRole("heading", { name: /qc cohort/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /raw study/i })).not.toBeInTheDocument();
   });
 
   it("selects a project and returns to the workspace", async () => {
@@ -104,19 +117,18 @@ describe("ProjectsPage", () => {
             task_id: "task-canceled",
             state: "needs_attention",
             outcome: "canceled",
+            task_kind: "execution",
             goal_summary: "Run preprocessing",
-            current_action: "Task canceled",
             current_action_code: "attention",
             requires_user: true,
-            result_title: "Execution was canceled",
-            recent_activity: "Task canceled",
+            result_summary_code: "result.failed",
             updated_at: "2026-06-15T10:00:00Z",
           },
         }),
       ],
     });
 
-    expect(screen.getByText("Execution was canceled")).toBeInTheDocument();
+    expect(screen.getByText("Reviewed execution failed")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Needs attention" }));
     expect(screen.getByRole("heading", { name: /canceled cohort/i })).toBeInTheDocument();
   });
@@ -175,12 +187,11 @@ describe("ProjectsPage", () => {
             task_id: "task-1",
             state: "running",
             outcome: null,
+            task_kind: "execution",
             goal_summary: "Run preprocessing",
-            current_action: "Executing processing",
             current_action_code: "executing",
             requires_user: false,
-            result_title: null,
-            recent_activity: "Executing processing",
+            result_summary_code: null,
             updated_at: "2026-06-14T10:00:00Z",
           },
         }),

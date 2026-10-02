@@ -21,7 +21,7 @@ import { WorkspaceHeader } from "../dashboard/DashboardChrome";
 import styles from "./RunsWorkspace.module.css";
 import layoutStyles from "./WorkspaceLayout.module.css";
 import { useI18n } from "../../i18n/useI18n";
-import { getAgentResultMessageKey } from "../agent/components/agentTaskMessages";
+import { RESULT_SUMMARY_KEYS, getAgentLimitationKey } from "../agent/components/agentTaskMessages";
 import { useProjectRunDetails, type ProjectRunDetails } from "../runs/useProjectRunDetails";
 import { ExecutionGraphView } from "../execution-graph/ExecutionGraphView";
 import { SandboxAttemptPanel } from "../runs/components/SandboxAttemptPanel";
@@ -455,20 +455,23 @@ function SelectedRunProjection({
   const terminal = ["completed", "partial", "failed"].includes(task.status);
   const completedSubjects = result?.completed_subjects ?? agentTask?.progress.completed_subjects;
   const totalSubjects = result?.total_subjects ?? agentTask?.progress.total_subjects;
-  const localizeResultText = (value: string) => {
-    const key = getAgentResultMessageKey(value);
-    return key ? t(key) : value;
+  const localizeLimitation = (code: string) => {
+    const key = getAgentLimitationKey(code);
+    return key ? t(key) : code;
   };
-  const summary =
-    (result?.summary ? localizeResultText(result.summary) : null) ||
-    (agentTask?.current_action ?? t(`runs.projection.summary.${task.status}`));
+  const summaryKeys = result ? RESULT_SUMMARY_KEYS[result.summary_code] : null;
+  const summary = summaryKeys
+    ? t(summaryKeys.summary)
+    : agentTask
+      ? t(`agent.currentAction.${agentTask.current_action_code}`)
+      : t(`runs.projection.summary.${task.status}`);
 
   return (
     <section className={styles.approvalPanel} aria-label={t("runs.projection.title")}>
       <header>
         <div>
           <span>{t("runs.projection.gate")}</span>
-          <h3>{result?.title ? localizeResultText(result.title) : task.run_name}</h3>
+          <h3>{summaryKeys ? t(summaryKeys.title) : task.run_name}</h3>
         </div>
         <Badge tone={statusTone(task.status)}>{statusLabel(task.status, t)}</Badge>
       </header>
@@ -498,10 +501,10 @@ function SelectedRunProjection({
           {t("runs.projection.subjects", { completed: completedSubjects, total: totalSubjects })}
         </p>
       ) : null}
-      {result?.limitations.length ? (
+      {result?.limitation_codes.length ? (
         <ul>
-          {result.limitations.slice(0, 3).map((limitation) => (
-            <li key={limitation}>{localizeResultText(limitation)}</li>
+          {result.limitation_codes.slice(0, 3).map((code) => (
+            <li key={code}>{localizeLimitation(code)}</li>
           ))}
         </ul>
       ) : null}
@@ -544,7 +547,11 @@ function ApprovalStatusPanel({
         </div>
         <Badge tone={tone}>{t(`agent.state.${task.state}`)}</Badge>
       </header>
-      <p>{summary?.execution_summary || task.current_action}</p>
+      <p>
+        {summary
+          ? t("agent.approvalReviewedNodes", { count: summary.node_ids.length })
+          : t(`agent.currentAction.${task.current_action_code}`)}
+      </p>
       <div className={styles.approvalChecks}>
         <span data-ok={summary?.rawdata_read_only ?? false}>
           <Icon
@@ -671,9 +678,7 @@ function RunArtifactInspector({
 function AgentTaskEvidencePanel({ task }: { task: AgentTaskResponse }) {
   const { t } = useI18n();
   const details = task.technical_details;
-  const planOnly = Boolean(
-    task.result_summary?.artifacts.some((artifact) => artifact.artifact_type === "reviewed_plan"),
-  );
+  const planOnly = task.task_kind === "plan_only";
   const ticket = planOnly
     ? t("runs.agentEvidence.ticketNotCreated")
     : (details?.ticket_id ?? t("common.unavailable"));

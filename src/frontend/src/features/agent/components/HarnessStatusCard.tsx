@@ -56,8 +56,6 @@ export function HarnessStatusCard({ summary }: { summary: AgentHarnessSummary })
           proposalLimit: summary.action_proposals_limit,
           repairs: summary.repairs_used,
           repairLimit: summary.repairs_limit,
-          recoveries: summary.recovery_attempts_used,
-          recoveryLimit: summary.recovery_attempts_limit,
         })}
       </p>
       {summary.input_tokens_limit !== null || summary.output_tokens_limit !== null ? (

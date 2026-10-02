@@ -1,6 +1,18 @@
 # 13：多 Agent 协作评估方案
 
-> 状态：Implemented（仅离线评估）；生产多 Agent runtime 仍待能力评审。
+> 状态：部分实现——仅离线脚手架，评估本身未运行，本阶段不闭合（2026-10-01 源码复核）。
+> 已落地：离线 Gate 的合同与运行器（`schemas/agent_eval.py` 的 G0 相关模型、
+> `services/multi_agent_gate_runner.py`、`services/multi_agent_evaluation_service.py`）与对应
+> 单元测试；这些只证明门限判定逻辑可运行。
+> 未落地（本文的实质结论所必需）：`tests/fixtures/agent_eval/multi_agent/` 是**空目录**，
+> `tests/integration/test_multi_agent_gate_runner.py` 使用 stub `_Executor`，因此 §6/§7 要求的真实
+> 脱敏评测从未发生；阶段十四的 G0/SC-01 要求至少 150 个独立 held-out 真实脱敏 case 通过置信门槛，
+> 当前零证据。生产多 Agent runtime 完全不存在（无 Team/Worker/Work Item 表、无多 Agent 路由，
+> `AgentHarnessAttempt.mode` 固定 `single_agent`），其实施授权属于仍为 Proposed 的**阶段十四**，
+> 不得以补完本阶段的名义启动。
+> 过期前提：§2 「当前真正阻碍自动化的是单 Agent loop、**Action handler**、…」中的 Action handler
+> 一项已随 03 被取代。
+> 后续归属：真实脱敏评测集与生产实现均归阶段十四立项；本文保留为候选形态与边界的评估设计记录。
 > 阶段：P2 候选；离线 Gate 通过不等同于多 Agent 实施授权。
 > 现有详细提案：`docs/架构与决策/多Agent协作运行时设计与实施计划.md`，本文决定是否值得继续该提案。
 

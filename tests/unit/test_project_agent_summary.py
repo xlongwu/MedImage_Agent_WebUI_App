@@ -43,5 +43,5 @@ def test_project_summary_uses_latest_canonical_agent_task(tmp_path: Path) -> Non
     assert projected.latest_agent_task.state == "waiting_for_user"
     assert projected.latest_agent_task.current_action_code == "waiting_input"
     assert projected.latest_agent_task.requires_user is True
-    assert projected.latest_agent_task.result_title is None
-    assert projected.latest_agent_task.recent_activity == projected.latest_agent_task.current_action
+    assert projected.latest_agent_task.result_summary_code is None
+    assert projected.latest_agent_task.task_kind == "execution"

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { Badge, Button, Dialog, EmptyState, Icon } from "../../components/ui";
 import { useI18n } from "../../i18n/useI18n";
+import { RESULT_SUMMARY_KEYS } from "../agent/components/agentTaskMessages";
 import type { ProjectSummary } from "../../lib/types/project";
 import styles from "./ProjectsPage.module.css";
 
@@ -50,13 +51,7 @@ export function ProjectsPage({
     return projects
       .filter((project) => {
         const task = project.latest_agent_task;
-        const haystack = [
-          project.name,
-          project.study_id,
-          project.modality,
-          task?.goal_summary,
-          task?.current_action,
-        ]
+        const haystack = [project.name, project.study_id, project.modality, task?.goal_summary]
           .join(" ")
           .toLowerCase();
         return (
@@ -215,7 +210,9 @@ export function ProjectsPage({
                         ? t(`agent.currentAction.${task.current_action_code}`)
                         : t("projects.agentNotStarted")}
                     </span>
-                    {task?.result_title ? <small>{task.result_title}</small> : null}
+                    {task?.result_summary_code ? (
+                      <small>{t(RESULT_SUMMARY_KEYS[task.result_summary_code].title)}</small>
+                    ) : null}
                   </span>
                   <time>
                     {task?.updated_at ?? (project.created_date || t("common.unavailable"))}

@@ -1,6 +1,16 @@
 # 12：Agent 安全审批与端到端自动化边界方案
 
-> 状态：Draft，待人工 Review。
+> 状态：已实现（2026-10-01 源码复核），仅 §2 的一条前提已过期。
+> 已落地：`runtime/agent_capability_catalog.py:AgentCapability` 具备 §4.1 要求的全部字段
+> （`automation_level`、`allowed_states`、`allowed_context_sections`、`allowed_output_types`、
+> `requires_current_approval`、`side_effect_class`），`assert_capability_allowed()` 与
+> `assert_capability_context_and_output_allowed()` 以 `AGENT_HARNESS_CAPABILITY_DENIED` fail-closed，
+> A2/A3/A4 不作为模型 Action 暴露；审批顺序、Execution Ticket、唯一 Gateway、`path_safety.py`、
+> §7 列出的测试文件与重新审批矩阵均按当前源码保持。
+> 过期前提：§2 的「`agent_capability_catalog.py` 把**六种** Harness Action 标为只读」已不成立——动作面
+> 被 `Agent简洁优化实施方案.md` §5.4 缩减为 `request_decision` 与 `draft_plan` 两种（见 03 的取代说明）；
+> §3 表中把 `finish` 当作可用 Action 的表述同样失效。安全等级边界本身未变。
+> 本文仍是 Harness 的**未授权**清单：默认关闭、不获得执行权限、不改变能力等级。
 > 依赖：02—11。本文是这些方案进入实现前的统一安全 Gate。
 
 ## 1. 目标

@@ -30,21 +30,19 @@ function task(
   state: AgentTaskResponse["state"],
 ): AgentTaskResponse {
   return {
-    schema_version: 1,
+    schema_version: 2,
     task_id: taskId,
     project_id: projectId,
     state,
     outcome: null,
+    task_kind: "execution",
+    execution_performed: false,
     goal_summary: "Run preprocessing and FC",
-    current_action: "Preparing a reviewed plan",
     current_action_code: "preparing_plan",
     next_action: {
       type: "none",
-      title: "No action needed",
-      description: null,
       requires_user: false,
       decision_batch_id: null,
-      disabled_reason: null,
     },
     automation: {
       level: "A2",
@@ -104,7 +102,7 @@ describe("useAgentTaskController", () => {
     const projectBTask = task("project-b", "task-b", "waiting_for_user");
     vi.mocked(listAgentTasks).mockImplementation((_baseUrl, projectId) => {
       if (projectId === "project-a") return oldResponse.promise;
-      return Promise.resolve({ schema_version: 1, items: [projectBTask], total: 1 });
+      return Promise.resolve({ schema_version: 2, items: [projectBTask], total: 1 });
     });
 
     const { result, rerender } = renderHook(
@@ -119,7 +117,7 @@ describe("useAgentTaskController", () => {
 
     await act(async () => {
       oldResponse.resolve({
-        schema_version: 1,
+        schema_version: 2,
         items: [task("project-a", "task-a", "running")],
         total: 1,
       });
@@ -138,8 +136,9 @@ describe("useAgentTaskController", () => {
         execution_environment_snapshot_id: "environment-1",
         execution_environment_hash: "environment-hash-1",
         goal: "Run preprocessing and FC",
-        dataset_summary: "3 subjects",
-        execution_summary: "Reviewed native pipeline",
+        registered_subject_count: 3,
+        selected_subject_ids: [],
+        node_ids: ["realign", "smooth", "native_fc"],
         write_roots: ["project://derivatives"],
         rawdata_read_only: true,
         external_tools: [],
@@ -150,7 +149,7 @@ describe("useAgentTaskController", () => {
       },
     };
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 1,
+      schema_version: 2,
       items: [approvalTask],
       total: 1,
     });
@@ -186,7 +185,7 @@ describe("useAgentTaskController", () => {
   it("polls only active tasks and resumes event pagination without duplicates", async () => {
     const runningTask = task("project-a", "task-a", "running");
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 1,
+      schema_version: 2,
       items: [runningTask],
       total: 1,
     });
@@ -255,7 +254,7 @@ describe("useAgentTaskController", () => {
 
   it("does not poll while a task is waiting for a user decision", async () => {
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 1,
+      schema_version: 2,
       items: [task("project-a", "task-a", "waiting_for_user")],
       total: 1,
     });
@@ -272,7 +271,7 @@ describe("useAgentTaskController", () => {
   it("loads only the redacted Harness activity for the selected task on demand", async () => {
     const waitingTask = task("project-a", "task-a", "waiting_for_user");
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 1,
+      schema_version: 2,
       items: [waitingTask],
       total: 1,
     });
@@ -304,10 +303,11 @@ describe("useAgentTaskController", () => {
     const failedTask = {
       ...runningTask,
       state: "needs_attention" as const,
-      current_action: "The run needs review",
+      current_action_code: "attention" as const,
+      execution_performed: true,
     };
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 1,
+      schema_version: 2,
       items: [runningTask],
       total: 1,
     });
@@ -318,7 +318,10 @@ describe("useAgentTaskController", () => {
     );
 
     await waitFor(() => expect(result.current.task?.state).toBe("needs_attention"));
-    expect(result.current.task?.current_action).toBe("The run needs review");
+    expect(result.current.task?.current_action_code).toBe("attention");
+    // A run was already dispatched through the gateway, so the failure of that
+    // run never rewinds execution_performed to false.
+    expect(result.current.task?.execution_performed).toBe(true);
   });
 
   it("uses the bounded recovery command without exposing candidate scope", async () => {
@@ -326,11 +329,8 @@ describe("useAgentTaskController", () => {
       ...task("project-a", "task-a", "waiting_for_user"),
       next_action: {
         type: "approve_recovery",
-        title: "Approve recovery",
-        description: null,
         requires_user: true,
         decision_batch_id: null,
-        disabled_reason: null,
       },
       recovery: {
         proposal_id: "proposal-1",
@@ -343,7 +343,7 @@ describe("useAgentTaskController", () => {
       },
     };
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 1,
+      schema_version: 2,
       items: [recoveryTask],
       total: 1,
     });

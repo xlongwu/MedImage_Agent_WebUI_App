@@ -75,8 +75,9 @@ def _plan() -> ReviewedPlanRecord:
                 "execution_environment_snapshot_id": "environment-snapshot-1",
                 "execution_environment_hash": "environment-hash",
                 "goal": "Compute FC",
-                "dataset_summary": "12 subjects",
-                "execution_summary": "Native preprocessing and FC",
+                "registered_subject_count": 12,
+                "selected_subject_ids": [],
+                "node_ids": ["native_preproc_full_execute"],
                 "write_roots": ["project://project-1/outputs"],
                 "rawdata_read_only": True,
                 "external_tools": [],
@@ -542,7 +543,11 @@ def test_plan_only_completion_has_truthful_metadata_result_without_run() -> None
 
     assert projected.state == "completed"
     assert projected.outcome == "succeeded"
+    assert projected.task_kind == "plan_only"
+    assert projected.execution_performed is False
     assert projected.result_summary is not None
+    assert projected.result_summary.summary_code == "result.plan_only"
+    assert projected.result_summary.recommended_action_code == "review_saved_plan"
     assert projected.result_summary.artifacts[0].artifact_type == "reviewed_plan"
     assert projected.result_summary.artifacts[0].capability_level == "metadata_only"
     assert projected.next_action.type == "review_results"
@@ -550,3 +555,35 @@ def test_plan_only_completion_has_truthful_metadata_result_without_run() -> None
     assert projected.progress.phase == "complete"
     assert projected.technical_details.ticket_id is None
     assert projected.technical_details.run_id is None
+
+
+def test_public_projection_exposes_codes_not_parsable_prose() -> None:
+    dumped = AgentTaskReadModel(ReadOnlyStore()).get(
+        project_id="project-1", task_id="task-1"
+    ).model_dump(mode="json")
+
+    assert "current_action" not in dumped
+    assert dumped["current_action_code"] == "waiting_approval"
+    assert set(dumped["next_action"]) == {"type", "requires_user", "decision_batch_id"}
+    assert {"registered_subject_count", "selected_subject_ids", "node_ids"} <= set(
+        dumped["approval_summary"]
+    )
+    assert "dataset_summary" not in dumped["approval_summary"]
+    assert "execution_summary" not in dumped["approval_summary"]
+
+
+def test_execution_performed_tracks_dispatch_not_success() -> None:
+    dispatched = AgentTaskReadModel(ReadOnlyStore(_lifecycle("FAILED"))).get(
+        project_id="project-1", task_id="task-1"
+    )
+    canceled_before_dispatch = AgentTaskReadModel(
+        ReadOnlyStore(
+            _lifecycle("CANCELED").model_copy(
+                update={"run_id": None, "execution_ticket_id": None}
+            )
+        )
+    ).get(project_id="project-1", task_id="task-1")
+
+    assert dispatched.task_kind == "execution"
+    assert dispatched.execution_performed is True
+    assert canceled_before_dispatch.execution_performed is False

@@ -128,6 +128,7 @@ export const messagesEn = {
   "agent.next.approveRecovery.title": "Review the recovery proposal",
   "agent.next.reviewResults.title": "Review results",
   "agent.next.viewAttention.title": "Review attention items",
+  "agent.next.viewAttention.description": "Inspect the evidence and choose a safe next step.",
   "agent.next.none.title": "No action required",
   "agent.decision.goalRevision.question": "Revise the research goal to continue.",
   "agent.decision.goalRevision.impact":
@@ -200,7 +201,8 @@ export const messagesEn = {
   "agent.approvalGoal": "Goal",
   "agent.approvalData": "Data",
   "agent.approvalExecution": "Execution",
-  "agent.approvalDatasetSubjects": "{count} registered subject(s)",
+  "agent.approvalSelectedSubjects": "Selected {selected} of {registered} registered subjects",
+  "agent.approvalRegisteredSubjects": "{count} registered subjects; full dataset in scope",
   "agent.approvalReviewedNodes": "{count} reviewed node(s); no dispatch before approval",
   "agent.approvalWrites": "Approved write scope",
   "agent.approvalSafety": "Safety boundary",
@@ -230,6 +232,16 @@ export const messagesEn = {
     "A scientifically simplified method was used; review its limitations.",
   "agent.result.limitation.metadataOnly":
     "Only metadata evidence exists; no declared numerical result was computed.",
+  "agent.result.failed.title": "Reviewed execution failed",
+  "agent.result.failed.summary":
+    "The reviewed workflow did not complete; no defensible result evidence was recorded.",
+  "agent.validation.checks": "{passed} validation check(s) passed; {failed} failed.",
+  "agent.validation.noRecord": "No separate QC validation record was available.",
+  "agent.recommendedAction.reviewTechnicalEvidence":
+    "Review technical evidence and the bounded recovery proposal.",
+  "agent.recommendedAction.reviewSavedPlan": "Review the saved plan details.",
+  "agent.exportDisabled.noRegisteredReport":
+    "No registered report artifact is available for this task.",
   "agent.completedSubjects": "{count} completed",
   "agent.failedSubjects": "{count} failed",
   "agent.artifactCount": "{count} artifacts",
@@ -261,7 +273,7 @@ export const messagesEn = {
   "agent.harness.noAction": "No action recorded",
   "agent.harness.noActivity": "No redacted Agent activity is available.",
   "agent.harness.budget":
-    "Steps: {steps}/{stepLimit}; model calls: {calls}/{callLimit}; actions: {proposals}/{proposalLimit}; repairs: {repairs}/{repairLimit} per step; recoveries: {recoveries}/{recoveryLimit}.",
+    "Steps: {steps}/{stepLimit}; model calls: {calls}/{callLimit}; actions: {proposals}/{proposalLimit}; repairs: {repairs}/{repairLimit} per step.",
   "agent.harness.tokens":
     "Input tokens: {input}/{inputLimit}; output tokens: {output}/{outputLimit}.",
   "agent.harness.provider": "Actual planning path: {provider}.",

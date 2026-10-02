@@ -1,6 +1,14 @@
 # 02：持久化 Agent 循环与调度器改造方案
 
-> 状态：Draft，待人工 Review。
+> 状态：已实现（2026-10-01 源码复核；证据层级为源码 + focused 回归，不含 packaged/release）。
+> 当前实现：`services/agent_harness_service.py` 的 `run_until_blocked()` 与 `HarnessLoopResult`
+> （`yielded`/`stopped`/`run_reconciled`）、attempt 的 `last_wake_reason`/`last_wake_fingerprint`/
+> `last_progress_at`/`yield_count`/`fallback_*` 字段、`core/config_schema.py` 的 `max_steps_per_wakeup`
+> （默认 3，`ge=1/le=6`），以及 `services/agent_task_scheduler.py` 的
+> `enqueue/claim_next/run_once/rescan/recover_once_on_startup/shutdown`，由 `app/main.py` 的 lifespan 接线。
+> 与本文的偏离：§6 点名的 `runtime/agent_harness_scheduler.py` 从未以该名字存在，实际位置是
+> `services/agent_task_scheduler.py`；配置前缀是 `MEDIMAGE_AGENT_HARNESS_...`（如
+> `MEDIMAGE_AGENT_HARNESS_MAX_STEPS_PER_WAKEUP`），不是文中的 `AGENT_TASK_...`。
 > 依赖：01 基线完成；03 的 Action handler 可按接口并行准备，但共享文件由单一 owner 修改。
 
 ## 1. 目标

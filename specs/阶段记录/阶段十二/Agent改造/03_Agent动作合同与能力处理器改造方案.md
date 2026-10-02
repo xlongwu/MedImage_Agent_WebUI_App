@@ -1,6 +1,18 @@
 # 03：Agent 动作合同与能力处理器改造方案
 
-> 状态：Draft，待人工 Review。
+> 状态：已被取代，并经维护者于 2026-10-01 批准正式跳过（不再作为待补完范围）。
+> 取代来源：`Agent简洁优化实施方案.md` §5.4（决策 G-08）主动缩减动作空间。当前
+> `schemas/agent_harness.py:AgentHarnessActionKind` 只有 `request_decision` 与 `draft_plan`，
+> `runtime/agent_capability_catalog.py` 只登记这两个（A1、fail-closed 抛
+> `AGENT_HARNESS_CAPABILITY_DENIED`）；本文的统一 handler 注册表、`ActionExecutionResult`、
+> `AGENT_ACTION_PAYLOAD_INVALID`、`AGENT_ACTION_HANDLER_FAILED` 在全仓源码中均不存在，
+> `tests/unit/test_agent_harness_service.py` 反而把 `read_evidence/explain_result/propose_recovery/finish`
+> 被拒固化为回归。
+> 承担风险：模型可提议的动作面小于原设计，多步推进由确定性 planner、`run_until_blocked()` 与
+> 后台调度器承担，而非由模型选择处理器。
+> 重新启用触发条件：阶段十六（`specs/阶段记录/阶段十六/`）获批扩大动作空间，并单独立项同步
+> Tool Catalog、Approval Gate、审计、安全 allowlist、API/前端能力展示与测试；不得以「补完阶段十二」
+> 的名义恢复本文设计。
 > 依赖：01；与 02 通过 `run_one()` 和 `ActionExecutionResult` 对接。
 
 ## 1. 目标

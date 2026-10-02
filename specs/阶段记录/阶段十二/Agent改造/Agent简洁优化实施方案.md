@@ -1,6 +1,34 @@
 # Agent 简洁优化实施方案
 
-> 状态：Draft，待人工 Review。
+> 状态：部分实现（2026-10-01 源码复核，含当日完成的 §5.3 实施）。逐条结论：
+> §5.1 顶层导航收敛为 Projects/Agent/Runs/Settings —— 已实现
+> （`features/navigation/GlobalNavigationRail.tsx`）；
+> §5.2 单一 `TaskCard` 合并 —— **未实现**，`AgentWorkspace.tsx` 仍渲染多张同级卡片，
+> `TaskCard.tsx` 不存在，未列入本轮范围；
+> §5.3 结构化公共合同 —— 已实现：删除 `current_action` 与 `next_action.title/description/
+> disabled_reason`，新增 `task_kind`/`execution_performed`，审批范围改为
+> `registered_subject_count`/`selected_subject_ids`/`node_ids`，结果改为 `summary_code`/
+> `limitation_codes`/`validation_checks_passed|failed`/`recommended_action_code`/`export_disabled_code`，
+> 前端 subject/node 英文正则、`RESULT_MESSAGE_KEYS` 句子表与 `reviewed_plan` artifact 推断 plan-only
+> 的写法已删除；状态码字段实名沿用 `current_action_code`（不叫 `status_code`），且未采用本文的 16 值
+> 细分集合，因为更细的区分已由 `task_kind`+`execution_performed`+`outcome`+`next_action.type` 承载，
+> 重复编码会造成两个事实来源；
+> §5.4 动作缩减为两种 —— 已实现（并据此取代方案 03 与 06 的扩展 handler）；
+> §5.6 后台有限推进 —— 目标已由 `services/agent_task_scheduler.py` + `agent_task_wake_outbox` 的
+> 持久化 outbox 原子 lease claim 实现（跨进程唯一 owner、重启恢复、shutdown 语义），本文点名的
+> `planning_lease_owner`/`planning_generation`/`claim_planning` 与
+> `MEDIMAGE_AGENT_TASK_RESCAN_SECONDS` 未采用：经 2026-10-01 复核确认属于等价实现取代计划字段名，
+> 不再补建第二套并发权威；运行期不周期 rescan（worker 按 `next_due` 唤醒，rescan 只在启动时执行，
+> `RESCAN_LIMIT = 100` 是项目数上限而非扫描周期，>100 项目的续扫缺口归 `Harness优化` H05）；
+> §5.7 决定批次 —— 已实现，但上限按方案 04 的 6 而非本文的 8，错误码实名 `AGENT_DECISION_*`；
+> §5.8 结果与恢复保持确定性 —— 顺序保持，但「不增加 Harness wake」已被后续实现取代：
+> `services/agent_task_reconciler.py` 现在会在终态协调后以 `run_reconciled` 唤醒 Harness（见方案 06）；
+> §5.9 降低 Assistant 入口权重 —— 未实现，TopBar 仍使用 `nav.assistant` 原文案；
+> §5.10 审计与详情 —— 已实现但字段位置不同：`action_result_code` 在 step 上，wake reason 与
+> provider 只在 attempt/ModelCallRecord 层，未在 step 重复。
+> §12 决策 2 的 `202 Accepted` 未采纳：create/answer 返回 200 + 完整投影，但规划本身已移出 HTTP 请求
+> （`AgentPlanningService.create()` 只持久化并 `scheduler.notify()`），语义目标已达成。
+> 本文其余精确测试计数按 `AGENTS.md` §7.5 不作为稳定文档内容保留。
 > 任务模式：Architecture / Refactor + Feature Bundle。
 > 本文职责：收敛 Agent 默认交互和后台推进方式，作为后续开发的直接实施依据；本文不授权修改生产代码。
 > 方案关系：`00_Agent改造总体方案.md` 至 `04_项目证据收集与科学决策自动化方案.md` 提供背景和候选设计。本文选择其中当前必须完成的部分，并明确删除或延期的内容；在本文获批前，不改变已有方案状态。

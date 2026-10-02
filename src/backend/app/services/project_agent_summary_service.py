@@ -28,12 +28,13 @@ class ProjectAgentSummaryService:
                     task_id=task.task_id,
                     state=task.state,
                     outcome=task.outcome,
+                    task_kind=task.task_kind,
                     goal_summary=task.goal_summary,
-                    current_action=task.current_action,
                     current_action_code=task.current_action_code,
                     requires_user=task.next_action.requires_user,
-                    result_title=task.result_summary.title if task.result_summary else None,
-                    recent_activity=task.current_action,
+                    result_summary_code=(
+                        task.result_summary.summary_code if task.result_summary else None
+                    ),
                     updated_at=task.updated_at.isoformat(),
                 )
             projected.append(project.model_copy(update={"latest_agent_task": summary}))

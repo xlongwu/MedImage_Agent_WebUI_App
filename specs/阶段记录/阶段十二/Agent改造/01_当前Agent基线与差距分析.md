@@ -1,6 +1,11 @@
 # 01：当前 Agent 基线与差距分析
 
-> 状态：Draft，待人工 Review。
+> 状态：已被取代（2026-08-09 基线快照；2026-10-01 源码复核）。
+> 本文 §2/§5 的「当前」描述对应阶段十一末的源码：六种 Action、`runtime/agent_harness_scheduler.py`、
+> `AgentTaskCommandService._plan()` 已分别被 `schemas/agent_harness.py:AgentHarnessActionKind`（两种）+
+> `runtime/agent_capability_catalog.py`、`services/agent_task_scheduler.py` 和 `services/agent_planning_service.py`
+> 取代；B-01—B-10 中除界面文案收敛外均已闭合，B-10 的 legacy `observation` 字段与兼容 validator 已删除。
+> 保留价值只有 §4.1 的四级证据方法学和当时的 `release_evidence=unknown` 结论；不得作为当前行为来源。
 > 依赖：`00_Agent改造总体方案.md`。
 > 本文只建立事实基线和后续改造入口，不修改代码、不提升能力等级。
 

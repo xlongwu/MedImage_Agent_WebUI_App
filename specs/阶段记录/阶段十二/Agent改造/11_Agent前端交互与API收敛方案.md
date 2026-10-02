@@ -1,6 +1,22 @@
 # 11：Agent 前端交互与 API 收敛方案
 
-> 状态：Draft，待人工 Review。
+> 状态：已实现（2026-10-01 源码复核；§5.3 前端英文解析的删除于当日完成）。证据层级为源码 +
+> 前后端 focused 回归，不含 packaged/GUI 人工验收。
+> 已落地：`answer` 已切换为 `batch_id + answers[] + command_id + actor` 且旧单项 `decision_id` 合同已删除；
+> 公共投影含 `decision_batch`、`automation`、`harness_summary`、`result_explanation`、`recovery`、
+> `evidence_links`、`technical_details`；只读详情端点 `GET .../agent/tasks/{id}/trace` 与 `/harness`；
+> 错误合同按 `AGENT_DECISION_*`、`APPROVAL_SUMMARY_*`、`*_BUDGET_EXHAUSTED`、
+> `AGENT_HARNESS_CAPABILITY_DENIED` 等稳定码走 i18n；`DecisionBatchCard`/`DecisionBatchForm` 与
+> 有界轮询已接入。
+> 与本文的偏离：状态码字段实名 `current_action_code`（10 值稳定 Literal），不是 §4.2 假设的
+> `status_code`；本轮另补 `task_kind` 与 `execution_performed`。`next_action` 不再携带
+> `title`/`description`/`disabled_reason`（后者后端从未产生），文案由前端按 `type` 映射 i18n。
+> 审批范围不再下发 `dataset_summary`/`execution_summary` 英文句子，改为
+> `registered_subject_count`/`selected_subject_ids`/`node_ids`；结果改为 `summary_code`、
+> `limitation_codes`、`validation_checks_passed/failed`、`recommended_action_code`、
+> `export_disabled_code`。前端已删除英文整句查表与计数正则（原 `agentTaskMessages.ts`），不再用
+> `reviewed_plan` artifact 推断 plan-only。
+> 未由本文覆盖但仍开放的是 `Agent简洁优化实施方案.md` §5.2 的单一 `TaskCard` 合并。
 > 依赖：04 批量决定、05 计划版本、06 结果/恢复、08 预算、10 Trace。
 
 ## 1. 目标

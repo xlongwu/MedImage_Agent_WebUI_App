@@ -2,7 +2,12 @@ import { Badge, Button, Card } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentResultExplanation, AgentTaskResultSummary } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
-import { getAgentResultMessageKey } from "./agentTaskMessages";
+import {
+  RESULT_SUMMARY_KEYS,
+  getAgentExportDisabledKey,
+  getAgentLimitationKey,
+  getAgentRecommendedActionKey,
+} from "./agentTaskMessages";
 
 export function ResultSummaryCard({
   baseUrl,
@@ -16,20 +21,18 @@ export function ResultSummaryCard({
   explanation?: AgentResultExplanation | null;
 }) {
   const { t } = useI18n();
-  const isPlanOnly = result.artifacts.some(
-    (artifact) => artifact.artifact_type === "reviewed_plan",
-  );
-  const localizeResultText = (value: string) => {
-    const key = getAgentResultMessageKey(value);
-    return key ? t(key) : value;
-  };
-  const title = isPlanOnly ? t("agent.planOnlyResult.title") : localizeResultText(result.title);
-  const summary = isPlanOnly
-    ? t("agent.planOnlyResult.summary")
-    : localizeResultText(result.summary);
+  const isPlanOnly = result.summary_code === "result.plan_only";
+  const summaryKeys = RESULT_SUMMARY_KEYS[result.summary_code];
+  const title = t(summaryKeys.title);
+  const summary = t(summaryKeys.summary);
   const limitations = isPlanOnly
     ? [t("agent.planOnlyResult.limitation")]
-    : result.limitations.map(localizeResultText);
+    : result.limitation_codes.map((code) => {
+        const key = getAgentLimitationKey(code);
+        return key ? t(key) : code;
+      });
+  const recommendedActionKey = getAgentRecommendedActionKey(result.recommended_action_code);
+  const exportDisabledKey = getAgentExportDisabledKey(result.export_disabled_code);
   return (
     <Card className={styles.resultSummary}>
       <div className={styles.resultHeader}>
@@ -76,11 +79,15 @@ export function ResultSummaryCard({
           </>
         )}
       </div>
-      {result.qc_summary ? (
-        <p>
-          <strong>{t("agent.qcSummary")}</strong> {localizeResultText(result.qc_summary)}
-        </p>
-      ) : null}
+      <p>
+        <strong>{t("agent.qcSummary")}</strong>{" "}
+        {result.validation_checks_passed === null
+          ? t("agent.validation.noRecord")
+          : t("agent.validation.checks", {
+              passed: result.validation_checks_passed,
+              failed: result.validation_checks_failed ?? 0,
+            })}
+      </p>
       {result.artifacts.length ? (
         <div className={styles.limitations}>
           <strong>{t("agent.artifacts")}</strong>
@@ -103,10 +110,9 @@ export function ResultSummaryCard({
           </ul>
         </div>
       ) : null}
-      {result.recommended_action ? (
+      {recommendedActionKey ? (
         <p>
-          <strong>{t("agent.recommendedAction")}</strong>{" "}
-          {localizeResultText(result.recommended_action)}
+          <strong>{t("agent.recommendedAction")}</strong> {t(recommendedActionKey)}
         </p>
       ) : null}
       <div className={styles.detailActions}>
@@ -118,13 +124,17 @@ export function ResultSummaryCard({
             {t("agent.exportReport")}
           </a>
         ) : (
-          <button disabled title={result.export_disabled_reason ?? undefined} type="button">
+          <button
+            disabled
+            title={exportDisabledKey ? t(exportDisabledKey) : undefined}
+            type="button"
+          >
             {t("agent.exportReport")}
           </button>
         )}
       </div>
-      {!result.report_export_uri && result.export_disabled_reason ? (
-        <small>{result.export_disabled_reason}</small>
+      {!result.report_export_uri && exportDisabledKey ? (
+        <small>{t(exportDisabledKey)}</small>
       ) : null}
     </Card>
   );

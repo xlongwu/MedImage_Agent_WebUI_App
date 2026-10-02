@@ -52,13 +52,7 @@ class ApprovalSummaryService:
             if isinstance(node, dict) and node.get("id")
         )
         selected_subjects = self._selected_subjects(plan)
-        dataset_summary = (
-            f"1 selected subject: {selected_subjects[0]}"
-            if len(selected_subjects) == 1
-            else f"{len(selected_subjects)} selected subjects: {', '.join(selected_subjects)}"
-            if selected_subjects
-            else f"{project.subjects_count} registered subject(s)"
-        )
+        registered_subject_count = int(project.subjects_count or 0)
         subject_scope_summary = (
             f" for subject {selected_subjects[0]}"
             if len(selected_subjects) == 1
@@ -148,7 +142,7 @@ class ApprovalSummaryService:
         )
         expires = issued + timedelta(minutes=max(1, ttl_minutes))
         base: dict[str, Any] = {
-            "schema_version": 4,
+            "schema_version": 5,
             "project_id": reviewed_plan.project_id,
             "reviewed_plan_id": reviewed_plan.reviewed_plan_id,
             "plan_hash": reviewed_plan.plan_hash,
@@ -184,8 +178,8 @@ class ApprovalSummaryService:
             "memory_influence_summary": influence_summary,
             "goal_contract_hash": goal_hash,
             "goal": str(payload.get("goal") or "Reviewed scientific workflow"),
-            "dataset_summary": dataset_summary,
-            "execution_summary": f"{len(nodes)} reviewed node(s); no dispatch before approval",
+            "registered_subject_count": registered_subject_count,
+            "selected_subject_ids": selected_subjects,
             "write_roots": write_roots,
             "rawdata_read_only": True,
             "node_ids": nodes,

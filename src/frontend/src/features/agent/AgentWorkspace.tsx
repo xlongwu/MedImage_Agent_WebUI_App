@@ -73,7 +73,7 @@ function localizeAgentError(
       title: t("agent.actionProblem"),
     };
   }
-  if (code === "AGENT_HARNESS_CONTEXT_LIMIT_EXCEEDED") {
+  if (code?.includes("AGENT_CONTEXT_REQUIRED_CONTENT_TOO_LARGE")) {
     return {
       message: t("agent.error.contextLimit"),
       retryLabel: null,
@@ -238,9 +238,7 @@ export function AgentWorkspaceView({
   const localizedError = controller.error
     ? localizeAgentError(controller.error, controller.errorCode, t)
     : null;
-  const planOnlyResult = Boolean(
-    task?.result_summary?.artifacts.some((artifact) => artifact.artifact_type === "reviewed_plan"),
-  );
+  const planOnly = task?.task_kind === "plan_only";
 
   return (
     <div className={styles.workspace}>
@@ -321,11 +319,7 @@ export function AgentWorkspaceView({
             state={task.state}
           />
           {task.harness_summary ? <HarnessStatusCard summary={task.harness_summary} /> : null}
-          <MacroProgress
-            outcome={task.outcome}
-            planOnly={planOnlyResult}
-            progress={task.progress}
-          />
+          <MacroProgress outcome={task.outcome} planOnly={planOnly} progress={task.progress} />
           <ExecutionGraphTaskSummary
             baseUrl={controller.baseUrl ?? ""}
             onOpenRuns={onOpenRuns}
@@ -340,7 +334,7 @@ export function AgentWorkspaceView({
               onReopenAttention={onReopenAttention}
               recovery={task.recovery}
             />
-          ) : task.state === "completed" && planOnlyResult ? null : isDecisionAction(task) ? (
+          ) : task.state === "completed" && planOnly ? null : isDecisionAction(task) ? (
             <DecisionBatchCard onReopenAttention={onReopenAttention} />
           ) : (
             <NextActionCard

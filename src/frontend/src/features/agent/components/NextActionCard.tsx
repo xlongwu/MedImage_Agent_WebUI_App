@@ -2,7 +2,6 @@ import { Badge, Button, Card } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentTaskResponse } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
-import { getAgentApprovalMessage } from "./agentTaskMessages";
 
 export function NextActionCard({
   mutating,
@@ -36,11 +35,11 @@ export function NextActionCard({
   const description =
     type === "approve_execution"
       ? t("agent.next.approveExecution.description")
-      : task.next_action.description;
-  const localizeApprovalSummary = (value: string) => {
-    const parsed = getAgentApprovalMessage(value);
-    return parsed ? t(parsed.key, { count: parsed.count }) : value;
-  };
+      : type === "provide_input"
+        ? t("agent.next.provideInput.description")
+        : type === "view_attention"
+          ? t("agent.next.viewAttention.description")
+          : null;
 
   return (
     <Card className={styles.nextAction} tone="elevated">
@@ -66,11 +65,22 @@ export function NextActionCard({
           </div>
           <div>
             <span>{t("agent.approvalData")}</span>
-            <strong>{localizeApprovalSummary(task.approval_summary.dataset_summary)}</strong>
+            <strong>
+              {task.approval_summary.selected_subject_ids.length
+                ? t("agent.approvalSelectedSubjects", {
+                    selected: task.approval_summary.selected_subject_ids.length,
+                    registered: task.approval_summary.registered_subject_count,
+                  })
+                : t("agent.approvalRegisteredSubjects", {
+                    count: task.approval_summary.registered_subject_count,
+                  })}
+            </strong>
           </div>
           <div>
             <span>{t("agent.approvalExecution")}</span>
-            <strong>{localizeApprovalSummary(task.approval_summary.execution_summary)}</strong>
+            <strong>
+              {t("agent.approvalReviewedNodes", { count: task.approval_summary.node_ids.length })}
+            </strong>
           </div>
           <div>
             <span>{t("agent.approvalWrites")}</span>
@@ -119,7 +129,6 @@ export function NextActionCard({
       ) : null}
 
       <div className={styles.actionFooter}>
-        <span>{task.next_action.disabled_reason}</span>
         <div>
           {task.state !== "running" && task.state !== "completed" && task.outcome !== "canceled" ? (
             <Button
@@ -134,7 +143,7 @@ export function NextActionCard({
             <Button
               data-agent-action={isApproval ? "reopen_approve_execution" : undefined}
               data-primary-action="true"
-              disabled={mutating || Boolean(task.next_action.disabled_reason)}
+              disabled={mutating}
               onClick={isApproval ? onReopenAttention : onOpenRuns}
               variant="primary"
             >

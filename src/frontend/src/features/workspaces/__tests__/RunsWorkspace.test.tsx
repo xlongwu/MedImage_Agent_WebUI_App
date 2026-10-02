@@ -28,21 +28,19 @@ vi.mock("../../../lib/api/sandboxes", () => ({ listSandboxAttempts: vi.fn() }));
 
 function agentTaskEvidence(): AgentTaskResponse {
   return {
-    schema_version: 1,
+    schema_version: 2,
     task_id: "lifecycle-1",
     project_id: "project-1",
     state: "running",
     outcome: null,
+    task_kind: "execution",
+    execution_performed: true,
     goal_summary: "Generate FC and QC",
-    current_action: "Running reviewed processing",
     current_action_code: "executing",
     next_action: {
       type: "none",
-      title: "No action",
-      description: null,
       requires_user: false,
       decision_batch_id: null,
-      disabled_reason: null,
     },
     automation: {
       level: "A3",
@@ -94,6 +92,8 @@ function planOnlyAgentTaskEvidence(): AgentTaskResponse {
     ...agentTaskEvidence(),
     state: "completed",
     outcome: "succeeded",
+    task_kind: "plan_only",
+    execution_performed: false,
     progress: {
       phase: "complete",
       percent: null,
@@ -119,15 +119,15 @@ function planOnlyAgentTaskEvidence(): AgentTaskResponse {
     },
     result_summary: {
       outcome: "succeeded",
-      title: "Preprocessing plan prepared",
-      summary: "A metadata-only plan was saved.",
-      qc_summary: null,
+      summary_code: "result.plan_only",
+      validation_checks_passed: null,
+      validation_checks_failed: null,
       completed_subjects: null,
       failed_subjects: null,
       excluded_subjects: null,
       total_subjects: null,
-      limitations: ["Metadata only"],
-      recommended_action: null,
+      limitation_codes: ["metadata_only"],
+      recommended_action_code: "review_saved_plan",
       artifacts: [
         {
           artifact_id: "plan-1",
@@ -398,22 +398,20 @@ describe("RunsWorkspace", () => {
     const waitingTask: AgentTaskResponse = {
       ...agentTaskEvidence(),
       state: "waiting_for_user",
-      current_action: "Review approval summary",
+      current_action_code: "waiting_approval",
       next_action: {
         type: "approve_execution",
-        title: "Approve execution",
-        description: null,
         requires_user: true,
         decision_batch_id: null,
-        disabled_reason: null,
       },
       approval_summary: {
         summary_hash: "sha256:summary",
         execution_environment_snapshot_id: "environment-1",
         execution_environment_hash: "environment-hash-1",
         goal: "Generate FC and QC",
-        dataset_summary: "3 subjects",
-        execution_summary: "Reviewed native preprocessing",
+        registered_subject_count: 3,
+        selected_subject_ids: [],
+        node_ids: ["native_preproc", "fc"],
         write_roots: ["derivatives"],
         rawdata_read_only: true,
         external_tools: [],
@@ -435,6 +433,8 @@ describe("RunsWorkspace", () => {
     expect(panel).toHaveTextContent("Rawdata read-only");
     expect(panel).toHaveTextContent("Summary hash bound");
     expect(panel).toHaveTextContent("backend remain authoritative");
+    // The execution line is projected from the reviewed node ids, not a sentence.
+    expect(panel).toHaveTextContent("2 reviewed node(s); no dispatch before approval");
 
     await user.click(screen.getByRole("button", { name: "Review approval" }));
     expect(onOpenAgent).toHaveBeenCalledTimes(1);
@@ -445,7 +445,8 @@ describe("RunsWorkspace", () => {
 
     const projection = screen.getByLabelText("Selected run projection");
     expect(projection).toHaveTextContent("No associated Agent Task");
-    expect(projection).not.toHaveTextContent("Running reviewed processing");
+    // The unrelated task's localized current action must not leak into the run.
+    expect(projection).not.toHaveTextContent("Executing the approved workflow");
     expect(screen.queryByLabelText("Reviewed execution status")).not.toBeInTheDocument();
   });
 
@@ -454,7 +455,7 @@ describe("RunsWorkspace", () => {
       ...agentTaskEvidence(),
       state: "needs_attention",
       outcome: "partial",
-      current_action: "Inspect the evidence and choose a safe next step.",
+      current_action_code: "attention",
       technical_details: {
         ...agentTaskEvidence().technical_details!,
         run_id: "task-1",
@@ -464,8 +465,9 @@ describe("RunsWorkspace", () => {
         execution_environment_snapshot_id: "environment-1",
         execution_environment_hash: "environment-hash-1",
         goal: "Generate FC and QC",
-        dataset_summary: "1 selected subject",
-        execution_summary: "1 reviewed node; no dispatch before approval",
+        registered_subject_count: 3,
+        selected_subject_ids: ["sub-01"],
+        node_ids: ["native_preproc", "fc"],
         write_roots: ["work"],
         rawdata_read_only: true,
         external_tools: [],
@@ -484,15 +486,15 @@ describe("RunsWorkspace", () => {
       },
       result_summary: {
         outcome: "partial",
-        title: "Research goal not fully satisfied",
-        summary: "The selected subject completed with a scientific warning.",
-        qc_summary: "Nuisance regression requires review.",
+        summary_code: "result.partial",
+        validation_checks_passed: 1,
+        validation_checks_failed: 1,
         completed_subjects: 1,
         failed_subjects: 0,
         excluded_subjects: 0,
         total_subjects: 1,
-        limitations: ["Scientific warning remains"],
-        recommended_action: "Review QC evidence",
+        limitation_codes: ["partial", "simplified"],
+        recommended_action_code: "review_technical_evidence",
         artifacts: [],
       },
     };
@@ -520,15 +522,15 @@ describe("RunsWorkspace", () => {
       },
       result_summary: {
         outcome: "partial",
-        title: "Research goal not fully satisfied",
-        summary: "Some reviewed evidence failed or remained incomplete.",
-        qc_summary: null,
+        summary_code: "result.partial",
+        validation_checks_passed: null,
+        validation_checks_failed: null,
         completed_subjects: 1,
         failed_subjects: 0,
         excluded_subjects: 0,
         total_subjects: 1,
-        limitations: ["A scientifically simplified method was used; review its limitations."],
-        recommended_action: null,
+        limitation_codes: ["simplified"],
+        recommended_action_code: null,
         artifacts: [],
       },
     };
@@ -547,6 +549,7 @@ describe("RunsWorkspace", () => {
     expect(projection).toHaveTextContent("部分已审核证据失败或仍不完整");
     expect(projection).toHaveTextContent("使用了科学上简化的方法；请审阅其限制");
     expect(projection).not.toHaveTextContent("Research goal not fully satisfied");
+    expect(projection).not.toHaveTextContent("simplified method");
   });
 
   it("does not render Agent Task evidence owned by a different project", () => {

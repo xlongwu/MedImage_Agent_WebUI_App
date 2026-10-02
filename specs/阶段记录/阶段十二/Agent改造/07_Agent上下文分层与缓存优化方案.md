@@ -1,6 +1,15 @@
 # 07：Agent 上下文分层与缓存优化方案
 
-> 状态：Implemented，已完成代码与回归验证；仍按项目流程接受人工 Review。
+> 状态：部分实现（2026-10-01 源码复核）。原标头「Implemented」偏高，现予下调。
+> 已落地：10 个固定 typed sections、`HarnessContextSources` 显式输入、逐分区
+> `source_hash/source_refs/section_hashes`、秘密与影像键过滤、32 KiB 上限、按 `context_hash`
+> 复用不可变 context 行、`AGENT_SKILL_UNAVAILABLE` 降级不影响 builder。
+> 与本文的偏离（当前真实行为以源码为准）：Context 已是 **v3**
+> （`schemas/agent_harness.py` 的 `schema_version: Literal[3]`，标题与 §4/§6/§7 的「Context v2」过期）；
+> `omitted_fields` 实名 `omitted_sections`；§5.2 的 `nonessential_context` 回退不存在，实际是逐 section
+> 淘汰；超限错误码实名 `AGENT_CONTEXT_REQUIRED_CONTENT_TOO_LARGE`，不是
+> `AGENT_CONTEXT_LIMIT_EXCEEDED`；`budget` 分区只提供**已用**计数与 active-seconds 上限，不是剩余额度；
+> §2 把 `allowed_fields_json` 写成当前实现，该字段已删除。
 > 依赖：04 EvidenceSnapshot、05 计划版本、06 Observation/Recovery 引用。
 
 ## 1. 目标

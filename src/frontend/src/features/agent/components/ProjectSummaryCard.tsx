@@ -2,7 +2,7 @@ import { Badge, Card } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentTaskResponse } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
-import { getAgentResultMessageKey } from "./agentTaskMessages";
+import { RESULT_SUMMARY_KEYS } from "./agentTaskMessages";
 
 export function ProjectSummaryCard({
   dataStateLabel,
@@ -16,16 +16,10 @@ export function ProjectSummaryCard({
   const { t } = useI18n();
   const issueCount =
     (task?.progress.failed_subjects ?? 0) + (task?.next_action.requires_user ? 1 : 0);
-  const planOnlyResult = Boolean(
-    task?.result_summary?.artifacts.some((artifact) => artifact.artifact_type === "reviewed_plan"),
-  );
-  const recentResult = planOnlyResult
-    ? t("agent.planOnlyResult.title")
-    : task?.result_summary?.title
-      ? getAgentResultMessageKey(task.result_summary.title)
-        ? t(getAgentResultMessageKey(task.result_summary.title)!)
-        : task.result_summary.title
-      : t("agent.noResult");
+  const summaryKeys = task?.result_summary
+    ? RESULT_SUMMARY_KEYS[task.result_summary.summary_code]
+    : null;
+  const recentResult = summaryKeys ? t(summaryKeys.title) : t("agent.noResult");
 
   return (
     <Card className={styles.projectSummary} tone="elevated">

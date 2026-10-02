@@ -24,12 +24,11 @@ class ProjectAgentTaskSummary(BaseModel):
     task_id: str
     state: Literal["preparing", "waiting_for_user", "running", "needs_attention", "completed"]
     outcome: Literal["succeeded", "partial", "failed", "canceled", "indeterminate"] | None = None
+    task_kind: Literal["execution", "plan_only"] = "execution"
     goal_summary: str
-    current_action: str
     current_action_code: str
     requires_user: bool
-    result_title: str | None = None
-    recent_activity: str
+    result_summary_code: str | None = None
     updated_at: str
 
 
