@@ -429,17 +429,30 @@ their tag state.
 
 ## Next Work
 
-1. Open `v0.7.0-rc1` only after a scoped capability review covers the Memory
+1. Implement the one approved Phase 16 package: Windows sandbox deny-by-default
+   network isolation (Phase 16 §0.4-D1, constraints in §0.5). This is
+   infrastructure hardening only; it enables no external node and raises no
+   capability level. The current provider has no production consumer, because
+   `node_contract_registry.py` assigns `sandbox_process` only to
+   `matlab-spm`/`dpabi` contracts that declare `executable=false`, so
+   `SandboxPolicySet` is empty in production configuration. Evidence therefore
+   tops out at the provider level: a probe process must be shown to fail
+   outbound connections inside the sandbox and succeed outside it, with the
+   existing token, ACL, memory/process-limit, timeout, and process-tree-kill
+   guarantees unregressed. `schemas/sandbox.py` must stop encoding
+   `network_isolation` as `Literal["not_enforced"]` and report the measured
+   state instead.
+2. Open `v0.7.0-rc1` only after a scoped capability review covers the Memory
    Domain and the public API/persistence contract changes already present on
    `main`.
-2. Freeze a new clean exact-SHA candidate, rebuild the Windows surfaces from it,
+3. Freeze a new clean exact-SHA candidate, rebuild the Windows surfaces from it,
    and record build success, sidecar health, packaged launch, renderer smoke, GUI
    workflow, and real scientific execution as separate conclusions. Resolve any
    untracked local file first, because the release build fails closed on one.
-3. Add the missing packaged forced-termination and restart-reconciliation
+4. Add the missing packaged forced-termination and restart-reconciliation
    workflow, then validate it with an isolated workspace, `userData`, database,
    and evidence directory without modifying rawdata or untouched outputs.
-4. Align version surfaces, produce installer and checksum evidence, and publish
+5. Align version surfaces, produce installer and checksum evidence, and publish
    only under explicit maintainer release authorization.
 
 Multi-Agent is deliberately absent from this list. Phase 14 was deferred before
@@ -450,6 +463,18 @@ provider with a pinned endpoint fingerprint and call ceiling, a concrete
 `IsolatedGateArmExecutor`, and projector/aggregator hashes that bind real
 implementation rather than literal strings. See
 `specs/阶段记录/阶段十四/生产多Agent架构/00_阶段规格与实施总览.md` §11.1 and §11.3.
+
+Model-side observation and action-space expansion are also absent. On
+2026-10-02 the Phase 16 proposal was adjudicated section by section and its
+read-only tool pull (`inspect` actions, an on-demand evidence layer, and an
+`ActionEnvelope` v3 union) was formally declined rather than deferred
+(Phase 16 §0.4-D2), together with a proposed standalone policy service judged
+to duplicate the existing fail-closed catalog (Phase 16 §0.4-D3). Evidence
+therefore remains server-assembled before the model is called, and
+`tests/unit/test_agent_harness_service.py` keeps rejecting
+`read_evidence`/`explain_result`/`propose_recovery`/`finish` as a regression.
+Phase 16 §0.4-D2 lists the three conditions that would reopen this; none is
+met.
 
 ## Reference Documents
 
