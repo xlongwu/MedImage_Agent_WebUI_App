@@ -274,10 +274,13 @@ their tag state.
   because the packaged desktop exposes the reviewed native DICOM workflow.
 - Stable project state does not carry rolling test counts. Current task-specific
   commands and results belong in the Completion Report.
-- The current `main` head `07716210e1894605751fa311fc57548377ce5922` completed
-  GitHub Actions run `36957573288` on 2026-10-02 with `backend`, `frontend`,
-  `desktop`, and `windows-sandbox` all `success`. This is the remote-CI baseline
-  for the current source line; a CI pass alone does not qualify a release Gate.
+- The most recent verified remote-CI pass is GitHub Actions run `36957573288` on
+  `main` head `07716210e1894605751fa311fc57548377ce5922` (2026-10-02), where
+  `backend`, `frontend`, `desktop`, and `windows-sandbox` were all `success`.
+  Under `AGENTS.md` §5.8 only a runtime, API, schema, or persistence-contract
+  change invalidates release evidence, so documentation-only commits after this head
+  do not require that baseline claim to be re-pointed; any runtime-affecting
+  commit does. A CI pass alone never qualifies a release Gate.
 - The terminated RC2 packaging candidate
   `6a392c15079f51c16a8e3c2a035915972aabd9ff` completed run `29469529639`
   successfully. That result is historical evidence for that superseded commit:
