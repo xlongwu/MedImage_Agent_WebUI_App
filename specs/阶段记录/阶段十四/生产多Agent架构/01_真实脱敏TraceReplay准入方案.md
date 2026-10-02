@@ -1,6 +1,34 @@
 # 真实脱敏 Trace/Replay 准入方案
 
-> 状态：Proposed；生产多 Agent 编码的 G0 硬前置
+> **方案状态：已批准（设计）/ 随阶段十四整体延期（Deferred）**
+>
+> **源码实现状态：PARTIAL —— 本方案的合同与工具层已大量落地，但 G0 准入本身零证据**
+>
+> 2026-10-02 按当前源码复核，本方案 §9 台账中标为 CREATE/MODIFY 的项**大部分已经完成**，
+> 文档原先的“脚手架”口径已过时：
+>
+> | §9 条目 | 实际状态 |
+> |---|---|
+> | MODIFY `schemas/agent_eval.py`（labels 与 run records 分离、真实来源、split、revision/hash、新 Gate verdict） | **已实现**。`MultiAgentEvalManifest` 现为 `schema_version: Literal[3]`（`:226`），另有 `MultiAgentGateModelCallRecord:275`、`MultiAgentGateArmObservation:306`、`MultiAgentGateRunBundle:326`、`MultiAgentEvaluationReport:346`；`:183` 的 `MultiAgentEvalCase` 已强制 `source_kind=trace_replay_redacted`、双人 `label_review_ids`、`redaction_review_ids`，并在 model validator 中拒绝 rawdata/dicom/nifti/bids/api_key/token/绝对路径 |
+> | CREATE `agent_review_role_registry.py` | **已实现**（38 行，三角色 v1 映射；`role_registry_hash()` 真实绑定载荷） |
+> | CREATE `agent_review_context_projector.py` | **已实现但不符合要求**：section 词汇表与权威十 section 不一致，`context_projector_hash()` 只对硬编码字符串取哈希 |
+> | CREATE `agent_review_finding_aggregator.py` | **已实现但不符合要求**：`aggregation_policy_hash()` 同上；且不含 §5 要求的 epoch/fencing/consent 校验（属 G3 范围，此处不计为缺陷） |
+> | CREATE `structured_agent_model_adapter.py` | **仅 Protocol 接缝**（39 行，`:22-23`）。无任何真实 provider 实现 |
+> | CREATE `multi_agent_gate_runner.py` | **已实现**，但 `IsolatedGateArmExecutor` 只有测试 stub；无 `allow_network` + `provider_approved` 即 `raise` |
+> | MODIFY `multi_agent_evaluation_service.py`（只从真实 run bundle + labels 计算） | **已实现**（150 行，`:26` `evaluate()` 只读 bundle） |
+> | MODIFY `scripts/run_multi_agent_evaluation.py` | **已实现**，含 `--expected-manifest-hash`、`--allow-network`、`--bundle`、只读输出与失败退出码 |
+> | CREATE `tests/fixtures/agent_eval/multi_agent/redacted/manifest.json` | **未创建**。`tests/fixtures/agent_eval/multi_agent/` 是空目录；全仓仅有 `v2/manifest.json` |
+> | CREATE `tests/integration/test_multi_agent_gate_runner.py` | **已实现但为 stub**（仅 1 个测试，用假 `_Executor`），不满足本行“真实 adapter、隔离 lifecycle”要求 |
+> | MODIFY `tests/unit/test_multi_agent_evaluation.py` | 已存在，仅 4 个测试 |
+> | CREATE `tests/integration/test_multi_agent_redacted_replay.py` | **未创建** |
+>
+> **因此 G0 仍不可能通过**：§10 全部退出条件均为未勾选，六项硬阻塞（无语料、无导出链路、
+> 无真实 provider、无具体执行器、两个哈希未绑定实现、section 词汇表漂移）见
+> `00_阶段规格与实施总览.md` §11.1 B1–B6。当前 `.env.example:28-29` 的
+> `MEDIMAGE_AGENT_MODEL_ENABLED=false` 与 `MEDIMAGE_AGENT_MODEL_PROVIDER=rule_based` 意味着
+> 即使强行运行，得到的也只是规则引擎伪结果，**不得**当作模型评估证据。
+>
+> 本轮经维护者决定**不**补齐上述缺口（理由与重启条件见 `00` §11.2/§11.3）。
 
 ## 1. 目标
 
@@ -82,6 +110,13 @@ Manifest 只保存输入和人工 reference labels，不得保存或允许人工
 7. 评估脚本只接受该 hash，不允许运行时修改 case。
 
 同时冻结 `role_registry_hash`、三个 role/prompt/schema 版本、aggregation policy hash、model profile hash、provider/model 版本、redaction policy、source revision 和 runner version；其中任一变化都必须生成新评估 run，不得沿用旧报告。
+
+> 2026-10-02 复核偏离：本句的“任一变化都必须生成新评估 run”在当前实现下**不成立**。
+> `agent_review_context_projector.py:70-71` 与 `agent_review_finding_aggregator.py:67-68`
+> 分别对硬编码字节串 `b"agent-review-context-projector-v1:fixed-purpose-sections"` 和
+> `b"agent-review-finding-aggregator-v1:code-severity-refs"` 取 SHA-256，改投影规则或聚合
+> 规则不会改变哈希值。只有 `agent_review_role_registry.py:36-38` 真实绑定 registry 载荷。
+> 该项登记为 `00` §11.1 B5，属重启前置条件之一。
 
 ## 6. 对比方法
 
@@ -165,8 +200,13 @@ started_at, completed_at?
 
 ```powershell
 python -m pytest tests/unit/test_multi_agent_evaluation.py tests/integration/test_multi_agent_gate_runner.py tests/integration/test_multi_agent_redacted_replay.py --tb=short --basetemp=.pytest_tmp
-python scripts/run_multi_agent_evaluation.py --manifest tests/fixtures/agent_eval/multi_agent/redacted/manifest.json --expected-manifest-hash <approved_sha256> --allow-network --output <approved_evidence_root> --summary
+python scripts/run_multi_agent_evaluation.py --manifest tests/fixtures/agent_eval/multi_agent/redacted/manifest.json --bundle <append-only run bundle .jsonl> --expected-manifest-hash <approved_sha256> --allow-network --output <approved_evidence_root> --summary
 ```
+
+> 2026-10-02 校正：本节原命令**缺少 `--bundle`**，而 `scripts/run_multi_agent_evaluation.py`
+> 中该参数为 `required=True`，照抄必然以退出码 2 失败。已补为上面的形式。另需注意该脚本
+> 只**校验**已存在的 run bundle，不会生成 bundle；生成必须由 `MultiAgentGateRunner` 加一个
+> 具体 `IsolatedGateArmExecutor` 完成，而后者目前不存在（见 `00` §11.1 B4）。
 
 ## 10. G0 退出条件
 
@@ -181,3 +221,7 @@ python scripts/run_multi_agent_evaluation.py --manifest tests/fixtures/agent_eva
 - [ ] 结论为 `production_implementation_gate_passed`，且 capability approval 引用精确 manifest/report/source/role-registry/aggregation-policy hash。
 
 G0 未通过时，阶段十四到此结束；不得创建生产 Team 表、路由、开关或 scheduler。
+
+> 2026-10-02：本轮的实际结论正是走到这里——阶段十四在 G0 之前延期，上述生产表面零存在。
+> 该结论是**主动延期**，不是 G0 评估后判定 `continue_single_agent`；两者证据强度不同，
+> 重启时不得把本轮延期引用为“多 Agent 已被实证否决”。

@@ -1,6 +1,29 @@
 # 多 Agent API、前端与可观测性方案
 
-> 状态：Proposed；G5 实施依据
+> **方案状态：已批准（设计）/ 随阶段十四整体延期（Deferred）**
+>
+> **源码实现状态：NOT IMPLEMENTED；且本文原前提已被阶段十二提交 `2e6d8dc8` 取代，按下表重校后才是有效基线**
+>
+> G5 实施依据。2026-10-02 按当前前后端契约逐条复核：
+>
+> | 本文原前提 | 当前真实契约 | 对本文的影响 |
+> |---|---|---|
+> | §3 在 `AgentTaskResponse` 增加可选 `team` 投影 | `AgentTaskResponse.schema_version` 已由 `Literal[1]` 升为 `Literal[2]`（`src/backend/app/schemas/agent_task.py:336`），`AgentTaskListResponse` 同步升为 2 | Team 投影落地时必须再升为 `Literal[3]`，并按 `AGENTS.md` §3.4 单一任务内切换全部消费者；不得保留 v2 reader |
+> | §1 “用户可见文案使用 i18n message key；ID、hash、role_id、error code 保持机器值” | **已成为现行契约**，不再是未来要求：`current_action` 自由文本字段已删除，`AgentTaskNextAction` 现在只有 `type`/`requires_user`/`decision_batch_id`（`agent_task.py:94-99`，原 `title`/`description`/`disabled_reason` 已移除） | §5.1 “disabled 原因由后端结构化 code 映射”直接沿用现有 `AgentTaskNextActionType` 模式即可，不要再设计新载体 |
+> | §5.2 Team Activity 卡片显示实际调用量/token/耗时 | `AgentTaskResponse` 已新增 `task_kind`（`:341`）与 `execution_performed`（`:342`）结构化字段 | §5.3 的 “completed 不等同于任务执行完成” 现在可由 `execution_performed` 直接判定，无需从 artifact 推断（阶段十二已把 plan-only 判定统一改用 `task_kind`） |
+> | §3 审批范围展示 | `AgentTaskApprovalSummary` 的 `dataset_summary`/`execution_summary` 英文句子已换成 `registered_subject_count`/`selected_subject_ids`/`node_ids`，并进入 `ApprovalSummary`（`schema_version` 4→5、纳入 `summary_hash`） | §6 前端文件清单不变，但 `AgentTeamActivityCard` 必须按 code/count 渲染；`06` §3 的 “Team hash 进入 Approval Summary” 必须接进这个已经扩大的 5 版 schema，而不是重新加自由文本字段 |
+> | §9 结果摘要相关测试 | `AgentTaskResultSummary` 已改为 `summary_code`/`limitation_codes`/`validation_checks_passed\|failed`/`recommended_action_code`/`export_disabled_code`；前端 `src/frontend/src/features/agent/components/agentTaskMessages.ts` 已是纯 code→`MessageKey` 映射表，英文整句查表与两条计数正则**已删除** | §1 的“不得在多个组件用正则解析任意英文”（`AGENTS.md` §5.5）已满足；Team finding 的 `message_key` 必须并入同一张映射表，**禁止**新建第二个 parser |
+> | §2 在 `CreateAgentTaskRequest` 增加 `planning_mode` | 该请求现在仍只有 `goal`/`command_id`/`actor`（`agent_task.py:390-395`） | 未变，本条仍然有效；但新增字段是公共 API 扩展，按 §5 硬性边界需单独获批 |
+>
+> §4 的三条只读路由、§3 的 `AgentTaskTeamSummary`、§6 的两个新组件
+> （`AgentTeamActivityCard.tsx`、`AgentTeamFindingList.tsx`）、§7 的 Team Trace 引用、
+> §8 的 9 个 `team_*` 运营指标**全部未实施**：`src/backend/app/api/` 无 `/team` 路由，
+> `services/agent_task_read_model.py` 与 `services/agent_operational_summary_service.py`
+> 无 Team 字段，前端无对应组件。§6 文件清单里列出的 6 个 MODIFY 目标文件本身均存在，
+> 路径可达。
+>
+> 本文的公共 contract 原则（Agent Task 仍是唯一用户入口、后端权威、command 幂等、GET 只读）
+> 与 `AGENTS.md` §5.4/§5.5 现行规则一致，未被上游推翻。
 
 ## 1. 公共 Contract 原则
 

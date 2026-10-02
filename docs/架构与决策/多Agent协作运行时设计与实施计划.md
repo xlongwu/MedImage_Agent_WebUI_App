@@ -18,6 +18,13 @@
 > 阶段十四把本文件中的架构背景收敛为 G0-G7 的可执行台账；若两者冲突，以阶段十四的
 > 当前范围、角色合同、失败策略和验收门槛为准。
 >
+> 最新准入状态（2026-10-02）：上述“实施入口”目前**处于 G0 之前的正式延期**，不是活跃的
+> 实施入口。阶段十四 已批准设计口径但经维护者判定不启动 G0、不进入 G1+，六项硬阻塞与重启
+> 条件见其 `00_阶段规格与实施总览.md` §11.1/§11.3。本文件因此继续只是调研背景：既没有生产
+> 多 Agent，也没有可运行的真实 G0 评估。多 Agent 角色集合的唯一权威是阶段十四 `02`
+> （science/safety/completeness 三个只读 reviewer）；`specs/阶段记录/阶段十六/` §12 的
+> 两 reviewer 口径已被其取代。
+>
 > 已被阶段十四替换的旧候选选择包括：`goal_scope/project_evidence/safety_science` 角色命名、
 > 首期 `auto` 路由、通用 mailbox、独立 synthesis model 和静默 single fallback。当前方案
 > 固定为 `science/safety/completeness`、每任务显式启用、typed findings、确定性聚合和失败 handoff。

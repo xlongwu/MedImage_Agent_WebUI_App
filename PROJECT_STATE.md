@@ -1,6 +1,6 @@
 # Project State
 
-Current as of 2026-10-01.
+Current as of 2026-10-02.
 
 ## Version and Branch
 
@@ -222,6 +222,16 @@ their tag state.
   evidence snapshot, science answers, MemoryContext, provider/prompt and
   actual Skill inputs when present, so any binding drift requires a new plan
   and current approval before dry-run.
+- There is no production multi-Agent runtime. `AgentHarnessAttempt.mode` remains
+  `single_agent`, no `agent_team_*` schema, table, route, or
+  `MEDIMAGE_MULTI_AGENT_ENABLED` flag exists, and the offline G0 scaffolding
+  (`agent_review_role_registry.py`, `agent_review_context_projector.py`,
+  `agent_review_finding_aggregator.py`, `structured_agent_model_adapter.py`,
+  `multi_agent_gate_runner.py`) executes no real provider call and is backed by
+  an empty fixture directory. That scaffolding evidences nothing: no capability
+  level is `computed` or `validated` by it, and Phase 14 is formally deferred
+  before its G0 gate rather than approved, implemented, or disproven
+  (`specs/阶段记录/阶段十四/生产多Agent架构/00_阶段规格与实施总览.md` §11).
 - Reviewed preprocessing uses in-project Python kernels. MATLAB, SPM, and
   DPABI executables are outside the supported execution path.
 - Application-runtime child-process starts outside the reviewed Gateway fail
@@ -431,6 +441,15 @@ their tag state.
    and evidence directory without modifying rawdata or untouched outputs.
 4. Align version surfaces, produce installer and checksum evidence, and publish
    only under explicit maintainer release authorization.
+
+Multi-Agent is deliberately absent from this list. Phase 14 was deferred before
+its G0 gate on 2026-10-02, so resuming it is not queued work: it first requires
+exportable human-labelled redacted Trace corpus at the scale the frozen
+`MultiAgentEvalManifest` already enforces, a separately authorized online
+provider with a pinned endpoint fingerprint and call ceiling, a concrete
+`IsolatedGateArmExecutor`, and projector/aggregator hashes that bind real
+implementation rather than literal strings. See
+`specs/阶段记录/阶段十四/生产多Agent架构/00_阶段规格与实施总览.md` §11.1 and §11.3.
 
 ## Reference Documents
 
