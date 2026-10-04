@@ -5,8 +5,8 @@ Current as of 2026-10-04 (Asia/Shanghai).
 ## Version and source status
 
 - The application version remains 0.6.0-rc1. The v0.6.0-rc2 convergence was formally terminated on 2026-10-01. No v0.6.0-rc2 or v0.7.0 release is claimed.
-- The repository is maintained on `main`. The CI repair in this task is based on commit `8e7726afad9d1c1ab3bdc6fa0a72d4bd77f6019c`, which was the verified common tip of local `main` and `webui-app/main` before the repair. After the repair is pushed, the exact SHA is the tip of those refs; verify it with Git before relying on remote CI status.
-- The current working tree may contain the user's local `.zcodeignore`; it is unrelated to the repair and must not be included in the commit.
+- The repository is maintained on `main`. The CI repair commit `a0eb2e0d5e64a912e5215aefb705161f70d27cfe` is pushed to `webui-app/main`; the remote SHA was verified against local `HEAD` after the push. This state-document follow-up does not change the tested code.
+- The current working tree may contain local changes in `AGENTS.md` and `.zcodeignore`; they are unrelated to the CI repair and were excluded from its commits.
 - Historical version notes remain tied to their original release states.
 
 ## Current product
@@ -27,13 +27,13 @@ Project Memory and the controlled Harness are optional and default-disabled. Mem
 
 ## CI repair and current verification
 
-The CI report on the pre-repair base identified three failures: the Windows `spawn_child_tree` self-test returned nonzero, a clean checkout was marked release-readiness FAIL, and the README frontend-command check failed. The repair:
+The reported CI failures on the pre-repair base were the Windows `spawn_child_tree` self-test failure, a clean checkout marked release-readiness FAIL, and the README frontend-command check. The repair:
 
 - documents `cd src/frontend` in both READMEs;
 - lets release-readiness tests write into isolated pytest output directories instead of overwriting existing project reports;
-- makes the Windows process-tree self-test verify both a successful child-spawn control at `max_processes=2` and a blocked child at `max_processes=1`, while preserving the AppContainer and Job Object restrictions.
+- makes the Windows process-tree self-test verify both a successful child-spawn control at `max_processes=2` and a blocked child at `max_processes=1`, while preserving AppContainer and Job Object restrictions.
 
-The local Windows focused regression suite passed: 105 passed, 1 warning, exit 0. This was not a full backend-suite run. The post-fix GitHub Actions result has not yet been recorded; a passing local focused suite is not evidence that the full remote workflow passed.
+The local Windows focused regression suite passed: 105 passed, 1 warning, exit 0. The pushed code commit `a0eb2e0d5e64a912e5215aefb705161f70d27cfe` then passed GitHub Actions run [37186816910](https://github.com/xlongwu/MedImage_Agent_WebUI_App/actions/runs/37186816910): backend, Windows sandbox, frontend, and desktop jobs all succeeded. The local check was focused; the remote workflow supplied the full CI evidence.
 
 ## Windows package state
 
@@ -49,11 +49,10 @@ The only retained Electron output is the unpacked application at `desktop/electr
 
 1. Complete the human interpretation and SDK review of Windows AppContainer network hardening (D-03).
 2. Complete the scoped capability review required before opening the v0.7.0-rc1 release line (D-09).
-3. Check the GitHub Actions run for the pushed CI repair; investigate any remaining failure from its current logs.
-4. After applicable approval, build a clean exact-SHA candidate and capture current provenance, sidecar, packaged-launch, and visible-workflow evidence.
-5. Run the packaged restart workflow against that approved candidate; P-01/P-04 have not been closed for the existing diagnostic package.
-6. Visible Electron GUI workflows, independent scientific references, real-data visible-UI validation, and other human-owned evidence remain open where listed in the capability matrix and manual checklist.
-7. The old PyInstaller extraction directory above needs an environment-owner cleanup decision. Do not modify ACLs or ownership to force removal.
+3. After applicable approval, build a clean exact-SHA candidate and capture current provenance, sidecar, packaged-launch, and visible-workflow evidence.
+4. Run the packaged restart workflow against that approved candidate; P-01/P-04 have not been closed for the existing diagnostic package.
+5. Visible Electron GUI workflows, independent scientific references, real-data visible-UI validation, and other human-owned evidence remain open where listed in the capability matrix and manual checklist.
+6. The old PyInstaller extraction directory above needs an environment-owner cleanup decision. Do not modify ACLs or ownership to force removal.
 
 Production multi-Agent execution is not implemented. Phase 14 was deferred before its G0 gate and is not queued work. Resume requires its recorded data, authorization, and implementation prerequisites to be met first.
 
