@@ -672,7 +672,7 @@ sequenceDiagram
 
 ### 12.1 公共 contract
 
-外层 `AgentTaskResponse.schema_version` 当前为 `2`（阶段十二 §5.3 结构化字段切换）。本仓库按 `AGENTS.md` §3.0/§3.4 不保留向后兼容窗口：后续契约变化直接采用单一权威版本并同步切换全部当前消费者，不再为 additive 变更维持旧版本号。新增嵌套对象自身版本化：
+外层 `AgentTaskResponse.schema_version` 当前为 `2`（阶段十二 §5.3 结构化字段切换）。本仓库的 contract 变更采用单一权威版本并同步切换全部当前消费者，不为 additive 变更维持兼容窗口或双轨读取。新增嵌套对象自身版本化：
 
 ```text
 AgentTaskCreateRequest
