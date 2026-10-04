@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from threading import Lock
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from fastapi import Depends
@@ -10,6 +11,7 @@ from src.backend.app.schemas.agent_harness import AgentActionRecord, AgentHarnes
 from src.backend.app.schemas.agent_invariant import AgentInvariantAuditRecord
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
+from src.backend.app.schemas.agent_recovery_scan import AgentRecoveryScanPage, RecoveryScanConsumer
 from src.backend.app.schemas.desktop import (
     ApprovalRecord,
     DatasetImportRequest,
@@ -166,6 +168,11 @@ class ProjectStore(
 
     def list_agent_lifecycles(self, project_id: str) -> list[AgentLifecycleRecord]: ...
 
+    def scan_agent_recovery_page(
+        self, *, consumer: RecoveryScanConsumer, now,
+        project_id: str | None = None, limit: int = 100,
+    ) -> AgentRecoveryScanPage: ...
+
     def transition_agent_lifecycle(
         self,
         record: AgentLifecycleRecord,
@@ -181,6 +188,13 @@ class ProjectStore(
     def transition_agent_lifecycle_with_harness_action(
         self, record: AgentLifecycleRecord, event: AgentLifecycleEvent, action: AgentActionRecord,
         *, expected_state: str, expected_action_status: str,
+        duplicate_guard: Callable[[AgentLifecycleRecord], bool] | None = None,
+        duplicate_event: AgentLifecycleEvent | None = None,
+    ) -> AgentLifecycleRecord: ...
+
+    def transition_agent_lifecycle_with_template(
+        self, record: AgentLifecycleRecord, event: AgentLifecycleEvent, wake: AgentTaskWakeRecord,
+        *, resource: dict[str, str], expected_batch_id: str,
     ) -> AgentLifecycleRecord: ...
 
     def list_agent_lifecycle_events(

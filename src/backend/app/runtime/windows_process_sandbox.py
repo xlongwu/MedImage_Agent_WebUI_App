@@ -10,15 +10,21 @@ from __future__ import annotations
 import ctypes
 import os
 import subprocess
+from uuid import uuid4
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 from src.backend.app.core.exceptions import SafetyError
-from src.backend.app.schemas.sandbox import SandboxProcessRequest, SandboxProcessResult
+from src.backend.app.schemas.sandbox import SANDBOX_ENVIRONMENT_KEYS, SandboxProcessRequest, SandboxProcessResult
 
 _CREATE_SUSPENDED = 0x00000004
 _CREATE_UNICODE_ENVIRONMENT = 0x00000400
+_EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+# Windows SDK winbase.h / winnt.h: ProcThreadAttributeSecurityCapabilities=9,
+# ProcThreadAttributeValue(..., FALSE, TRUE, FALSE) => 0x00020009.
+_PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009
+_TOKEN_CAPABILITIES, _TOKEN_IS_APPCONTAINER = 30, 29
 _STARTF_USESTDHANDLES = 0x00000100
 _HANDLE_FLAG_INHERIT = 1
 _WAIT_OBJECT_0, _WAIT_TIMEOUT, _INFINITE = 0, 258, 0xFFFFFFFF
@@ -61,6 +67,17 @@ class _StartupInfo(ctypes.Structure):
 
 class _ProcessInformation(ctypes.Structure):
     _fields_ = [("hProcess", ctypes.c_void_p), ("hThread", ctypes.c_void_p), ("dwProcessId", ctypes.c_uint32), ("dwThreadId", ctypes.c_uint32)]
+
+
+class _StartupInfoEx(ctypes.Structure):
+    _fields_ = [("StartupInfo", _StartupInfo), ("lpAttributeList", ctypes.c_void_p)]
+
+
+class _SecurityCapabilities(ctypes.Structure):
+    _fields_ = [
+        ("AppContainerSid", ctypes.c_void_p), ("Capabilities", ctypes.c_void_p),
+        ("CapabilityCount", ctypes.c_uint32), ("Reserved", ctypes.c_uint32),
+    ]
 
 
 class _Trustee(ctypes.Structure):
@@ -121,18 +138,6 @@ class WindowsProcessSandbox:
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
         )
         self.advapi32.SetNamedSecurityInfoW.restype = ctypes.c_uint32
-        self.advapi32.CreateProcessWithTokenW.argtypes = (
-            ctypes.c_void_p,
-            ctypes.c_uint32,
-            ctypes.c_wchar_p,
-            ctypes.c_wchar_p,
-            ctypes.c_uint32,
-            ctypes.c_void_p,
-            ctypes.c_wchar_p,
-            ctypes.POINTER(_StartupInfo),
-            ctypes.POINTER(_ProcessInformation),
-        )
-        self.advapi32.CreateProcessWithTokenW.restype = ctypes.c_int
         self.advapi32.OpenProcessToken.argtypes = (
             ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p),
         )
@@ -149,6 +154,35 @@ class WindowsProcessSandbox:
             ctypes.c_wchar_p, ctypes.POINTER(_StartupInfo), ctypes.POINTER(_ProcessInformation),
         )
         self.advapi32.CreateProcessAsUserW.restype = ctypes.c_int
+        self.userenv = ctypes.WinDLL("userenv", use_last_error=True)
+        self.userenv.CreateAppContainerProfile.argtypes = (
+            ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p,
+            ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p),
+        )
+        self.userenv.CreateAppContainerProfile.restype = ctypes.c_long
+        self.userenv.DeleteAppContainerProfile.argtypes = (ctypes.c_wchar_p,)
+        self.userenv.DeleteAppContainerProfile.restype = ctypes.c_long
+        self.advapi32.FreeSid.argtypes = (ctypes.c_void_p,)
+        self.advapi32.FreeSid.restype = ctypes.c_void_p
+        self.advapi32.GetTokenInformation.argtypes = (
+            ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32),
+        )
+        self.advapi32.GetTokenInformation.restype = ctypes.c_int
+        self.kernel32.InitializeProcThreadAttributeList.argtypes = (
+            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_size_t),
+        )
+        self.kernel32.InitializeProcThreadAttributeList.restype = ctypes.c_int
+        self.kernel32.UpdateProcThreadAttribute.argtypes = (
+            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_size_t, ctypes.c_void_p,
+            ctypes.c_size_t, ctypes.c_void_p, ctypes.c_void_p,
+        )
+        self.kernel32.UpdateProcThreadAttribute.restype = ctypes.c_int
+        self.kernel32.DeleteProcThreadAttributeList.argtypes = (ctypes.c_void_p,)
+        self.kernel32.DeleteProcThreadAttributeList.restype = None
+        self.kernel32.TerminateProcess.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+        self.kernel32.TerminateProcess.restype = ctypes.c_int
 
     def run(self, request: SandboxProcessRequest, *, timeout_seconds: int, cancel_requested: Callable[[], bool] | None = None) -> SandboxProcessResult:
         self._validate(request, timeout_seconds)
@@ -156,22 +190,26 @@ class WindowsProcessSandbox:
         logs = cwd / "logs"
         logs.mkdir(parents=True, exist_ok=True)
         stdout_path, stderr_path = logs / "stdout.log", logs / "stderr.log"
-        self._grant_restricted_workspace_access(cwd)
         started = datetime.now(UTC)
         job = token = process = thread = None
+        appcontainer_sid = None
+        profile_name = f"MedImage.Sandbox.{uuid4().hex}"
         stdout_fd = stderr_fd = None
         try:
+            appcontainer_sid = self._create_appcontainer_profile(profile_name)
+            self._grant_restricted_workspace_access(cwd, appcontainer_sid=appcontainer_sid)
             job = self._create_job(request)
             token = self._create_restricted_token()
             stdout_fd, stdout = self._open_inheritable_log(stdout_path)
             stderr_fd, stderr = self._open_inheritable_log(stderr_path)
-            process, thread = self._create_suspended_process(token, request, stdout, stderr)
+            process, thread = self._create_suspended_process(token, request, stdout, stderr, appcontainer_sid)
             if not self.kernel32.AssignProcessToJobObject(job, process):
                 raise self._failed_start()
+            self._verify_network_token(process)
             if self.kernel32.ResumeThread(thread) == 0xFFFFFFFF:
                 raise self._failed_start()
             status, return_code, reason = self._wait(job, process, timeout_seconds, cancel_requested)
-            return SandboxProcessResult(sandbox_id=request.sandbox_id, status=status, return_code=return_code, started_at=started, ended_at=datetime.now(UTC), terminated_reason=reason, stdout_path=str(stdout_path), stderr_path=str(stderr_path))
+            return SandboxProcessResult(sandbox_id=request.sandbox_id, status=status, return_code=return_code, started_at=started, ended_at=datetime.now(UTC), terminated_reason=reason, stdout_path=str(stdout_path), stderr_path=str(stderr_path), network_isolation="enforced")
         except SafetyError:
             if job:
                 self.kernel32.TerminateJobObject(job, 1)
@@ -181,12 +219,54 @@ class WindowsProcessSandbox:
                 self.kernel32.TerminateJobObject(job, 1)
             raise self._failed_start() from exc
         finally:
+            # A failure before AssignProcessToJobObject must also destroy the
+            # suspended process. Job termination alone cannot reach it yet.
+            if process:
+                self.kernel32.TerminateProcess(process, 1)
+                self.kernel32.WaitForSingleObject(process, _INFINITE)
             for handle in (thread, process, token, job):
                 if handle:
                     self.kernel32.CloseHandle(handle)
             for fd in (stdout_fd, stderr_fd):
                 if fd is not None:
                     os.close(fd)
+            if appcontainer_sid:
+                self.advapi32.FreeSid(appcontainer_sid)
+                result = self.userenv.DeleteAppContainerProfile(profile_name)
+                if result < 0:
+                    raise self._failed_start("SANDBOX_NETWORK_CLEANUP_FAILED", stage="delete_appcontainer_profile", winerror=result & 0xFFFFFFFF)
+
+    def _create_appcontainer_profile(self, profile_name: str) -> ctypes.c_void_p:
+        sid = ctypes.c_void_p()
+        # Windows requires a registered profile for the AppContainer object
+        # namespace. It is attempt-owned and deleted after the process tree;
+        # the write-restricted token receives no write grant to its AppData.
+        result = self.userenv.CreateAppContainerProfile(
+            profile_name, profile_name, "MedImage isolated process",
+            None, 0, ctypes.byref(sid),
+        )
+        if result < 0 or not sid:
+            raise self._failed_start("SANDBOX_NETWORK_SETUP_FAILED", stage="create_appcontainer_profile", winerror=result & 0xFFFFFFFF)
+        return sid
+
+    def _verify_network_token(self, process: ctypes.c_void_p) -> None:
+        """Inspect the suspended child's actual token before any code runs."""
+        token = ctypes.c_void_p()
+        if not self.advapi32.OpenProcessToken(process, _TOKEN_QUERY, ctypes.byref(token)):
+            raise self._failed_start("SANDBOX_NETWORK_SETUP_FAILED", stage="open_child_token")
+        try:
+            for information_class, expected in ((_TOKEN_IS_APPCONTAINER, 1), (_TOKEN_CAPABILITIES, 0)):
+                # TokenCapabilities starts with TOKEN_GROUPS.GroupCount. Query
+                # enough space for zero or nonzero capabilities, then reject
+                # everything except a measured zero-capability AppContainer.
+                data = (ctypes.c_byte * 4096)()
+                size = ctypes.c_uint32()
+                if not self.advapi32.GetTokenInformation(token, information_class, data, ctypes.sizeof(data), ctypes.byref(size)):
+                    raise self._failed_start("SANDBOX_NETWORK_SETUP_FAILED", stage="inspect_child_token")
+                if size.value < ctypes.sizeof(ctypes.c_uint32) or ctypes.cast(data, ctypes.POINTER(ctypes.c_uint32)).contents.value != expected:
+                    raise self._failed_start("SANDBOX_NETWORK_SETUP_FAILED", stage="network_token_mismatch", winerror=0)
+        finally:
+            self.kernel32.CloseHandle(token)
 
     def _create_job(self, request: SandboxProcessRequest) -> ctypes.c_void_p:
         job = self.kernel32.CreateJobObjectW(None, None)
@@ -256,7 +336,7 @@ class WindowsProcessSandbox:
         finally:
             self.kernel32.CloseHandle(current)
 
-    def _grant_restricted_workspace_access(self, cwd: Path) -> None:
+    def _grant_restricted_workspace_access(self, cwd: Path, *, appcontainer_sid: ctypes.c_void_p) -> None:
         """Grant writes only to the pre-created mutable attempt directories."""
         for sid_type in (
             _WIN_RESTRICTED_CODE_SID,
@@ -312,6 +392,15 @@ class WindowsProcessSandbox:
                     access_mask=_GENERIC_ALL,
                     inheritance=_SUB_CONTAINERS_AND_OBJECTS_INHERIT,
                 )
+        # The additional AppContainer access check isolates each attempt even
+        # though the existing restricted-code identities are shared.
+        for target in (cwd, *read_targets, *(cwd / name for name in ("output", "logs", "tmp"))):
+            mutable = target.parent == cwd and target.name in {"output", "logs", "tmp"}
+            self._grant_restricted_path_access(
+                target, sid_type=None, explicit_sid=appcontainer_sid,
+                access_mask=_GENERIC_ALL if mutable else _GENERIC_READ | _GENERIC_EXECUTE,
+                inheritance=_SUB_CONTAINERS_AND_OBJECTS_INHERIT if mutable else _NO_INHERITANCE,
+            )
 
     def _grant_restricted_path_access(
         self,
@@ -320,6 +409,7 @@ class WindowsProcessSandbox:
         sid_type: int | None,
         access_mask: int,
         inheritance: int,
+        explicit_sid: ctypes.c_void_p | None = None,
     ) -> None:
         """Grant the write-restricted SID access to one approved directory."""
         # These are independent out-pointers. Chaining the assignment aliases
@@ -334,7 +424,7 @@ class WindowsProcessSandbox:
         try:
             security_information = _DACL_SECURITY_INFORMATION
             owner_pointer = None
-            if sid_type is None:
+            if sid_type is None and explicit_sid is None:
                 security_information |= _OWNER_SECURITY_INFORMATION
                 owner_pointer = ctypes.byref(owner)
             if self.advapi32.GetNamedSecurityInfoW(
@@ -348,7 +438,7 @@ class WindowsProcessSandbox:
                 ctypes.byref(descriptor),
             ) != 0:
                 raise SafetyError("SANDBOX_ACL_SETUP_FAILED", code="SANDBOX_ACL_SETUP_FAILED")
-            sid_pointer = owner
+            sid_pointer = explicit_sid if explicit_sid is not None else owner
             if sid_type is not None:
                 if not self.advapi32.CreateWellKnownSid(
                     sid_type,
@@ -388,29 +478,32 @@ class WindowsProcessSandbox:
             raise self._failed_start()
         return fd, handle
 
-    def _create_suspended_process(self, token: ctypes.c_void_p, request: SandboxProcessRequest, stdout: ctypes.c_void_p, stderr: ctypes.c_void_p) -> tuple[ctypes.c_void_p, ctypes.c_void_p]:
-        startup, info = _StartupInfo(), _ProcessInformation()
-        startup.cb, startup.dwFlags = ctypes.sizeof(startup), _STARTF_USESTDHANDLES
-        startup.hStdInput, startup.hStdOutput, startup.hStdError = ctypes.c_void_p(), stdout, stderr
+    def _create_suspended_process(self, token: ctypes.c_void_p, request: SandboxProcessRequest, stdout: ctypes.c_void_p, stderr: ctypes.c_void_p, appcontainer_sid: ctypes.c_void_p) -> tuple[ctypes.c_void_p, ctypes.c_void_p]:
+        startup, info = _StartupInfoEx(), _ProcessInformation()
+        startup.StartupInfo.cb = ctypes.sizeof(startup)
+        startup.StartupInfo.dwFlags = _STARTF_USESTDHANDLES
+        startup.StartupInfo.hStdInput, startup.StartupInfo.hStdOutput, startup.StartupInfo.hStdError = ctypes.c_void_p(), stdout, stderr
         command = ctypes.create_unicode_buffer(self._command_line(request.argv))
         env = ctypes.create_unicode_buffer("\0".join(f"{key}={value}" for key, value in sorted(request.environment.items(), key=lambda item: item[0].casefold())) + "\0\0")
-        if not self.advapi32.CreateProcessAsUserW(token, request.executable_path, command, None, None, True, _CREATE_SUSPENDED | _CREATE_UNICODE_ENVIRONMENT, env, request.cwd, ctypes.byref(startup), ctypes.byref(info)):
-            # Desktop users can be denied either primary-token or quota
-            # privileges. The alternative always uses the *same restricted
-            # token*; it is not and must never become a normal-process fallback.
-            if not self.advapi32.CreateProcessWithTokenW(
-                token,
-                0,
-                request.executable_path,
-                command,
-                _CREATE_SUSPENDED | _CREATE_UNICODE_ENVIRONMENT,
-                ctypes.cast(env, ctypes.c_void_p),
-                request.cwd,
-                ctypes.byref(startup),
-                ctypes.byref(info),
-            ):
-                raise self._failed_start()
-        return info.hProcess, info.hThread
+        size = ctypes.c_size_t()
+        self.kernel32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
+        if not size.value:
+            raise self._failed_start("SANDBOX_NETWORK_SETUP_FAILED", stage="attribute_list_size")
+        attributes = ctypes.create_string_buffer(size.value)
+        if not self.kernel32.InitializeProcThreadAttributeList(attributes, 1, 0, ctypes.byref(size)):
+            raise self._failed_start("SANDBOX_NETWORK_SETUP_FAILED", stage="attribute_list_init")
+        try:
+            capabilities = _SecurityCapabilities(appcontainer_sid, None, 0, 0)
+            if not self.kernel32.UpdateProcThreadAttribute(attributes, 0, _PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, ctypes.byref(capabilities), ctypes.sizeof(capabilities), None, None):
+                raise self._failed_start("SANDBOX_NETWORK_SETUP_FAILED", stage="attribute_security_capabilities")
+            startup.lpAttributeList = ctypes.cast(attributes, ctypes.c_void_p)
+            # CreateProcessWithTokenW does not support STARTUPINFOEX. Do not
+            # drop the mandatory AppContainer attributes to retry a launch.
+            if not self.advapi32.CreateProcessAsUserW(token, request.executable_path, command, None, None, True, _CREATE_SUSPENDED | _CREATE_UNICODE_ENVIRONMENT | _EXTENDED_STARTUPINFO_PRESENT, env, request.cwd, ctypes.byref(startup.StartupInfo), ctypes.byref(info)):
+                raise self._failed_start(stage="create_appcontainer_process")
+            return info.hProcess, info.hThread
+        finally:
+            self.kernel32.DeleteProcThreadAttributeList(attributes)
 
     def _wait(self, job: ctypes.c_void_p, process: ctypes.c_void_p, timeout_seconds: int, cancel_requested: Callable[[], bool] | None) -> tuple[str, int | None, str | None]:
         elapsed = 0
@@ -443,9 +536,9 @@ class WindowsProcessSandbox:
         cwd, executable = Path(request.cwd).resolve(), Path(request.executable_path).resolve()
         if timeout_seconds != request.timeout_seconds or not request.argv or Path(request.argv[0]).resolve() != executable or not executable.is_file():
             raise SafetyError("SANDBOX_PROCESS_START_FAILED", code="SANDBOX_PROCESS_START_FAILED")
-        if not cwd.is_dir() or any(key.upper() in {"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "COOKIE", "TOKEN"} for key in request.environment):
+        if not cwd.is_dir() or set(request.environment) - set(SANDBOX_ENVIRONMENT_KEYS):
             raise SafetyError("SANDBOX_PROCESS_START_FAILED", code="SANDBOX_PROCESS_START_FAILED")
-        if request.environment.get("TEMP") != str(cwd / "tmp") or request.environment.get("TMP") != str(cwd / "tmp"):
+        if any(request.environment.get(key) != str(cwd / "tmp") for key in ("TEMP", "TMP", "LOCALAPPDATA")):
             raise SafetyError("SANDBOX_PROCESS_START_FAILED", code="SANDBOX_PROCESS_START_FAILED")
 
     @staticmethod

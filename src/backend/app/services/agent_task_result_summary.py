@@ -9,6 +9,7 @@ from src.backend.app.schemas.agent_task import (
     AgentTaskArtifactSummary,
     AgentTaskResultSummary,
 )
+from src.backend.app.schemas.system_message import message
 
 
 class AgentTaskResultSummaryService:
@@ -24,7 +25,7 @@ class AgentTaskResultSummaryService:
             AgentTaskArtifactSummary(
                 artifact_id=item.artifact_id,
                 artifact_type=item.artifact_type,
-                label=item.artifact_type.replace("_", " ").title(),
+                label=message("artifact.registered", diagnostic_id=item.artifact_type),
                 uri=f"project://{lifecycle.project_id}/artifacts/{item.artifact_id}",
                 checksum=item.checksum_sha256,
                 capability_level=capability,

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "owned_test_or_fixture_processes": [],
+  "removed": [
+    "<REPO_ROOT>\\.repair_tmp",
+    "<REPO_ROOT>\\src\\frontend\\.repair-build"
+  ],
+  "remaining": [
+    "<REPO_ROOT>\\.pytest_tmp"
+  ],
+  "blocked": [
+    {
+      "path": "<REPO_ROOT>\\.pytest_tmp",
+      "failed_path": "<REPO_ROOT>\\.pytest_tmp",
+      "winerror": 5,
+      "reason": "PermissionError; no ACL or ownership changes"
+    }
+  ],
+  "temporary_scripts_build_db_logs_removed": true,
+  "cleanup_verified": false,
+  "no_acl_or_ownership_changes": true
+}

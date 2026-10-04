@@ -151,7 +151,13 @@ def test_planner_maps_rsfmri_preprocessing_goal():
 def test_planner_maps_motion_qc_goal():
     result = llm_planner.generate_plan_from_goal("run motion QC", provider="rule_based")
     assert result.ok, f"Planner failed: {result.errors}"
-    assert result.plan.get("pipeline_id") == "rsfmri_preproc_mvp"
+    assert result.plan.get("pipeline_id") == "planned_motion_qc"
+    assert result.plan["metadata"]["capability_level"] == "metadata_only"
+    assert result.plan["metadata"]["execution_enabled"] is False
+    assert {node["id"] for node in result.plan["nodes"]} == {
+        "data_inspection", "spm_realign_subject", "motion_qc_subject",
+        "motion_qc_dataset_report",
+    }
 
 
 def test_planner_maps_chinese_goal():

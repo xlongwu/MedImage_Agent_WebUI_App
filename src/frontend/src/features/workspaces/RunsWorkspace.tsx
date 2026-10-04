@@ -1,3 +1,4 @@
+import { formatSystemMessage } from "../agent/systemMessages";
 import { useMemo, useState } from "react";
 import type { TaskDiagnostics, TaskEvent, TaskLogEntry, TaskStatus } from "../../lib/types/task";
 import type { AgentTaskResponse } from "../../lib/types/agentTask";
@@ -581,7 +582,7 @@ function ApprovalStatusPanel({
       {summary?.limitations.length ? (
         <ul>
           {summary.limitations.slice(0, 3).map((limitation) => (
-            <li key={limitation}>{limitation}</li>
+            <li key={limitation.code}>{formatSystemMessage(t, limitation)}</li>
           ))}
         </ul>
       ) : null}
@@ -751,24 +752,13 @@ function AgentTaskEvidencePanel({ task }: { task: AgentTaskResponse }) {
       <ul className={styles.agentEvidenceLinks}>
         {task.evidence_links.map((link) => (
           <li key={link.id}>
-            <span>{localizedEvidenceLabel(link.type, link.label, t)}</span>
+            <span>{formatSystemMessage(t, link.label)}</span>
             <code>{link.uri}</code>
           </li>
         ))}
       </ul>
     </Card>
   );
-}
-
-function localizedEvidenceLabel(
-  type: AgentTaskResponse["evidence_links"][number]["type"],
-  fallback: string,
-  t: Translate,
-): string {
-  if (type === "reviewed_plan") return t("runs.agentEvidence.reviewedPlan");
-  if (type === "execution_ticket") return t("runs.agentEvidence.ticket");
-  if (type === "run") return t("runs.agentEvidence.run");
-  return fallback;
 }
 
 interface RunDetailPanelProps {

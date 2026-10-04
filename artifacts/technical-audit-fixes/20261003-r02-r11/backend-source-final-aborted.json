@@ -1,0 +1,6 @@
+{
+  "completed": false,
+  "exit_code": null,
+  "reason": "Previous turn/overnight session no longer exists and produced no completion JSON. No test outcome inferred; current fresh full result replaces it.",
+  "replacement": "backend-current-fresh.json"
+}

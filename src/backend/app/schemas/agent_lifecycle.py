@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from src.backend.app.schemas.system_message import SystemMessage
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.backend.app.schemas.goal_contract import GoalEvaluationSummary
@@ -44,8 +46,8 @@ class PendingDecisionOption(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
-    label: str
-    description: str
+    label: SystemMessage
+    description: SystemMessage
     recommended: bool = False
 
 
@@ -68,10 +70,10 @@ class DecisionItem(BaseModel):
         "experimental_backend",
         "other",
     ]
-    question: str
+    question: SystemMessage
     options: tuple[PendingDecisionOption, ...] = ()
     recommended_option: str | None = None
-    impact: str
+    impact: SystemMessage
     source: Literal["planner", "memory_suggestion"] = "planner"
     memory_id: str | None = None
     recommendation_source: str | None = None
@@ -80,6 +82,8 @@ class DecisionItem(BaseModel):
     max_value: float | None = None
     required: bool = True
     evidence_refs: tuple[str, ...] = ()
+    readiness: Literal["ready", "input_required"] = "ready"
+    allowed_actions: tuple[Literal["register_template"], ...] = ()
 
 
 class PendingDecisionBatch(BaseModel):
@@ -124,7 +128,7 @@ class AgentLifecycleRecord(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[5] = 5
+    schema_version: Literal[6] = 6
     lifecycle_id: str
     project_id: str
     state: AgentLifecycleState = "CREATED"

@@ -9,8 +9,13 @@ import {
   type ProjectAgentSettingsUpdate,
 } from "../../../lib/api/agentSettings";
 
-type ResourceDraft = { name: string; path: string; license: string };
-const emptyResource = (): ResourceDraft => ({ name: "", path: "", license: "" });
+type ResourceDraft = {
+  name: string;
+  path: string;
+  license: string;
+  space: "MNI152" | "native" | "";
+};
+const emptyResource = (): ResourceDraft => ({ name: "", path: "", license: "", space: "" });
 
 export function AgentDefaultsPanel({ baseUrl, projectId }: { baseUrl: string; projectId: string }) {
   const { t } = useI18n();
@@ -42,18 +47,27 @@ export function AgentDefaultsPanel({ baseUrl, projectId }: { baseUrl: string; pr
   if (!settings) return <Card>{error || t("common.loading")}</Card>;
 
   const resourcePayload = (draft: ResourceDraft) =>
-    draft.path.trim()
-      ? { name: draft.name.trim(), path: draft.path.trim(), license: draft.license.trim() }
+    draft.path.trim() && draft.space
+      ? {
+          name: draft.name.trim(),
+          path: draft.path.trim(),
+          license: draft.license.trim(),
+          space: draft.space,
+        }
       : null;
   const updateResource = (
     setter: Dispatch<SetStateAction<ResourceDraft>>,
     key: keyof ResourceDraft,
     value: string,
-  ) => setter((current) => ({ ...current, [key]: value }));
+  ) => setter((current) => ({ ...current, [key]: value }) as ResourceDraft);
   const save = async () => {
     setSaving(true);
     setError("");
     try {
+      if ([atlas, template].some((draft) => draft.path.trim() && !draft.space)) {
+        setError(t("agent.template.selectSpace"));
+        return;
+      }
       const payload: ProjectAgentSettingsUpdate = {
         default_atlas: resourcePayload(atlas),
         default_template: resourcePayload(template),
@@ -97,6 +111,20 @@ export function AgentDefaultsPanel({ baseUrl, projectId }: { baseUrl: string; pr
               value={value.license}
               onChange={(event) => updateResource(setter, "license", event.target.value)}
             />
+            <label>
+              {t("settings.agentDefaults.space")}
+              <select
+                value={value.space}
+                aria-label={`${t(`settings.agentDefaults.${kind}`)} ${t("settings.agentDefaults.space")}`}
+                onChange={(event) => updateResource(setter, "space", event.target.value)}
+              >
+                <option value="">{t("agent.template.selectSpace")}</option>
+                <option value="MNI152">MNI152</option>
+                {kind === "atlas" ? (
+                  <option value="native">{t("settings.agentDefaults.nativeSpace")}</option>
+                ) : null}
+              </select>
+            </label>
           </fieldset>
         );
       })}

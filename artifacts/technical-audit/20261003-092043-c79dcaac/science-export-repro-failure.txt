@@ -1,0 +1,11 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_______ test_native_preproc_run_validator_accepts_report_export_bridge ________
+tests\integration\test_native_preproc_run_validator.py:117: in test_native_preproc_run_validator_accepts_report_export_bridge
+    assert validation["ok"] is True
+E   assert False is True
+        bridge_check = {'detail': 'Report exporter should be able to use either reports/rsfmri/group_summary or the native group summary at D...ntional_ready': False, 'native_ready': True}, 'name': 'report_exporter_group_summary_source', 'severity': 'error', ...}
+        probe_check = {'detail': '[WinError 3] 系统找不到指定的路径。', 'metrics': {}, 'name': 'report_exporter_probe_uses_native_outputs', 'severity': 'error', ...}
+=========================== short test summary info ===========================
+FAILED tests/integration/test_native_preproc_run_validator.py::test_native_preproc_run_validator_accepts_report_export_bridge
+1 failed in 3.94s

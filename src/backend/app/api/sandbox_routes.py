@@ -20,7 +20,7 @@ def _public(attempt) -> dict[str, object]:
         "ended_at": attempt.ended_at,
         "result_code": attempt.result_code,
         "output_count": attempt.output_count,
-        "policy_version": "windows-sandbox-v1",
+        "policy_version": attempt.policy_version,
         "network_isolation": attempt.network_isolation,
     }
 

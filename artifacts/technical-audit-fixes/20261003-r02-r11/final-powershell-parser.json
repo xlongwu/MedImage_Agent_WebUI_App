@@ -1,0 +1,6 @@
+{
+  "parse_errors": [],
+  "exit_code": 0,
+  "ast_present": true,
+  "command": "PowerShell Parser.ParseFile desktop/packaging/test_electron_packaged_smoke.ps1"
+}

@@ -81,7 +81,7 @@ def test_sandbox_self_test_uses_fixed_windows_helper_argv(tmp_path: Path) -> Non
     assert "output\\proof.txt" in argv[-1]
 
     timeout_argv = _sandbox_self_test_argv("timeout", memory_input)
-    assert timeout_argv[0].lower().endswith("system32\\ping.exe")
+    assert timeout_argv[0].lower().endswith("system32\\cmd.exe")
 
     memory_argv = _sandbox_self_test_argv("memory_limit", memory_input)
     assert memory_argv[0].lower().endswith("system32\\sort.exe")
@@ -100,6 +100,7 @@ def test_sandbox_self_test_cleans_its_fixed_workspace(monkeypatch: pytest.Monkey
         return SandboxProcessResult(
             sandbox_id=request.sandbox_id, status="SUCCEEDED", return_code=0,
             started_at=now, ended_at=now, stdout_path="redacted", stderr_path="redacted",
+            network_isolation="enforced",
         )
 
     monkeypatch.setattr("src.backend.app.desktop_backend_entry._is_windows_runtime", lambda: True)
@@ -111,9 +112,12 @@ def test_sandbox_self_test_cleans_its_fixed_workspace(monkeypatch: pytest.Monkey
     assert request.executable_path.endswith("System32\\cmd.exe")
     assert request.argv[0] == request.executable_path
     assert "output\\proof.txt" in request.argv[-1]
-    assert request.environment == {"TEMP": str(Path(request.cwd) / "tmp"), "TMP": str(Path(request.cwd) / "tmp")}
+    assert request.environment["TEMP"] == str(Path(request.cwd) / "tmp")
+    assert request.environment["TMP"] == str(Path(request.cwd) / "tmp")
+    assert request.environment["LOCALAPPDATA"] == str(Path(request.cwd) / "tmp")
+    assert set(request.environment) == {"TEMP", "TMP", "LOCALAPPDATA", "SystemRoot"}
     assert not list(tmp_path.glob(".sandbox-self-test-*"))
-    assert '"network_isolation": "not_enforced"' in capsys.readouterr().out
+    assert '"network_isolation": "enforced"' in capsys.readouterr().out
 
 
 def test_sandbox_self_test_reports_restricted_process_start_failure(monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]) -> None:

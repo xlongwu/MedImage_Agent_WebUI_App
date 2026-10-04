@@ -1,0 +1,130 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "level": "historical artifact inventory only; no launch or rebuild",
+  "old_candidate": {
+    "sha": "4a587673bae0b90efd6ceb60293d7476c165bec3",
+    "clean": false,
+    "version": "0.6.0-rc1",
+    "built_at": "2026-09-12T14:22:06.263263+00:00"
+  },
+  "files": [
+    {
+      "path": "desktop/electron/dist/win-unpacked/MedImage Agent.exe",
+      "size": 180849664,
+      "sha256": "1fa93c3471c11dc8128998c662c705104e4528b98901b61c8a25216acda424c5"
+    },
+    {
+      "path": "desktop/electron/dist/win-unpacked/resources/app.asar",
+      "size": 69073,
+      "sha256": "91e613d316876e3efdca3ef2bb34f80d87fdb74018ffcfc94ebf3d9307be0365"
+    },
+    {
+      "path": "desktop/electron/dist/win-unpacked/resources/backend/medimage-backend.bin",
+      "size": 1497350358,
+      "sha256": "036722c8fc3f9d9f9d847ecbed33e5ea18c8321ddd964749bfac9597a3ae1137"
+    },
+    {
+      "path": "desktop/electron/dist/win-unpacked/resources/frontend/index.html",
+      "size": 888,
+      "sha256": "16b33c9fe801c23d0df60423b3ec4d20a8e56a9596ed8c6708b132724e1efbba"
+    },
+    {
+      "path": "desktop/electron/dist/win-unpacked/resources/release/build-provenance.json",
+      "size": 3857,
+      "sha256": "4909bf4331ba07f2077652e25b56a7db889fceec87d0bfc021947ebfaefddaf2"
+    }
+  ],
+  "old_candidate_commits_behind_head": 17,
+  "current_source_evidence_valid": false,
+  "historical_offline_reports": [
+    {
+      "path": "artifacts/harness-optimization/phase0/offline-report.json",
+      "sha256": "690183ff923e91e75c314b4e51a6a6ac0188c4b0329e5239f9ddfb1728274fff",
+      "case_count": 24,
+      "failed_case_count": 0,
+      "gate_passed": true,
+      "manifest_hash": "53f179e02e0732ac14a7bf5faf586ecba7ffcffb1a1109b49a6e87677c1d2834",
+      "metrics": {
+        "context_cross_project_block_rate": 1.0,
+        "context_required_section_complete_rate": 1.0,
+        "duplicate_side_effect_rate": 0.0,
+        "expected_stop_reach_rate": 1.0,
+        "fallback_rate": 0.3333333333333333,
+        "goal_routing_accuracy": 1.0,
+        "mean_input_tokens": 0.0,
+        "mean_latency_ms": 0.25,
+        "mean_model_calls": 0.25,
+        "mean_output_tokens": 0.0,
+        "mean_steps": 1.0,
+        "mean_user_interactions": 0.5833333333333334,
+        "memory_irrelevant_exclusion_rate": 1.0,
+        "memory_relevant_inclusion_rate": 1.0,
+        "memory_science_confirmation_rate": 1.0,
+        "memory_stale_block_rate": 1.0,
+        "necessary_question_recall": 1.0,
+        "plan_only_zero_execution_rate": 1.0,
+        "schema_repair_rate": 1.0,
+        "stale_cross_project_block_rate": 1.0,
+        "total_cached_input_tokens": 0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "unnecessary_question_rate": 0.0,
+        "unsafe_action_rejection_rate": 1.0
+      }
+    },
+    {
+      "path": "artifacts/harness-optimization/phase6/offline-report.json",
+      "sha256": "f5b257767770bfb9107730316670b872986768f5b09f901b9c99dca4666dc521",
+      "case_count": 24,
+      "failed_case_count": 0,
+      "gate_passed": true,
+      "manifest_hash": "c40a14349588c12304944edbd910a48dfae04a19a1c12c83e53230a4906ba813",
+      "metrics": {
+        "context_cross_project_block_rate": 1.0,
+        "context_required_section_complete_rate": 1.0,
+        "duplicate_side_effect_rate": 0.0,
+        "expected_stop_reach_rate": 1.0,
+        "fallback_rate": 0.3333333333333333,
+        "fault_injection_case_count": 12,
+        "fault_injection_pass_rate": 1.0,
+        "goal_routing_accuracy": 1.0,
+        "mean_input_tokens": 0.0,
+        "mean_latency_ms": 0.25,
+        "mean_model_calls": 0.25,
+        "mean_output_tokens": 0.0,
+        "mean_steps": 1.0,
+        "mean_user_interactions": 0.5833333333333334,
+        "memory_irrelevant_exclusion_rate": 1.0,
+        "memory_relevant_inclusion_rate": 1.0,
+        "memory_science_confirmation_rate": 1.0,
+        "memory_stale_block_rate": 1.0,
+        "necessary_question_recall": 1.0,
+        "plan_only_zero_execution_rate": 1.0,
+        "schema_repair_rate": 1.0,
+        "stale_cross_project_block_rate": 1.0,
+        "total_cached_input_tokens": 0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "unnecessary_question_rate": 0.0,
+        "unsafe_action_rejection_rate": 1.0
+      }
+    }
+  ],
+  "offline_manifest": {
+    "file_sha256": "0e78be08f1294362e333bdcc6bfb3119909266dac17e87f1125baf1093eac8b3",
+    "case_count": 24,
+    "succeeded_cases": [
+      {
+        "case_id": "plan-only-zh",
+        "driver": "plan_only",
+        "plan_only": true
+      },
+      {
+        "case_id": "repair-then-valid-zh",
+        "driver": "repair_then_valid",
+        "plan_only": true
+      }
+    ]
+  },
+  "multi_agent_corpus_files": 0
+}

@@ -310,6 +310,7 @@
 .decisionOptions {
   display: grid;
   gap: 10px;
+  min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
@@ -318,6 +319,30 @@
 .decisionOptions legend {
   font-size: 16px;
   font-weight: 700;
+}
+
+.templateRegistration {
+  display: grid;
+  gap: 12px;
+}
+
+.templateRegistration label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.templateRegistration input,
+.templateRegistration select {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: 8px;
+  background: var(--surface-solid);
+  color: var(--text);
+  font: inherit;
 }
 .decisionOptions > label {
   display: grid;
@@ -331,6 +356,8 @@
 }
 .decisionOptions label span {
   display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .decisionOptions label small {
   color: var(--text-muted);

@@ -7,12 +7,10 @@ from pathlib import Path
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.runtime.node_contract_registry import get_node_contract
-from src.backend.app.schemas.sandbox import SandboxLimits, SandboxPolicy, SandboxPolicySet
+from src.backend.app.schemas.sandbox import SANDBOX_ENVIRONMENT_KEYS, SANDBOX_POLICY_VERSION, SandboxLimits, SandboxPolicy, SandboxPolicySet
 
 
-_POLICY_VERSION = "windows-sandbox-v1"
 _EMPTY_POLICY_HASH = stable_hash({"schema_version": 1, "policies": []})
-_ENVIRONMENT_KEYS = ("SystemRoot", "ComSpec", "PATH")
 
 
 def empty_policy_set() -> SandboxPolicySet:
@@ -60,16 +58,17 @@ class SandboxPolicyService:
             limits = SandboxLimits(timeout_seconds=600, memory_limit_bytes=2 * 1024**3, max_processes=8)
             identity = {
                 "schema_version": 1,
-                "policy_version": _POLICY_VERSION,
+                "policy_version": SANDBOX_POLICY_VERSION,
                 "node_id": node_id,
                 "backend_id": contract.backend,
                 "provider": "windows_restricted_process",
                 "executable_id": contract.backend,
                 "executable_path_hash": executable_hash,
+                "provider_runtime_hash": environment.sandbox_runtime_hash,
                 "readonly_root_hashes": tuple(sorted(stable_hash(str(Path(root))) for root in readonly_roots)),
                 "output_root_hashes": tuple(sorted(stable_hash(str(Path(root))) for root in write_roots)),
-                "allowed_environment_keys": _ENVIRONMENT_KEYS,
-                "network_isolation": "not_enforced",
+                "allowed_environment_keys": SANDBOX_ENVIRONMENT_KEYS,
+                "network_isolation": "appcontainer_no_network",
                 "limits": limits.model_dump(mode="json"),
             }
             policies.append(SandboxPolicy(policy_hash=stable_hash(identity), **identity))

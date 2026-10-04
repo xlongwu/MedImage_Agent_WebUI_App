@@ -1,0 +1,7 @@
+{
+  "path": "<REPO_ROOT>\\.pytest_tmp",
+  "error_type": "System.UnauthorizedAccessException",
+  "error": "Access to the path '<REPO_ROOT>\\.pytest_tmp' is denied.",
+  "removed": false,
+  "method": "native Remove-Item after pytest exit and target/Git checks"
+}

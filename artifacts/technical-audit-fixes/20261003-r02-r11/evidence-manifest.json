@@ -1,0 +1,2349 @@
+{
+  "schema_version": 1,
+  "base_head": "c79dcaacb773ad29757a8a82f2e938dfbc161fbd",
+  "source_tree_hash": "852503a1f5ebc3439d26424c9e92dcba6044e18bf6252c8968e96e99687a4ebb",
+  "clean_candidate": false,
+  "purpose": "Retain reproduction failures, subsequent passes, source browser stages, protection and cleanup evidence required by the repair plan. Temporary scripts/databases/logs/builds are removed separately.",
+  "limits": "No current packaged restart, final added browser capture, network or independent clinical/scientific validation claim. Earlier and current command results are separate.",
+  "files": [
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/approval-auth-before.json",
+      "sha256": "cbba15ee02519fcc08ff26c305acf5c316bcf0706581c11d7acec2a91aa83175",
+      "size": 20915,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache",
+        "src/features/agent/__tests__/AgentWorkspace.test.tsx"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/backend-current-fresh.json",
+      "sha256": "0ec2aa77326574a0b577e82128123cc7b3e8cf0682a463c68c04ca7d00e221e6",
+      "size": 50961,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "--tb=short",
+        "--basetemp=.pytest_tmp_current"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": false,
+      "cleanup_blocked": [
+        {
+          "path": "<REPO_ROOT>\\.pytest_tmp",
+          "winerror": 5,
+          "operation": "remove_owned_temporary_tree"
+        }
+      ]
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/backend-current-full.json",
+      "sha256": "f99deab907f83085469c0e840d4838acdc1271de0a0320fd65802d96a8064998",
+      "size": 1482091,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/backend-final-collect.json",
+      "sha256": "686ede478b20185e7b99c0746803fdf43cc668418d6f3bca98403773402e97a9",
+      "size": 307044,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "--collect-only",
+        "-q",
+        "--basetemp=.pytest_tmp_collect"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": false,
+      "cleanup_blocked": [
+        {
+          "path": "<REPO_ROOT>\\.pytest_tmp",
+          "winerror": 5,
+          "operation": "remove_owned_temporary_tree"
+        }
+      ]
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/backend-final.json",
+      "sha256": "b1b33765fda5731e173b67324d80ad48422b034293749949b739218245e37e6e",
+      "size": 57592,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/backend-full-aborted.json",
+      "sha256": "6509b224e61e7369b7edb8a05ff2ade5e3dc19e9005149f88a8fd3ee91d2f6b5",
+      "size": 269,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "exit_code": null,
+      "completed": false
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/backend-full-retry.json",
+      "sha256": "f6c9fd8b4157a70184fa32080bc8942b50c9e819385e7714165fc299734fd320",
+      "size": 48330,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/backend-source-final-aborted.json",
+      "sha256": "e406563ae948a542551e9e89865bf218273b23ce43809b0c5228be1b39c8e69a",
+      "size": 259,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "exit_code": null,
+      "completed": false
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/baseline-regressions.json",
+      "sha256": "efcdabb93e02a151da2ec8da50e6ab6d6ab7e465446c95d500ac97e32b18de51",
+      "size": 2540,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_technical_audit_startup_project_coverage.py",
+        "tests/unit/test_technical_audit_motion_goal_contract.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/baseline.json",
+      "sha256": "7a602f14771f39d97627cf8918d89b2a9084bba259b7e04cce4162a2297b28d5",
+      "size": 2382838,
+      "layer": "initial dirty source identity"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/browser-language-after.json",
+      "sha256": "73674a8da8e3ccb179a31775055359b40295fd6db3780a1555f8c3b886a19f62",
+      "size": 2039,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/browser-language-before.json",
+      "sha256": "73674a8da8e3ccb179a31775055359b40295fd6db3780a1555f8c3b886a19f62",
+      "size": 2039,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/browser-language-template-before.json",
+      "sha256": "5b1087a1a533f7f44cd20a4e4319e37a6207b934325849ec45919a43923f5415",
+      "size": 2434,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/cleanup-and-consumers.json",
+      "sha256": "ff3e7b85d307f76e519dc5698b80dcad21399f259b5d2f8396c430afb3099319",
+      "size": 11798,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_harness_review_baseline.py",
+        "tests/unit/test_pipeline_presets.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/cleanup-final.json",
+      "sha256": "86513f4eb9b621592dee426ca3bb63c73c2ab73d4fc346656f0de44b164a2fa1",
+      "size": 546,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "cleanup_verified": false
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/cleanup-old-pytest.json",
+      "sha256": "3bfaec3decc992b3e5bb75bf96c3fd9dc49970878db7565a50819f3f9101bc98",
+      "size": 260,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/documentation-check.json",
+      "sha256": "b9fd6db429d2936a503c8a37d96ca6aae161e3ed9a8c354b811d3ec963509259",
+      "size": 1210,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-approval-en.png",
+      "sha256": "f043d016f84aff3e604fba25e243f5c21e890fcc36bae86b18b1093a6021c4d6",
+      "size": 65845,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-approval-zh.png",
+      "sha256": "0289a5bacb1b1eb9eff8f0de03c4a39e9ddf115ae203c699a2cc6118b4ddc568",
+      "size": 60737,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-browser-cleanup.json",
+      "sha256": "bc222065acf5b2a5aabe94877275717f5d9cfe9f28118485a4936fda05d2ee31",
+      "size": 123,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-conflict-answer.json",
+      "sha256": "0a4a42298d1f179d7d954a39aea65dabc95c493a9f70b9575a7a5676fa014a13",
+      "size": 11392,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "-k",
+        "conflicting",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-decision-zh.png",
+      "sha256": "b4ae09a54414da4f7eb44a7a421fe2ae4f541e4f2ff13c33360dd70f2a2ec48c",
+      "size": 39649,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-electron.json",
+      "sha256": "5ad64ca018827b3b72719f4abacbd1e8cc0fcdadab978a54f05e0bdb3b47f34b",
+      "size": 18937,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "desktop/electron",
+        "run",
+        "check"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-focused-corrected.json",
+      "sha256": "5ebbbac3f4a1f11dd9429ac7b762cef94592e8e72c6031b84e7b71922a5a2081",
+      "size": 13004,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_desktop_packaging_contract.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-focused-ready.json",
+      "sha256": "9331f8db5a6018e12bf2d2be361d9411c35394e118da41c26051d465de8c82a7",
+      "size": 12957,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_desktop_packaging_contract.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-focused.json",
+      "sha256": "31d20bf6e89e4bd0741e5747ab243181916dbb9886fa5b501058d4b32e4a0446",
+      "size": 15122,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_desktop_packaging_contract.py",
+        "tests/unit/test_agent_plan_evidence.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-git-diff.json",
+      "sha256": "f3be39f491cda06dafc46f41a885bd43442bb6aacd4d8af7ff9a1155b9430b59",
+      "size": 25534,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true,
+      "cleanup_blocked": []
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-plan-en.png",
+      "sha256": "3c1c2eea1e78f023de37cd480f9044d7533ece420e6abe0fdcd48ed5f69eb623",
+      "size": 59585,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-plan-only-fixed.json",
+      "sha256": "999b51311cde958c0932bcfc142518106ebcac7715b1f315d8267b1745f0d418",
+      "size": 12594,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_plan_evidence.py",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_approval_summary.py",
+        "tests/unit/test_planner_provenance.py",
+        "tests/unit/test_desktop_packaging_contract.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-plan-only.json",
+      "sha256": "5fd8209fa45f4dd383711ac5ea5ac9bd41d6c40a6d0d87db1b6f1a1f302514dd",
+      "size": 11624,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_plan_evidence.py",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_reviewed_plan_store.py",
+        "tests/unit/test_approval_summary.py",
+        "tests/unit/test_desktop_packaging_contract.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 4,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-plan-zh.png",
+      "sha256": "c25ad9380b5eff8adbe410e4f6a5cf3dd5b4b440e5780b8bb58d1a2e93099ed3",
+      "size": 55310,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-powershell-parser.json",
+      "sha256": "e26a4a73a5fe2b8a603072e988e3ffefb05e944069e3a226cd6850ebc169e709",
+      "size": 167,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": "PowerShell Parser.ParseFile desktop/packaging/test_electron_packaged_smoke.ps1",
+      "exit_code": 0
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-project-runs.json",
+      "sha256": "c59d9a459f4660bca14a36653c4cd68d3be83e0c252e010e80e3bab137dfd073",
+      "size": 10963,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test:project-runs"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-recovery-memory.json",
+      "sha256": "bc2eb713d20d001162897377bddb36f3a98d6f582af5b719182ed263ae90d0dc",
+      "size": 12015,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_recovery_scan.py",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/integration/test_harness_review_baseline.py",
+        "tests/unit/test_agent_task_scheduler.py",
+        "tests/unit/test_agent_execution_coordinator.py",
+        "tests/unit/test_desktop_packaging_contract.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-template-approval-en.png",
+      "sha256": "4570766598411c7f6b07a4b095feaad2475fa5d625b17b47ab36f6c818e1e8e0",
+      "size": 65257,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-template-approval-zh.png",
+      "sha256": "c974a07ac902f6f61fdcd439207c2207ad3161d3e1bc4b2cb109f06bcc505b7b",
+      "size": 60506,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-template-choice-zh.png",
+      "sha256": "8ff8c8fdbaa5bb5fb1a86bc87974a3f7f8c05d3587c42120826601bc34cd65e6",
+      "size": 40707,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-template-empty-en.png",
+      "sha256": "944ac0ec9e916f0f0c48d3b1249800e931846584b219804942ca1988177ee59d",
+      "size": 50361,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/final-template-empty-zh.png",
+      "sha256": "f1ec4382663d278ce8c2ffd833eaf83635ac8267d11cc141b4c6a4b2bf653dd7",
+      "size": 47152,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/front-final-build.json",
+      "sha256": "742185b5dacf4551274a8ce19b12dfc9a197db8f5f6b945307259343eb842071",
+      "size": 11983,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "build",
+        "--",
+        "--outDir",
+        ".repair-build"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/front-final-format-corrected.json",
+      "sha256": "03d168217cfd6655240988574e5d5112d59f94867dcadbc39815d4dd9ab4972e",
+      "size": 11097,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "format:check"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/front-final-format.json",
+      "sha256": "76432b774461768bc05f430e14e45b49e883e93dfb83833b63a94d67f356ba6b",
+      "size": 11173,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "format:check"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/front-final-lint.json",
+      "sha256": "f61e50dbda6450a92a7b0787fd0e82e713dc59b70d5fdf77213d28f7bf7c22a6",
+      "size": 11039,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "lint"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/front-final-test.json",
+      "sha256": "1d9d40351867872c1d5419eecb19363192b6df0dc3e27b1df7d1e4fbdc3e83ce",
+      "size": 11276,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/front-final-typecheck.json",
+      "sha256": "95512122c12482aec2ab81b0e636c4793a781649eb367eea5802c78eddedc181",
+      "size": 10988,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/front-format-write.json",
+      "sha256": "b19c61108bf16b94e86910130a68b4db3d71eb9615a65c244cc6629c82986351",
+      "size": 11043,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "exec",
+        "--",
+        "prettier",
+        "--write",
+        "src/frontend/src/i18n/messages/zh-CN.ts"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-auth-fixed.json",
+      "sha256": "ee6f624a8cd86a9220ebd3bc9e211d45a8e0febc296388cd48199751651c52f5",
+      "size": 11379,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache",
+        "src/features/agent/__tests__/AgentWorkspace.test.tsx"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-build.json",
+      "sha256": "c1350587c388254510d61a84bcfd388ed79234f2101d488c0b9230854d5d9a13",
+      "size": 11657,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "build",
+        "--",
+        "--outDir",
+        ".repair-build"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-final-build.json",
+      "sha256": "423f5f02da754540666c27637194c93597c0f4ae6cae423ba3d0a53753fe2781",
+      "size": 11882,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "build",
+        "--",
+        "--outDir",
+        ".repair-build"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-final-format.json",
+      "sha256": "30eec73e414e69d9428ddb53bedb8fd555d24729fa7359413078448ea96a5581",
+      "size": 10919,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "format:check"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-final-lint.json",
+      "sha256": "426d606b884244d56615f669d495970c361a817e4a3014bb8fdfccc7af1bfd6f",
+      "size": 10861,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "lint"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-final-tests.json",
+      "sha256": "89d930a761d6f2ba6d2ef32c17e174c94113b9c40b82b12deb90f3ff3cf69ede",
+      "size": 11172,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-final-types.json",
+      "sha256": "9aadae12e6d18cda0edf926a92489db150ab57ca9638a4a7e663174797160724",
+      "size": 10887,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-format-before.json",
+      "sha256": "c41543508779a26e874abdabb9f84e16023b8e710f0a49a1abbafb74c118a42e",
+      "size": 1711,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "format:check"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-format.json",
+      "sha256": "1ed99baeb786a57ef005f47278e3ac8cabccd19f6dfeb3498954c130dfc8dfb5",
+      "size": 10739,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "format:check"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-last-format.json",
+      "sha256": "ce8ff6a20f3a62858333f3b7542819fc879c8200da42d2562b7c015675a2c3f2",
+      "size": 11058,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "format:check"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-last-lint.json",
+      "sha256": "453797ce0586a5f4d7ee6432d8b7e5f6e81a2df54bd70e8980e78953c2c35871",
+      "size": 11000,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "lint"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-last-types.json",
+      "sha256": "186f763523012373e3bc8fd19ba781dc14c6d60dc9e7aaf68b4f7ef0ff156fb1",
+      "size": 10949,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-lint.json",
+      "sha256": "ebadd2461a0b9ecc369f54c46c043b4ed01ff4f891d78190c0d3284002a2d786",
+      "size": 12127,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "lint"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-project-runs.json",
+      "sha256": "560ce66bb43f6de2b9afffb144eb1c38ef7af9b05531ded329ab1f7f0e743e27",
+      "size": 10738,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test:project-runs"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-semantic-final.json",
+      "sha256": "5335be6c13a097926daefd6a225fa7f8c637feb51cc1b5978e2edc08170a20db",
+      "size": 11175,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-source-build.json",
+      "sha256": "005ea7ec4a29bb4b89e23fd906c40ad60642a32b1d7cdf049f0f85ab60adcb98",
+      "size": 11983,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "build",
+        "--",
+        "--outDir",
+        ".repair-build"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-source-final.json",
+      "sha256": "15f2cc2f62559f7926c58e17185e01cc8b85fe85691003c645e06148d77ec271",
+      "size": 10922,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "npm_does_not_exist"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-source-format.json",
+      "sha256": "03d168217cfd6655240988574e5d5112d59f94867dcadbc39815d4dd9ab4972e",
+      "size": 11097,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "format:check"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-source-prettier.json",
+      "sha256": "7bd4771f1e2def822ae1442e6b5b682e080a513418c086041e6502f7773826d0",
+      "size": 11196,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "exec",
+        "--",
+        "prettier",
+        "--write",
+        "src/frontend/src/features/agent/__tests__/AgentWorkspace.test.tsx",
+        "src/frontend/src/i18n/messages/en.ts"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-source-tests.json",
+      "sha256": "85545aec8e93b081bbdc727e9c1adc6e93a2cb7363621609ba3e722c40aac09c",
+      "size": 11276,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "cmd",
+        "/c",
+        "npm",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-typecheck.json",
+      "sha256": "3827220b437ec842ed6ed3a4a618585ec1474360c631e9d7bce60d1c92a89ff0",
+      "size": 249,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 0
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-types.json",
+      "sha256": "97e81dd9b02adfd3f9ac4382265a6d80f65cdc1148b045ec3523647f907216e2",
+      "size": 10630,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/frontend-validation.json",
+      "sha256": "8b8a0939598be576c6826b911a7f8f1c2e3cce82a63e021aa6d619eed04747a2",
+      "size": 10751,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/offline-current-summary.json",
+      "sha256": "bb26a22183daed7a5155ce83858d6f8a0a5efa5644195e76212145cbe54f729f",
+      "size": 1528,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/offline-current.json",
+      "sha256": "c09c16a689d82cad93b4c5dd1b5a2c54e2ce22f2c519f9222edf614534dba336",
+      "size": 11488,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "scripts/run_agent_evaluation.py",
+        "--manifest",
+        "tests/fixtures/agent_eval/v2/manifest.json",
+        "--provider",
+        "rule_based",
+        "--output",
+        ".repair_tmp/offline-current/report.json"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true,
+      "cleanup_blocked": []
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/offline-evaluator-summary.json",
+      "sha256": "0b18ecf370bc91e0f94d83020929ee2c67d5a695a01649db45227c080492a905",
+      "size": 1528,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/offline-evaluator.json",
+      "sha256": "02322b3ae19dece7504fdffdd2e49fa109f262be067ded92a1901b751dea6002",
+      "size": 11340,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "scripts/run_agent_evaluation.py",
+        "--manifest",
+        "tests/fixtures/agent_eval/v2/manifest.json",
+        "--provider",
+        "rule_based",
+        "--output",
+        ".repair_tmp/agent-eval/report.json"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/protection-comparison.json",
+      "sha256": "2959c4ac7c14c346361c3bf27605db6711d206bfedeab5f33caf6547cb8445cc",
+      "size": 33010,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r02-before.json",
+      "sha256": "f3c1cce2f1d2687532a03ee9426d2a801481e70e52db6f6ed3b9ab5684842d38",
+      "size": 3604,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_recovery_scan.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r02-expanded.json",
+      "sha256": "ec35d54eb7118af51f498b69d217ed26f4c0a650f749e1b5a2cf9cf314f94dff",
+      "size": 1867,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_recovery_scan.py",
+        "tests/integration/test_technical_audit_startup_project_coverage.py",
+        "tests/unit/test_agent_task_scheduler.py",
+        "tests/unit/test_agent_execution_coordinator.py",
+        "tests/unit/test_agent_task_reconciler.py",
+        "tests/integration/test_technical_audit_persistent_waits.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r02-focused.json",
+      "sha256": "e77b45bc48ef54d0bdae232a66411832ebd4e967c06349303de37a4ba036c0fd",
+      "size": 1867,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_recovery_scan.py",
+        "tests/integration/test_technical_audit_startup_project_coverage.py",
+        "tests/unit/test_agent_task_scheduler.py",
+        "tests/unit/test_agent_execution_coordinator.py",
+        "tests/unit/test_agent_task_reconciler.py",
+        "tests/integration/test_technical_audit_persistent_waits.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r02-version-before.json",
+      "sha256": "b41c69383bb2f0a971b6e16b4d37fc325c306f806cb867b904c35f791256334b",
+      "size": 12518,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_recovery_scan.py",
+        "-k",
+        "unsupported",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r03-agent-chain.json",
+      "sha256": "676e24eebf29f60dfdba8c38b9bd7d8c4a943a16770c6de069e5291c688db7c5",
+      "size": 689,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_motion_goal_routing.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r03-before.json",
+      "sha256": "a002b0cfeb1e6407b0aab3e535517d3d9d4e7b650415b6eb49d719073e4d03c2",
+      "size": 10986,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_motion_goal_routing.py",
+        "tests/unit/test_technical_audit_motion_goal_contract.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r03-corrected.json",
+      "sha256": "3028ac39ae912bf37147b4964fb32d5e89eca091011b798c12afa336f4d4a59b",
+      "size": 2015,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_motion_goal_routing.py",
+        "tests/unit/test_technical_audit_motion_goal_contract.py",
+        "tests/unit/test_llm_planner.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_agent_task_read_model.py",
+        "tests/unit/test_agent_task_api.py",
+        "tests/unit/test_approval_summary.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r03-focused.json",
+      "sha256": "9b1cb38e6f7c7c3ee3f1ac886e61f815fbf793f4099caef6228dbb9657da74a3",
+      "size": 3377,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_motion_goal_routing.py",
+        "tests/unit/test_technical_audit_motion_goal_contract.py",
+        "tests/unit/test_llm_planner.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_agent_task_read_model.py",
+        "tests/unit/test_agent_task_api.py",
+        "tests/unit/test_approval_summary.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-backend-verified.json",
+      "sha256": "d9dd80434bd82d9f765c2c1dc8b9f35c8a4a36402b7ceb7ec6f50617869a8b45",
+      "size": 1153,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_template_input.py",
+        "tests/unit/test_project_agent_settings.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_llm_planner.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-backend.json",
+      "sha256": "732bcfd56671863db343e541e275e7d1a2d031fe15b4f11fe27f62d52fd439cd",
+      "size": 3824,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_template_input.py",
+        "tests/unit/test_project_agent_settings.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_llm_planner.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-before.json",
+      "sha256": "25c9696196b08e92786c60864f9ac52023563261cefb134d882a6753a7980ebe",
+      "size": 5417,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_template_input.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-chain-corrected.json",
+      "sha256": "95a8b7da7a4386dd8b78d8091613ee6723568360ebb17aa7b9e7a06797949e2d",
+      "size": 1153,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_template_input.py",
+        "tests/unit/test_project_agent_settings.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_llm_planner.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-debug.json",
+      "sha256": "3248b14957c6872e5a23215d6389e40482ed814b34c61115566459f2dd9ed472",
+      "size": 3750,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_template_input.py::test_registration_replaces_batch_then_confirms_all_science_once",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-expanded.json",
+      "sha256": "cd4209424ffc756b4d7b7bdf83f31f3152fb95e57a1fc2a0fa6aebf86ae50144",
+      "size": 1623,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_template_input.py",
+        "tests/unit/test_project_agent_settings.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_agent_task_api.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-frontend-corrected.json",
+      "sha256": "324f5e8d2842cb2f10aee9a8c9cc39bc4ee95943779b8043564d495893d6dec8",
+      "size": 7440,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-frontend.json",
+      "sha256": "c75c414e23d37b71ae9dbb0baf719e1e59c977f74115c47999fb822de8c213a8",
+      "size": 27077,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 1
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-typecheck-final.json",
+      "sha256": "3827220b437ec842ed6ed3a4a618585ec1474360c631e9d7bce60d1c92a89ff0",
+      "size": 249,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 0
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-typecheck-fixed.json",
+      "sha256": "d2dcec72998ad828abf690456bf01b73addea12e54da44295f6f21c0dbcc6a0c",
+      "size": 1299,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 2
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r04-typecheck.json",
+      "sha256": "661cdac5dab122a48ff6e267397ded45e8c5c43b0343b4f505ae82b9c0d0d9c3",
+      "size": 909,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 2
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r05-before.json",
+      "sha256": "5f027bf9c33244f9ec421234218232132b5c4b9621632ba4a865b3ff32b585ba",
+      "size": 18293,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r05-corrected.json",
+      "sha256": "3dfb7621e05707ae933cc195d90cf7aa8b8385d0d87d49bd7654e27a7b1d21d0",
+      "size": 8165,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "tests/unit/test_agent_harness_service.py",
+        "tests/unit/test_agent_task_commands.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r05-expanded.json",
+      "sha256": "25253a02175549ab70ed4d21223d68a7bd587e722cdb32a0dfd7c47f09acf705",
+      "size": 12306,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "tests/unit/test_agent_template_input.py",
+        "tests/unit/test_agent_harness_service.py",
+        "tests/unit/test_agent_evidence_service.py",
+        "tests/unit/test_agent_task_commands.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r05-focused.json",
+      "sha256": "c0ee6f10106911e5a7d18a98756f780e3bbe6b5b47f0cc0cfebf096a2f67873f",
+      "size": 20130,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "tests/unit/test_agent_harness_service.py",
+        "tests/unit/test_agent_task_commands.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r05-mixed-before.json",
+      "sha256": "9c7df751a8d69d93a943bf89a7be83a9d390ba53b47afa2b3bf625a83d1d207d",
+      "size": 11912,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_confirmed_decisions.py::test_mixed_planner_batch_only_uses_current_confirmations",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r05-mixed.json",
+      "sha256": "204776998592a473a30ce159e2165591cb60beb7cc0272edff6d414d13ba9ebb",
+      "size": 13718,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_agent_template_input.py",
+        "tests/integration/test_agent_harness_lifecycle.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r05-recovery.json",
+      "sha256": "9454acda40fa9144fe18c8f0fa158564c925c9477f58c02895ac65cbd134f715",
+      "size": 8799,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "tests/unit/test_agent_invariant_checker.py",
+        "tests/unit/test_agent_template_input.py",
+        "tests/unit/test_agent_harness_service.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-backend-corrected.json",
+      "sha256": "e669a578996334f81a24d8bf6dc1654c095694718fd9dc60e903faca66d162cb",
+      "size": 9367,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_plan_evidence.py",
+        "tests/unit/test_agent_trace_service.py",
+        "tests/unit/test_agent_task_api.py",
+        "tests/unit/test_agent_task_read_model.py",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-backend.json",
+      "sha256": "07d1ece3987e05adae9f90970446f7fb00ee7a74f0216c9606f6d8fd05a707e8",
+      "size": 12523,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_plan_evidence.py",
+        "tests/unit/test_agent_trace_service.py",
+        "tests/unit/test_agent_task_api.py",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-before.json",
+      "sha256": "bb84e6ef484d1909a0823dd852919a39d6a3c0509dd33cd5d586e133c1b2c0aa",
+      "size": 11377,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_plan_evidence.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-browser-cleanup.json",
+      "sha256": "cc48b7ffbf98b439b31b0a9cc5c305429d451c1f0d11e64817ad239fd8b63a66",
+      "size": 122,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-browser.json",
+      "sha256": "d9a2a0c8b7e62cc85db4b3e26bc491d7b0af1810d48dd9a9dc72d5b81144d95c",
+      "size": 322,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-frontend-corrected.json",
+      "sha256": "098c048d61fad404aef7d053e429e05b69ab1b34c5f786bf0f214ac0d0ba4538",
+      "size": 52942,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-frontend-final.json",
+      "sha256": "8f6cc0be34110694c32a335577c362ccf2e6b10c0ae59b530e748fbf29bd082d",
+      "size": 8285,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-frontend.json",
+      "sha256": "7ee5488a6269ea12d647eca562ad3ab8501106250242ac99ba5cc51652d454c1",
+      "size": 9255,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-integrity.json",
+      "sha256": "587ed85433836f21898cf56356fc377a37a098de98def8574cf665ff2f1af08f",
+      "size": 9159,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_plan_evidence.py",
+        "tests/unit/test_agent_trace_service.py",
+        "tests/unit/test_agent_task_api.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-plan-en.jpg",
+      "sha256": "62474314b2f9b099e00ef00291ba4bbb769f045377c5491f8395fa53c21bbe3b",
+      "size": 54719,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-plan-only-before.json",
+      "sha256": "e1ffa87d0097dea65a28d5222fc7af752a155aa0aca9b15d16dfc69b667c1ec3",
+      "size": 14026,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_plan_evidence.py",
+        "-k",
+        "real_saved",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-plan-zh.jpg",
+      "sha256": "68017bf7185e3ad521e8cfe948be59199290be5018532cb683c4aafc18dd8479",
+      "size": 52043,
+      "layer": "isolated source browser, 2026-10-03 stage",
+      "limit": "Not packaged/current final UI proof. Earlier plan-only screenshots predate the canonical no-summary fix; template choice screenshot predates final checksum wrapping."
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-typecheck-final.json",
+      "sha256": "e1d9dcc8bbde90404c0233895da05c298e865c2d5040b63470e429f292472373",
+      "size": 8153,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 2,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-typecheck-verified.json",
+      "sha256": "baae90651c2c896802322c4b33bf99984ee4658f49c4034b9e8382367706cf1a",
+      "size": 8001,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r06-typecheck.json",
+      "sha256": "74f442078d34e6694fdcc478224e227d0e56976ad50d9e70218836e2bff1b1b1",
+      "size": 8623,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 2,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-backend-corrected.json",
+      "sha256": "90d12b15355f1ff7ddbecfe4bb82b0055687e8f71381715cec937090c23ed9c0",
+      "size": 12662,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_semantic_messages.py",
+        "tests/unit/test_approval_summary.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_agent_task_read_model.py",
+        "tests/unit/test_agent_harness_service.py",
+        "tests/unit/test_agent_template_input.py",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-backend-verified.json",
+      "sha256": "bd776cb5434f6b4e82fdfd3664d90be0dc334a1b2d15f506cde9041c0c3bab51",
+      "size": 10835,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_semantic_messages.py",
+        "tests/unit/test_approval_summary.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_agent_task_read_model.py",
+        "tests/unit/test_agent_harness_service.py",
+        "tests/unit/test_agent_template_input.py",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-backend.json",
+      "sha256": "461ecd3493e018f145aec29cb906ea8a1ba55095f44f02a7b4519242a18f2ff6",
+      "size": 23502,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_semantic_messages.py",
+        "tests/unit/test_approval_summary.py",
+        "tests/unit/test_agent_task_commands.py",
+        "tests/unit/test_agent_task_read_model.py",
+        "tests/unit/test_agent_harness_service.py",
+        "tests/unit/test_agent_template_input.py",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-before.json",
+      "sha256": "97423411061e2eeac183bb0bf9b91a64bd31d80e759fb109c089f7fac1df5d37",
+      "size": 9014,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_agent_semantic_messages.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-choice-before.json",
+      "sha256": "adddbb71777cb9c42a4bd0a90654e2cefa7846b9a66a5bc1a6c7d596d3e1bae9",
+      "size": 14513,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache",
+        "src/features/agent/__tests__/systemMessages.test.tsx"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-expanded.json",
+      "sha256": "f59c18a60ed94c349d6ed3a7b7a146cce47e5ecd3ef3eaebc54aa85594e0cc2d",
+      "size": 15875,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_confirmed_decisions.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_evaluation_cli.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_evaluation_runner.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_evaluation_service.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_evidence_context.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_evidence_service.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_execution_coordinator.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_first_e2e_fixture.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_harness_budget.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_harness_capabilities.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_harness_context.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_harness_execution_boundary.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_harness_lease.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_harness_replay.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_harness_service.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_invariant_checker.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_lifecycle.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_logging.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_model_adapter.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_model_profile.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_operational_summary.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_operations_api.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_plan_evidence.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_planning_service.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_semantic_messages.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_skill_documentation.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_skills.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_task_api.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_task_commands.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_task_read_model.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_task_reconciler.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_task_result_summary.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_task_scheduler.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_template_input.py",
+        "<REPO_ROOT>\\tests\\unit\\test_agent_trace_service.py",
+        "tests/unit/test_approval_summary.py",
+        "tests/unit/test_motion_goal_routing.py",
+        "tests/integration/test_agent_recovery_scan.py",
+        "tests/integration/test_technical_audit_startup_project_coverage.py",
+        "tests/integration/test_technical_audit_persistent_waits.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-frontend-final.json",
+      "sha256": "462de2966e3dcac71211fe8765bf996a8c7958c47901103f48c93852781799cb",
+      "size": 9409,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-frontend.json",
+      "sha256": "a09569fe4770a8c6353ac6301d8cc154eae0903587fa26ae1de23db682730a15",
+      "size": 10672,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "test",
+        "--",
+        "--no-cache"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-typecheck-corrected.json",
+      "sha256": "306c19d2ec9a2b329ad36d8c85fca1f76822d46a74297695d7f70a4353d4db79",
+      "size": 9004,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-typecheck-final.json",
+      "sha256": "0ac81bf58ebaf5f1f1ed4e52f976a1a62052d53db92f38fa8264808b4136eb48",
+      "size": 9125,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r07-typecheck.json",
+      "sha256": "79f7dd05b89bca8dfed3799a2dcc9fe8c982cc944b4e5c64b718e1d190216332",
+      "size": 10788,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "src/frontend",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 2,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r08-depth-before.json",
+      "sha256": "bb01c9e14d34eb3707a375f73d810ba6e37cd1cfc2068bc5c0405568191a0d91",
+      "size": 11669,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_native_report_export_paths.py",
+        "-s",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r08-depth-diagnosis.json",
+      "sha256": "5fe60aec78a15cb924b86f48f1dad2c81330b850949f1aea04e519035bff3696",
+      "size": 12658,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_native_report_export_paths.py",
+        "-s",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r08-expanded.json",
+      "sha256": "85e07cfa13640dd4a3e56e2fbf52094511285eb1e0ac05dbdf138f1277fd082c",
+      "size": 10518,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_report_export_safety.py",
+        "tests/unit/test_report_exporter.py",
+        "tests/unit/test_report_package_validator.py",
+        "tests/integration/test_native_report_export_paths.py",
+        "tests/integration/test_native_preproc_run_validator.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r08-focused.json",
+      "sha256": "8e8294f273c4f20d908d35bf4fd63834041c5b5d61f2925d1ee1f47a6d894b4f",
+      "size": 10476,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_report_export_safety.py",
+        "tests/unit/test_report_exporter.py",
+        "tests/integration/test_native_report_export_paths.py",
+        "tests/integration/test_native_preproc_run_validator.py",
+        "-s",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r08-original.json",
+      "sha256": "03517e0960c2517b086a8c428374db48f780846afa013525b1ccb5fbfe984c32",
+      "size": 9641,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_native_preproc_run_validator.py::test_native_preproc_run_validator_accepts_report_export_bridge",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r08-ownership.json",
+      "sha256": "de13d516dda36ef9c52047acfb5849588271cc164602a1f07443a2770c31e821",
+      "size": 10477,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_report_export_safety.py",
+        "tests/unit/test_report_exporter.py",
+        "tests/integration/test_native_report_export_paths.py",
+        "tests/integration/test_native_preproc_run_validator.py",
+        "-s",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r08-safety-before.json",
+      "sha256": "01bd4091251c87a917ea7c1353cf37b8d38d4a57dd66d5781885546fcd3c68ab",
+      "size": 13489,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_report_export_safety.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-before.json",
+      "sha256": "5840fe2fd0fa20714d8d41d2cd2aa58b7b210f3200fdcb77a3ee3eefc1545607",
+      "size": 14202,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-boundary.json",
+      "sha256": "1952046c2ff817936461dc4dd2faba1eaf0f2ecb2f04ee95e1bee9ed27fa5cb1",
+      "size": 15220,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_agent_skills.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-conflict-before.json",
+      "sha256": "04e11a0399203c0e35faad6f35e1ac6f753616ace7ac83af44d74acf2b155735",
+      "size": 12801,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "-k",
+        "conflicting",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-consumers.json",
+      "sha256": "30b23aac37397f95bbb5aa1862b3a0c837a16723b392fc0b497d8fe6787024df",
+      "size": 14827,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_agent_skills.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-corrected.json",
+      "sha256": "9ed22147888e9cacf3ddedaa17681bfa32bc2fe24c0594192177668693c46d15",
+      "size": 13507,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_memory_retrieval.py",
+        "tests/unit/test_agent_trace_service.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-expanded.json",
+      "sha256": "c2f46f10871617db6ab4d84e874183852d93c91ec0afb72fb7687801b884d1ff",
+      "size": 11386,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_memory_retrieval.py",
+        "tests/unit/test_memory_forget_projection.py",
+        "tests/unit/test_memory_startup_reconcile.py",
+        "tests/unit/test_agent_harness_service.py",
+        "tests/unit/test_agent_harness_context.py",
+        "tests/unit/test_agent_trace_service.py",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "tests/integration/test_agent_harness_lifecycle.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-final-consumers.json",
+      "sha256": "6b493848d26e3a413dd9752f44bb8747bc4d0ce0d0748e07c307bcc721d8ef4f",
+      "size": 15137,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_memory_retrieval.py",
+        "tests/unit/test_agent_task_commands.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-plan-binding.json",
+      "sha256": "9f72c63b14749c834b9ebf69192642a6150609d57eb5a8245f1f602d9115f7c3",
+      "size": 11520,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_memory_retrieval.py",
+        "tests/unit/test_agent_confirmed_decisions.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-realanswer.json",
+      "sha256": "6e5c13f80907ad75adba02b494fb41012f90853e8f022c43b745e74c33dd26cd",
+      "size": 10447,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_agent_skills.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-refreshed.json",
+      "sha256": "d52cca2c17fce2e566eede4d43d8dc3e8c69a0d4c9ef0a02234e290a359f6654",
+      "size": 14414,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_agent_skills.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-replay-before.json",
+      "sha256": "5623285077f82fadb618daa2eec2aa3aab0db5fb1054096e5dfd43eb98c7d06c",
+      "size": 12562,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py::test_cross_batch_reopen_replays_authoritative_user_answer",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r09-skillvalid.json",
+      "sha256": "9d0a43993ff62c149d526af68daa2e542e167c94fb7beb1e4a27c1aa2394d6a5",
+      "size": 14172,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/test_agent_offline_consumers.py",
+        "tests/unit/test_agent_skills.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r10-before.json",
+      "sha256": "e132e1a447748bc8a61d39d22e6ea395e2b6fb322c73f482ec4721f61c6357da",
+      "size": 11181,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_desktop_packaging_contract.py::test_packaged_restart_is_a_separate_owned_two_launch_workflow",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r10-contract.json",
+      "sha256": "59db4e239ccb1d8d111e59360dd31b22b8e248df7e574e88f3b8bc240e3544a9",
+      "size": 10407,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_desktop_packaging_contract.py",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r10-electron-check.json",
+      "sha256": "048de252d70669f8615a651ef49761b3b02310d45756dce5ae09b250c6ac57a0",
+      "size": 18012,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "npm.cmd",
+        "--prefix",
+        "desktop/electron",
+        "run",
+        "check"
+      ],
+      "exit_code": 0,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/r10-source.json",
+      "sha256": "e6079b89d7fe3ffad42f540a248d8a1feaf5b3612963d933d4f3ff45a7476001",
+      "size": 11420,
+      "layer": "source command, regression, inspection or retained task audit evidence",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit/test_desktop_packaging_contract.py",
+        "tests/unit/test_agent_task_commands.py::test_memory_scientific_suggestion_requires_current_task_confirmation",
+        "--tb=short",
+        "--basetemp=.pytest_tmp"
+      ],
+      "exit_code": 1,
+      "cleanup_verified": true
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/source-browser-authority.json",
+      "sha256": "165616e88ad0d34e65e7b5668926092208905359404bcce6d3f948030f4d9c4b",
+      "size": 4464,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    },
+    {
+      "path": "artifacts/technical-audit-fixes/20261003-r02-r11/source-manifest.json",
+      "sha256": "16a178bc02542f65e66713265d65612baebb6782ae301d9b2f7a3d234a9baaad",
+      "size": 1793583,
+      "layer": "source command, regression, inspection or retained task audit evidence"
+    }
+  ],
+  "publication_sanitization": {
+    "performed": true,
+    "tokens": [
+      "<REPO_ROOT>",
+      "<WORKSPACE_ROOT>",
+      "<PYTHON_ENV>"
+    ],
+    "scope": "serialized evidence JSON string values",
+    "preserved": "commands, exit codes, structured results, and evidence relationships"
+  }
+}

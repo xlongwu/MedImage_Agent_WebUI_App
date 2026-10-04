@@ -1,0 +1,26 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "checked_at": "2026-10-03T02:06:12.615194+00:00",
+  "tracked_files_checked": 1520,
+  "preexisting_untracked_checked": 4,
+  "readonly_inputs_checked": 29,
+  "changed_tracked": [],
+  "changed_preexisting_untracked": [],
+  "changed_readonly_fingerprints": [],
+  "head_unchanged": true,
+  "branch": "main",
+  "production_and_user_changes_preserved": true,
+  "process_cleanup": {
+    "source_children": [
+      2968,
+      31496,
+      16420,
+      27600,
+      13896,
+      22992
+    ],
+    "all_child_waits_returned": true,
+    "ordinary_desktop_readonly_process_check_count": 0,
+    "ordinary_desktop_audit_port_listener_count": 0
+  }
+}

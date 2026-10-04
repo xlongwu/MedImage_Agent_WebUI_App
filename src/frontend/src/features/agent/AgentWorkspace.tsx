@@ -29,6 +29,20 @@ function localizeAgentError(
   code: string | null | undefined,
   t: I18nContextValue["t"],
 ): LocalizedAgentError {
+  if (code === "AGENT_APPROVAL_AUTH_UNCONFIGURED") {
+    return {
+      message: t("agent.error.approvalAuthUnconfigured.message"),
+      retryLabel: null,
+      title: t("agent.error.approvalAuthUnconfigured.title"),
+    };
+  }
+  if (code === "AGENT_APPROVAL_AUTH_REQUIRED") {
+    return {
+      message: t("agent.error.approvalAuthRequired.message"),
+      retryLabel: null,
+      title: t("agent.error.approvalAuthRequired.title"),
+    };
+  }
   if (code === "AGENT_DECISION_STALE" || code === "AGENT_DECISION_PLAN_STALE") {
     return {
       message: t("agent.error.decisionStale"),
@@ -46,6 +60,16 @@ function localizeAgentError(
   if (code === "AGENT_DECISION_BATCH_INVALID") {
     return {
       message: t("agent.error.decisionInvalid"),
+      retryLabel: null,
+      title: t("agent.actionProblem"),
+    };
+  }
+  if (
+    code === "APPROVAL_SUMMARY_VERSION_UNSUPPORTED" ||
+    code === "AGENT_LIFECYCLE_VERSION_UNSUPPORTED"
+  ) {
+    return {
+      message: t("agent.error.versionUnsupported"),
       retryLabel: null,
       title: t("agent.actionProblem"),
     };
@@ -205,11 +229,19 @@ export function AgentWorkspace({
   onReopenAttention?: () => void;
   projectName: string;
 }) {
+  const { t } = useI18n();
+  const stateLabels = {
+    raw_dicom: t("preprocessing.rawDicom"),
+    mixed: t("preprocessing.mixed"),
+    converted_bids: t("preprocessing.converted"),
+    empty: t("preprocessing.emptyProject"),
+    unknown: t("common.unavailable"),
+  };
   return (
     <AgentWorkspaceView
       advancedMode={advancedMode}
       controller={controller}
-      dataStateLabel={inventory?.dataStateLabel ?? "—"}
+      dataStateLabel={inventory ? stateLabels[inventory.dataState] : "—"}
       onExplainTask={onExplainTask}
       onOpenRuns={onOpenRuns}
       onReopenAttention={onReopenAttention}
@@ -375,6 +407,7 @@ export function AgentWorkspaceView({
             harnessActivity={controller.harnessActivity}
             harnessSummary={task.harness_summary}
             onLoadHarnessActivity={controller.loadHarnessActivity}
+            onReadPlanEvidence={controller.readPlanEvidence}
             onOpenRuns={onOpenRuns}
             task={task}
           />

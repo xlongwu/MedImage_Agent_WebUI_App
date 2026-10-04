@@ -1,0 +1,20 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "name": "memory",
+  "started_at": "2026-10-03T01:29:25.703020+00:00",
+  "ended_at": "2026-10-03T01:29:49.901627+00:00",
+  "seconds": 24.2,
+  "command": "python -m pytest tests/unit/test_memory_phase_a.py tests/unit/test_memory_repository.py tests/unit/test_memory_candidate_service.py tests/unit/test_memory_consolidation.py tests/unit/test_memory_retrieval.py tests/unit/test_memory_forget_projection.py tests/unit/test_memory_api.py tests/unit/test_memory_provider.py tests/unit/test_memory_llm_proposals.py tests/unit/test_memory_startup_reconcile.py tests/unit/test_memory_store.py tests/unit/test_agent_evaluation_runner.py tests/unit/test_agent_evaluation_service.py tests/unit/test_agent_evaluation_cli.py tests/unit/test_multi_agent_evaluation.py --tb=short --basetemp=.pytest_tmp -q -ra",
+  "exit_code": 0,
+  "process_id": 29512,
+  "process_exited": true,
+  "baseline_manifest_sha256": "740395baf22d5e754489cde2471af70f215e0ed86c6516a44f4890c1b514e97e",
+  "result_lines": [
+    "============================== warnings summary ===============================",
+    "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+    "84 passed, 1 warning in 22.86s"
+  ],
+  "retention_reason": "Minimal redacted command, assertions/summary, exit status and skip/failure evidence; raw temporary logs and databases deleted.",
+  "pre_retention_output_sha256": "68825b103e0daaae3fec5e122a3eb5caaabe1af92954c06f9cb55e939dc420f5",
+  "input_identity_ref": "baseline.json#/input_fingerprints; scientific-inputs.json"
+}

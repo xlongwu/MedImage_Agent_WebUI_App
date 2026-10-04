@@ -1,0 +1,13 @@
+{
+  "command": [
+    "npm.cmd",
+    "--prefix",
+    "src/frontend",
+    "run",
+    "format:check"
+  ],
+  "exit_code": 1,
+  "stdout": "\n> medimage-agent-frontend@0.6.0-rc1 format:check\n> prettier --check \"src/**/*.{ts,tsx,css,json}\"\n\nChecking formatting...\n",
+  "stderr": "[warn] src/features/agent/__tests__/AgentAttentionDialog.test.tsx\n[warn] src/features/agent/__tests__/AgentOperationalHealthCard.test.tsx\n[warn] src/features/agent/__tests__/AgentWorkspace.test.tsx\n[warn] src/features/agent/__tests__/DecisionBatchForm.test.tsx\n[warn] src/features/agent/__tests__/systemMessages.test.tsx\n[warn] src/features/agent/__tests__/useAgentTaskController.test.tsx\n[warn] src/features/agent/AgentWorkspace.tsx\n[warn] src/features/agent/components/AgentDefaultsPanel.tsx\n[warn] src/features/agent/components/DecisionBatchForm.tsx\n[warn] src/features/agent/components/ExecutionApprovalReview.tsx\n[warn] src/features/agent/components/PlanEvidenceDetails.tsx\n[warn] src/features/agent/components/TaskActionPanel.tsx\n[warn] src/features/agent/components/TaskDetails.tsx\n[warn] src/features/agent/components/TaskResultPanel.tsx\n[warn] src/features/agent/components/TechnicalEvidence.tsx\n[warn] src/features/agent/systemMessages.ts\n[warn] src/features/agent/useAgentTaskController.ts\n[warn] src/features/workspaces/__tests__/RunsWorkspace.test.tsx\n[warn] src/features/workspaces/RunsWorkspace.tsx\n[warn] src/i18n/messages/en.ts\n[warn] src/i18n/messages/zh-CN.ts\n[warn] src/lib/api/__tests__/agentTasks.test.ts\n[warn] src/lib/api/agentTasks.ts\n[warn] src/lib/types/agentTask.ts\n[warn] Code style issues found in 24 files. Run Prettier with --write to fix.\n",
+  "isolated": true
+}

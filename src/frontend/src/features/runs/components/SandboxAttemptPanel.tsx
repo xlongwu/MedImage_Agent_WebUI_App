@@ -6,7 +6,6 @@ export function SandboxAttemptPanel({ attempts }: { attempts: SandboxAttempt[] }
   return (
     <section aria-label={t("runs.sandbox.title")}>
       <h4>{t("runs.sandbox.title")}</h4>
-      <p>{t("runs.sandbox.networkNotEnforced")}</p>
       {attempts.length === 0 ? (
         <p>{t("runs.sandbox.empty")}</p>
       ) : (
@@ -16,6 +15,8 @@ export function SandboxAttemptPanel({ attempts }: { attempts: SandboxAttempt[] }
               <strong>{attempt.node_id}</strong>
               {" — "}
               {t(`runs.sandbox.status.${attempt.status}`)}
+              {" — "}
+              {t(`runs.sandbox.network.${attempt.network_isolation}`)}
               {attempt.result_code ? ` (${attempt.result_code})` : ""}
             </li>
           ))}

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+
+import pytest
+
+from src.backend.app.core.exceptions import SafetyError
 
 from src.backend.app.schemas.desktop import ReviewedPlanRecord
 from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
@@ -99,3 +104,28 @@ def test_persisted_snapshot_has_no_private_configuration_path(tmp_path) -> None:
     assert persisted is not None
     assert private_matlab not in persisted.model_dump_json()
     assert persisted.tool_capabilities[0].installation_path_hash
+
+
+def test_provider_implementation_change_invalidates_persisted_environment(tmp_path, monkeypatch) -> None:
+    service = _service(tmp_path)
+    fingerprint = "a" * 64
+    monkeypatch.setattr(
+        "src.backend.app.services.execution_environment_service.sandbox_runtime_fingerprint",
+        lambda: fingerprint,
+    )
+    snapshot = service.capture_for_plan(
+        project_id="project-environment", reviewed_plan=_reviewed(),
+        write_roots=("project://work",), readonly_roots=("project://rawdata",),
+    )
+    ticket = SimpleNamespace(
+        execution_environment_snapshot_id=snapshot.snapshot_id,
+        execution_environment_hash=snapshot.environment_hash,
+        project_id=snapshot.project_id,
+        approved_node_ids=("functional_connectivity_subject",),
+        approved_backend_ids=("python",),
+    )
+    assert service.verify_for_dispatch(execution_ticket=ticket) == snapshot
+    fingerprint = "b" * 64
+    with pytest.raises(SafetyError) as error:
+        service.verify_for_dispatch(execution_ticket=ticket)
+    assert error.value.code == "EXECUTION_ENVIRONMENT_CHANGED"

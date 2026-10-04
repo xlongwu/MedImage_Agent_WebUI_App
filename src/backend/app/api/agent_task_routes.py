@@ -24,6 +24,7 @@ from src.backend.app.schemas.agent_task import (
     ApproveAgentTaskRequest,
     CancelAgentTaskRequest,
     CreateAgentTaskRequest,
+    RegisterAgentTemplateRequest,
 )
 from src.backend.app.schemas.agent_invariant import AgentInvariantReport
 from src.backend.app.schemas.agent_trace import AgentTracePage
@@ -31,8 +32,21 @@ from src.backend.app.services.agent_task_command_service import AgentTaskCommand
 from src.backend.app.services.agent_task_read_model import AgentTaskReadModel
 from src.backend.app.services.agent_trace_service import AgentTraceService
 from src.backend.app.services.agent_invariant_checker import AgentInvariantChecker
+from src.backend.app.schemas.agent_plan_evidence import AgentPlanEvidence
+from src.backend.app.services.agent_plan_evidence_service import AgentPlanEvidenceService
 
 router = APIRouter(prefix="/api/projects/{project_id}/agent/tasks", tags=["agent-tasks"])
+
+
+@router.get("/{task_id}/plan-evidence", response_model=AgentPlanEvidence)
+def get_agent_plan_evidence(
+    project_id: str, task_id: str, plan_hash: str | None = Query(default=None, max_length=128),
+    store: ProjectStore = Depends(get_project_store),
+) -> AgentPlanEvidence:
+    try:
+        return AgentPlanEvidenceService(store).get(project_id=project_id, task_id=task_id, plan_hash=plan_hash)
+    except Exception as exc:
+        raise_api_error(exc)
 
 
 @router.post("", response_model=AgentTaskResponse)
@@ -70,6 +84,22 @@ def answer_agent_task(
             answers=request.answers,
             command_id=request.command_id,
             actor=request.actor,
+        )
+        return AgentTaskReadModel(store).get(project_id=project_id, task_id=lifecycle.lifecycle_id)
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@router.post("/{task_id}/register-template", response_model=AgentTaskResponse)
+def register_agent_template(
+    project_id: str, task_id: str, request: RegisterAgentTemplateRequest,
+    store: ProjectStore = Depends(get_project_store),
+    commands: AgentTaskCommandService = Depends(get_agent_task_command_service),
+) -> AgentTaskResponse:
+    try:
+        lifecycle = commands.register_template(
+            project_id=project_id, lifecycle_id=task_id, **request.model_dump(exclude={"resource"}),
+            resource=request.resource,
         )
         return AgentTaskReadModel(store).get(project_id=project_id, task_id=lifecycle.lifecycle_id)
     except Exception as exc:

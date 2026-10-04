@@ -62,7 +62,7 @@ class ReviewedPlanRecord(BaseModel):
     parent_reviewed_plan_id: str | None = None
     parent_plan_hash: str | None = None
     revision_reason: Literal[
-        "initial", "decision_answered", "goal_revised", "recovery_replan"
+        "initial", "decision_answered", "goal_revised", "recovery_replan", "template_input_registered"
     ] = "initial"
     planning_inputs_hash: str | None = None
     evidence_snapshot_hash: str | None = None

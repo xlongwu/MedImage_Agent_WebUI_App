@@ -17,7 +17,7 @@ AgentExecutionWakeStatus = Literal["PENDING", "CLAIMED", "CONSUMED", "RETRY"]
 
 
 class AgentExecutionWakeRecord(BaseModel):
-    """One idempotent check of an already-bound lifecycle/run pair."""
+    """One original-run check, or an intermediate checkpoint with run_id=''."""
 
     model_config = ConfigDict(extra="forbid")
 

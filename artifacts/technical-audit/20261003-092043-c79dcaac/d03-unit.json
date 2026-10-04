@@ -1,0 +1,20 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "name": "d03-unit",
+  "started_at": "2026-10-03T01:24:23.776579+00:00",
+  "ended_at": "2026-10-03T01:24:38.142503+00:00",
+  "seconds": 14.37,
+  "command": "python -m pytest tests/unit/test_windows_process_sandbox.py tests/unit/test_sandbox_process_request.py tests/unit/test_sandbox_policy.py tests/unit/test_sandbox_workspace.py tests/unit/test_execution_environment_service.py tests/unit/test_execution_ticket.py tests/unit/test_approval_summary.py tests/unit/test_runtime_subprocess_boundary.py tests/unit/test_sandbox_attempt_store.py tests/unit/test_sandbox_attempt_reconciler.py tests/unit/test_sandbox_output_verifier.py tests/unit/test_desktop_backend_entry.py tests/unit/test_desktop_packaging_contract.py --tb=short --basetemp=.pytest_tmp -q -ra",
+  "exit_code": 0,
+  "process_id": 31012,
+  "process_exited": true,
+  "baseline_manifest_sha256": "740395baf22d5e754489cde2471af70f215e0ed86c6516a44f4890c1b514e97e",
+  "result_lines": [
+    "============================== warnings summary ===============================",
+    "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+    "99 passed, 1 warning in 13.06s"
+  ],
+  "retention_reason": "Minimal redacted command, assertions/summary, exit status and skip/failure evidence; raw temporary logs and databases deleted.",
+  "pre_retention_output_sha256": "c2d8f17232e2322c238cd0e476c89277138116dba7f40684f644fc5d5faad1c1",
+  "input_identity_ref": "baseline.json#/input_fingerprints; scientific-inputs.json"
+}

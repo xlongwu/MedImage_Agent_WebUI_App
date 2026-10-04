@@ -76,6 +76,6 @@ def test_skill_loader_exposes_only_manifest_sections_for_current_state() -> None
     assert len(result.references) == 1
     assert result.references[0].skill_id == "planning_evidence_review.v1"
     assert set(result.references[0].sections) == {
-        "goal", "policy", "project_evidence", "decision_state", "plan_state", "last_action_result", "budget"
+        "goal", "policy", "project_evidence", "decision_state", "plan_state", "last_action_result", "memory_context", "budget"
     }
     assert "Do not infer missing data" in result.markdown

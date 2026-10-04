@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from threading import Event, Lock, Thread
 from uuid import uuid4
+import logging
 
 from src.backend.app.schemas.agent_execution_wake import AgentExecutionWakeRecord
 
@@ -14,6 +15,7 @@ class AgentExecutionCoordinator:
 
     LEASE_SECONDS = 30
     POLL_INTERVAL_SECONDS = 1
+    RESCAN_LIMIT = 100
 
     def __init__(self, store, *, reconciler, start_workers: bool = True, now=None) -> None:
         self.store = store
@@ -24,6 +26,7 @@ class AgentExecutionCoordinator:
         self._lock = Lock()
         self._wake_event = Event()
         self._worker: Thread | None = None
+        self._scan_pending = False
 
     def schedule(self, *, lifecycle, delay_seconds: int = 0) -> AgentExecutionWakeRecord | None:
         """Schedule an evidence-only check for the lifecycle's existing run."""
@@ -66,6 +69,12 @@ class AgentExecutionCoordinator:
         if record is None:
             return None
         try:
+            current = self.reconciler.orchestrator.get(
+                project_id=record.project_id, lifecycle_id=record.lifecycle_id,
+            )
+            if (current.run_id or "") != record.run_id:
+                self.store.complete_agent_execution_wake(record, owner=owner, now=self.now())
+                return current
             lifecycle = self.reconciler.reconcile_once(
                 project_id=record.project_id, lifecycle_id=record.lifecycle_id,
             )
@@ -76,7 +85,7 @@ class AgentExecutionCoordinator:
                 error_code=getattr(exc, "code", None) or type(exc).__name__,
             )
             raise
-        if lifecycle.state in {"RUNNING", "RETRYING", "RECOVERING"} and lifecycle.run_id == record.run_id:
+        if lifecycle.state in {"RUNNING", "RETRYING", "RECOVERING", "OBSERVING", "EVALUATING", "DIAGNOSING"} and (lifecycle.run_id or "") == record.run_id:
             self.store.retry_agent_execution_wake(
                 record, owner=owner, now=self.now(),
                 available_at=self.now() + timedelta(seconds=self.POLL_INTERVAL_SECONDS),
@@ -87,14 +96,15 @@ class AgentExecutionCoordinator:
         return lifecycle
 
     def recover_on_startup(self) -> tuple[str, ...]:
-        """Page every project/lifecycle; no first-batch cutoff can hide a run."""
-        scheduled: list[str] = []
-        for project in self.store.list_projects():
-            for lifecycle in self.store.list_agent_lifecycles(project.id):
-                if lifecycle.state in {"RUNNING", "RETRYING", "RECOVERING"}:
-                    self.schedule(lifecycle=lifecycle)
-                    scheduled.append(lifecycle.lifecycle_id)
-        return tuple(scheduled)
+        """Register one bounded page, without inspecting or dispatching a run."""
+        page = self.store.scan_agent_recovery_page(
+            consumer="execution", now=self.now(), limit=self.RESCAN_LIMIT,
+        )
+        self._scan_pending = page.has_more
+        self._wake_event.set()
+        if self._accepting and self.start_workers:
+            self._start_worker()
+        return page.lifecycle_ids
 
     def shutdown(self) -> bool:
         self._accepting = False
@@ -115,7 +125,18 @@ class AgentExecutionCoordinator:
     def _run_worker(self) -> None:
         try:
             while self._accepting:
-                if self.run_once() is not None:
+                if self._scan_pending:
+                    self.recover_on_startup()
+                try:
+                    result = self.run_once()
+                except Exception as exc:
+                    logging.getLogger(__name__).warning(
+                        "agent_execution_check_retry", extra={"error_code": type(exc).__name__},
+                    )
+                    result = None
+                if result is not None:
+                    continue
+                if self._scan_pending:
                     continue
                 self._wake_event.wait(timeout=self.POLL_INTERVAL_SECONDS)
                 self._wake_event.clear()

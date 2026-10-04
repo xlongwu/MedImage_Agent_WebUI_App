@@ -43,7 +43,7 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   run 证据并调用确定性 reconciler，不能规划、调用模型、审批、签发 Ticket 或分派
   Gateway。每次检查有界；run 未终态时持久化下一次到期时间，终态事件可提前唤醒，
   遗漏事件仍由到期检查补足。`GET`/list/read projection 不会登记、claim 或协调。
-  startup 扫描所有项目及其 lifecycle，不以首批数量或墙钟时限永久漏掉后续 run。
+  startup 直接按 eligible lifecycle 做持久 keyset 续扫，每页最多 100，周期上界冻结；页内 wake 与 cursor 原子提交，现有 worker 接续周期，不以首批数量永久漏掉尾部。执行扫描只登记原 run/已保存中间状态的协调工作。
 - App Shell 的项目绑定确认弹窗不是 Harness step 或 scheduler owner。它只把用户当前的
   `answer` 提交给既有 Agent Task 命令；该事务持久化 wake 后，scheduler 才在后台推进一次
   有界 planning checkpoint。`approve` 与 `approve-recovery` 同样只调用既有服务，后续
@@ -52,7 +52,7 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   `CLAIMED` 租约到期；新入队与 shutdown 使用同一条件通知，未来 retry 不需要新用户命令。
   单一 wake 最多尝试五次（含首次），之后写结构化 `AGENT_HARNESS_RETRY_EXHAUSTED`、消费
   wake 并进入 `HUMAN_HANDOFF`；新用户命令才会创建新的受控推进机会。
-- 唯一模型协议是 schema version 2 的判别联合 `ActionEnvelope`。允许 kind 仅为
+- 唯一模型协议是 schema version 3 的判别联合 `ActionEnvelope`。允许 kind 仅为
   `request_decision` 和 `draft_plan`；两者使用固定不可变字段，前者直接嵌入正式
   `DecisionItem`，不存在通用 `payload`。所有其他 kind 及额外字段默认拒绝。
 - Context v3 由唯一 builder 从显式 `HarnessContextSources` 产生，最大 32 KiB；
@@ -82,6 +82,8 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
 
 ## 模型调用账本
 
+每次 provider/规划消费前，`AgentPlanningService` 经真实 retrieval 刷新当前 MemoryContext、consent 与 forget 状态，校验项目及实际载荷 hash。科学建议与来源引用一并纳入 context hash；静态 `planning_evidence_review.v1` 明确允许 memory_context 输入。科学建议仅供提问，冲突不自动定值，不能使用旧缓存绕过关闭/遗忘。实际 MemoryContext hash/refs 同时绑定 Reviewed Plan 与审批摘要。
+
 - 每次调用先构造唯一的 `CanonicalModelRequest`，其中包含 provider/model/endpoint、
   system prompt、已脱敏 context、实际 action JSON Schema、模型参数和 repair 标识。
   调用前完整检查会计入 system prompt、Product Skill、Context、Action JSON Schema、模型参数
@@ -96,6 +98,7 @@ Windows packaged smoke 或正式 release 证据；未定位到该类 Harness 专
   状态猜测输入来源。`request_decision` 的 pending batch、lifecycle/event 和 action 的
   batch ID/hash 在一个 SQLite 事务中共同发布；缺少真实来源即安全停止，不生成可回答的问题。
   回答会以同一 purpose 重建当前证据，来源改变时仍以结构化 stale 错误拒绝旧答案。
+  当前任务确认另绑定 goal/kind/规范化值/根证据/batch/有效期。不同模型 action 对同绑定已确认项的再次提问，在事务提交边界以 `AGENT_DECISION_ALREADY_CONFIRMED` 落拒绝账本，不创建 batch；仍消耗有限工作预算。混合批次只跳过有效确认，过期、撤销和新证据必须重新确认。
   `request_decision` 保存 batch ID/hash；`draft_plan` 保存生成的 Reviewed Plan ID/hash，
   或该规划产生的后续 decision batch ID/hash。`AgentPlanningActionService` 成功完成既有
   决定或确定性规划后才更新为 `applied`，失败则写为 `rejected`。Trace 与 Replay 显示这些
@@ -177,6 +180,10 @@ recovery/token 预算、状态、下一步、让出次数、actual fallback 路�
   [`Harness 优化阶段 6`](../../specs/阶段记录/Harness优化/06_综合故障注入与实际效果评估.md)。
 
 ## 运行时不变量自检
+
+系统文案唯一格式为 `SystemMessage(code, typed params)`，由前端 en/zh-CN catalog 呈现。Approval Summary/lifecycle 当前版本 6、Agent Task/list 版本 3；旧合同明确拒绝，不迁移或删除用户记录，也不复用旧批准。语言切换只改变显示，不改变审批身份或发出命令。
+
+保存方案通过项目/task 绑定的 `GET /api/projects/{project_id}/agent/tasks/{task_id}/plan-evidence` 读取：服务复验实际 ReviewedPlanRecord 身份，返回版本、父版本、范围、节点和安全引用。plan-only 不依赖 Runs，不制造 run/数值产物。Trace 显示结构化事实、原因码、服务、账本结果及停止原因，不返回模型 reason/payload。Replay 仅以步骤之间的有界权威事件桥接用户回答；缺失事件仍拒绝。
 
 `AgentInvariantChecker` 与 Trace、Replay 并列，但只比较已持久化的 lifecycle、Harness
 调用和动作、Reviewed Plan、Approval Summary、Execution Ticket、run link 和 Observation。

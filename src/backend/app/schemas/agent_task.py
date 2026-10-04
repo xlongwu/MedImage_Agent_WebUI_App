@@ -9,7 +9,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
+from src.backend.app.schemas.system_message import SystemMessage
+
 from pydantic import BaseModel, ConfigDict, Field
+from src.backend.app.schemas.project_agent_settings import ScientificResourceInput
 
 from src.backend.app.schemas.agent_harness import AgentHarnessSummary
 
@@ -124,8 +127,8 @@ class AgentTaskDecisionOption(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
-    label: str
-    description: str
+    label: SystemMessage
+    description: SystemMessage
     recommended: bool = False
 
 
@@ -146,8 +149,8 @@ class AgentTaskDecision(BaseModel):
         "experimental_backend",
         "other",
     ]
-    question: str
-    impact: str
+    question: SystemMessage
+    impact: SystemMessage
     options: tuple[AgentTaskDecisionOption, ...] = ()
     recommended_option: str | None = None
     source: Literal["planner", "memory_suggestion"] = "planner"
@@ -158,6 +161,8 @@ class AgentTaskDecision(BaseModel):
     max_value: float | None = None
     required: bool = True
     evidence_refs: tuple[str, ...] = ()
+    readiness: Literal["ready", "input_required"] = "ready"
+    allowed_actions: tuple[Literal["register_template"], ...] = ()
 
 
 class AgentTaskDecisionBatch(BaseModel):
@@ -174,13 +179,15 @@ class AgentTaskApprovalSection(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
-    title: str
-    summary: str
-    warnings: tuple[str, ...] = ()
+    title: SystemMessage
+    summary: SystemMessage
+    warnings: tuple[SystemMessage, ...] = ()
 
 
 class AgentTaskApprovalSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[6]
 
     summary_hash: str
     execution_environment_snapshot_id: str
@@ -192,12 +199,12 @@ class AgentTaskApprovalSummary(BaseModel):
     write_roots: tuple[str, ...]
     rawdata_read_only: bool = True
     external_tools: tuple[str, ...] = ()
-    limitations: tuple[str, ...] = ()
-    science_changes: tuple[str, ...] = ()
+    limitations: tuple[SystemMessage, ...] = ()
+    science_changes: tuple[SystemMessage, ...] = ()
     resource_policy: dict[str, object] = Field(default_factory=dict)
     memory_context_hash: str | None = None
     memory_refs: tuple[dict[str, object], ...] = ()
-    memory_influence_summary: tuple[str, ...] = ()
+    memory_influence_summary: tuple[SystemMessage, ...] = ()
     planning_inputs_hash: str | None = None
     revision_no: int | None = Field(default=None, ge=1)
     parent_reviewed_plan_id: str | None = None
@@ -212,7 +219,7 @@ class AgentTaskArtifactSummary(BaseModel):
 
     artifact_id: str
     artifact_type: str
-    label: str
+    label: SystemMessage
     uri: str
     checksum: str | None = None
     capability_level: CapabilityLevel
@@ -284,7 +291,7 @@ class AgentTaskEvidenceLink(BaseModel):
 
     id: str
     type: AgentTaskEvidenceType
-    label: str
+    label: SystemMessage
     uri: str
     available: bool
 
@@ -333,7 +340,7 @@ class AgentTaskTechnicalDetails(BaseModel):
 class AgentTaskResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     task_id: str
     project_id: str
     state: AgentTaskPublicState
@@ -360,7 +367,7 @@ class AgentTaskResponse(BaseModel):
 class AgentTaskListResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     items: tuple[AgentTaskResponse, ...]
     total: int = Field(ge=0)
 
@@ -416,6 +423,14 @@ class ApproveAgentTaskRequest(BaseModel):
 
     approval_summary_hash: str = Field(min_length=1)
     command_id: str = Field(min_length=1)
+
+
+class RegisterAgentTemplateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    batch_id: str = Field(min_length=1)
+    command_id: str = Field(min_length=1)
+    actor: str = Field(min_length=1)
+    resource: ScientificResourceInput
 
 
 class CancelAgentTaskRequest(BaseModel):

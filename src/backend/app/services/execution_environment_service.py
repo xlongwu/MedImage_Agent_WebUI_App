@@ -15,6 +15,8 @@ from src.backend.app.core.exceptions import SafetyError, StateStoreError
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.runtime.desktop_config import get_desktop_config
 from src.backend.app.runtime.node_contract_registry import NODE_CONTRACTS
+from src.backend.app.runtime.sandbox_process_runner import sandbox_runtime_fingerprint
+from src.backend.app.schemas.sandbox import SANDBOX_POLICY_VERSION
 from src.backend.app.schemas.execution_environment import (
     BackendCapabilitySnapshot,
     ExecutionEnvironmentSnapshot,
@@ -151,13 +153,8 @@ class ExecutionEnvironmentService:
             "write_roots_hash": write_roots_hash or _root_hash(write_roots or ()),
             "readonly_roots_hash": readonly_roots_hash or _root_hash(readonly_roots or ()),
             "sandbox_provider": "windows_restricted_process",
-            "sandbox_provider_version": "windows-sandbox-v1",
-            "sandbox_runtime_hash": stable_hash({
-                "provider": "windows_restricted_process",
-                "version": "windows-sandbox-v1",
-                "process_mode": "CreateRestrictedToken+JobObject",
-                "network_isolation": "not_enforced",
-            }),
+            "sandbox_provider_version": SANDBOX_POLICY_VERSION,
+            "sandbox_runtime_hash": sandbox_runtime_fingerprint(),
         }
         environment_hash = stable_hash(identity)
         return ExecutionEnvironmentSnapshot(

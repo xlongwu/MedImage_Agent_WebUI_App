@@ -1,0 +1,13 @@
+{
+  "command": [
+    "npm.cmd",
+    "--prefix",
+    "src/frontend",
+    "run",
+    "typecheck"
+  ],
+  "exit_code": 2,
+  "stdout": "\n> medimage-agent-frontend@0.6.0-rc1 typecheck\n> tsc --noEmit\n\nsrc/features/agent/__tests__/AgentAttentionDialog.test.tsx(66,3): error TS2741: Property 'registerTemplate' is missing in type '{ answer: Mock<Procedure>; approve: Mock<Procedure>; approveRecovery: Mock<Procedure>; cancel: Mock<Procedure>; ... 13 more ...; tasks: AgentTaskResponse[]; }' but required in type 'AgentTaskController'.\nsrc/features/agent/__tests__/AgentWorkspace.test.tsx(87,3): error TS2741: Property 'registerTemplate' is missing in type '{ answer: Mock<Procedure>; approve: Mock<Procedure>; approveRecovery: Mock<Procedure>; cancel: Mock<Procedure>; ... 11 more ...; tasks: AgentTaskResponse[]; }' but required in type 'AgentTaskController'.\n",
+  "stderr": "",
+  "isolated": true
+}

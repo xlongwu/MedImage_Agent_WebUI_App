@@ -55,6 +55,9 @@ class AgentTaskCommandService:
             actor=actor,
         )
 
+    def register_template(self, **kwargs):
+        return self.planning_service.register_template(**kwargs)
+
     def approve(
         self,
         *,

@@ -63,6 +63,7 @@ def test_report_exporter_creates_manifest_and_zip(tmp_path: Path):
         encoding="utf-8",
     )
     result = export_rsfmri_report_package(
+        project_dir=str(tmp_path),
         derivatives_dir=str(d),
         reports_dir=str(rpt),
         work_dir=str(w),
@@ -112,6 +113,7 @@ def test_report_exporter_writes_metadata_only_group_summary_when_missing(tmp_pat
     )
 
     result = export_rsfmri_report_package(
+        project_dir=str(tmp_path),
         derivatives_dir=str(d),
         reports_dir=str(rpt),
         work_dir=str(w),
@@ -211,6 +213,7 @@ def test_report_exporter_uses_native_preproc_group_summary_bridge(tmp_path: Path
     )
 
     result = export_rsfmri_report_package(
+        project_dir=str(tmp_path),
         derivatives_dir=str(d),
         reports_dir=str(rpt),
         work_dir=str(w),
@@ -329,6 +332,7 @@ def test_report_exporter_collects_artifacts_from_batch_subject_validations(tmp_p
         )
 
     result = export_rsfmri_report_package(
+        project_dir=str(tmp_path),
         derivatives_dir=str(d),
         reports_dir=str(rpt),
         work_dir=str(w),
@@ -367,6 +371,7 @@ def test_report_export_listing_tolerates_incomplete_stale_export(tmp_path: Path)
         json.dumps({"ok": True, "subject_id": sub}), encoding="utf-8"
     )
     export_rsfmri_report_package(
+        project_dir=str(tmp_path),
         derivatives_dir=str(d),
         reports_dir=str(rpt),
         work_dir=str(w),

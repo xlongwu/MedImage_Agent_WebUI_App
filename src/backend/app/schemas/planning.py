@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 RevisionReason = Literal[
+    "template_input_registered",
     "initial",
     "decision_answered",
     "goal_revised",

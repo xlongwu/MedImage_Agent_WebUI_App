@@ -19,6 +19,9 @@ pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows restricted-toke
         ("write_outside_project_denied", "SUCCEEDED"),
         ("memory_limit", "FAILED"),
         ("print_environment_keys", "SUCCEEDED"),
+        ("network_loopback_ipv4", "FAILED"),
+        ("network_loopback_ipv6", "FAILED"),
+        ("network_host_ipv4", "FAILED"),
     ),
 )
 def test_fixed_windows_sandbox_cases(
@@ -35,5 +38,8 @@ def test_fixed_windows_sandbox_cases(
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is True
     assert payload["code"] == expected_code
-    assert payload["network_isolation"] == "not_enforced"
+    assert payload["network_isolation"] == "enforced"
+    if case_id.startswith("network_"):
+        assert payload["network_probe"] == {"host_allowed": True, "sandbox_denied": True}
+        assert payload["return_code"] in {7, 28}
     assert not list(tmp_path.glob(".sandbox-self-test-*"))

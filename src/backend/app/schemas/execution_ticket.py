@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .sandbox import SANDBOX_POLICY_VERSION, SandboxPolicyVersion
+
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -42,7 +44,7 @@ class ExecutionTicket(BaseModel):
     execution_environment_hash: str
     execution_provider_kind: Literal["local"] = "local"
     sandbox_policies: tuple[dict[str, object], ...] = ()
-    sandbox_policy_version: str = "windows-sandbox-v1"
+    sandbox_policy_version: SandboxPolicyVersion = SANDBOX_POLICY_VERSION
     sandbox_policies_hash: str = "2fa91d28b8039d17bb1463c12c1d7823b8e474ae7d9c7d0109b36f17283f04bb"
     sandbox_provider: Literal["windows_restricted_process"] = "windows_restricted_process"
     memory_context_hash: str | None = None

@@ -30,11 +30,13 @@ def test_sandbox_attempts_persist_with_project_run_isolation(tmp_path) -> None:
     original = store.add_sandbox_attempt(_attempt())
     assert store.add_sandbox_attempt(_attempt()) == original
 
-    updated = store.update_sandbox_attempt("sandbox-1", status="SUCCEEDED", output_count=2)
+    assert original.network_isolation == "unverified"
+    updated = store.update_sandbox_attempt("sandbox-1", status="SUCCEEDED", output_count=2, network_isolation="enforced")
     assert updated is not None
 
     reopened = SQLiteDesktopStore(database_path)
     assert reopened.list_sandbox_attempts_for_run("project-1", "run-1") == [updated]
+    assert reopened.get_sandbox_attempt("sandbox-1").network_isolation == "enforced"
     assert reopened.list_sandbox_attempts_for_run("other-project", "run-1") == []
     assert reopened.list_sandbox_attempts_for_run("project-1", "other-run") == []
     assert reopened.list_incomplete_sandbox_attempts() == []

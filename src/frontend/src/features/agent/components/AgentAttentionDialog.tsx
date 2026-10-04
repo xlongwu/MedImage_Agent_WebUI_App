@@ -87,6 +87,7 @@ export function AgentAttentionDialog({
           errorDetails={controller.errorDetails}
           mutating={controller.mutating}
           onAnswer={controller.answer}
+          onRegisterTemplate={controller.registerTemplate}
         />
       ) : null}
       {action.type === "approval" ? (

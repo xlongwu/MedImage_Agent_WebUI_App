@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.backend.app.schemas.agent_harness import AgentActionRecord, ModelCallRecord
+from src.backend.app.schemas.agent_harness import ModelCallRecord
 
 TraceIntegrityStatus = Literal["complete", "incomplete", "conflict"]
 TraceReferenceStatus = Literal["present", "missing", "conflict"]
@@ -70,6 +70,24 @@ class AgentTraceLifecycleEvent(BaseModel):
     source_command: str = Field(min_length=1, max_length=128)
 
 
+class AgentTraceActionProjection(BaseModel):
+    """Ledger identity and outcome, without the model-authored action payload."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    action_id: str
+    kind: Literal["request_decision", "draft_plan"]
+    status: Literal["accepted", "applied", "rejected"]
+    action_hash: str
+    error_code: str | None = None
+    decision_batch_id: str | None = None
+    reviewed_plan_id: str | None = None
+
+
+class AgentTraceEvidenceFact(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    key: str
+    value: int | float | bool | str | None
+
+
 class AgentTraceEntry(BaseModel):
     """One persisted Harness step and the safe references it consumed."""
 
@@ -81,7 +99,12 @@ class AgentTraceEntry(BaseModel):
     context_refs: tuple[AgentTraceReference, ...] = ()
     context_projection: AgentTraceContextProjection | None = None
     model_calls: tuple[ModelCallRecord, ...] = ()
-    action_record: AgentActionRecord | None = None
+    action_record: AgentTraceActionProjection | None = None
+    rationale_code: Literal["REQUEST_CURRENT_SCIENCE_CONFIRMATION", "DRAFT_REVIEWED_PLAN", "NO_ACCEPTED_ACTION"] = "NO_ACCEPTED_ACTION"
+    decision_kind: str | None = None
+    service_name: Literal["AgentPlanningActionService", "none"] = "none"
+    evidence_facts: tuple[AgentTraceEvidenceFact, ...] = ()
+    evidence_missing: tuple[str, ...] = ()
     action_kind: str | None = Field(default=None, max_length=64)
     action_hash: str | None = Field(default=None, max_length=128)
     action_result_hash: str | None = Field(default=None, max_length=128)

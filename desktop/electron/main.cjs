@@ -829,6 +829,17 @@ async function ensureSmokeProjectFixture() {
     return null;
   }
   const workflow = process.env.MEDIMAGE_DESKTOP_SMOKE_WORKFLOW || "shell";
+  const restartSmokeCheckpoint = process.env.MEDIMAGE_DESKTOP_SMOKE_RESTART_CHECKPOINT;
+  if (workflow === "restart" && process.env.MEDIMAGE_DESKTOP_SMOKE_RESTART_PHASE === "resume") {
+    const checkpoint = readJsonEvidence(restartSmokeCheckpoint);
+    if (!checkpoint || checkpoint._schema_version !== 1 || checkpoint.owner.pid === process.pid) {
+      throw new Error("restart_checkpoint_invalid");
+    }
+    if (checkpoint.workspace !== getUserWorkspace() || checkpoint.userData !== app.getPath("userData")) {
+      throw new Error("restart_workspace_changed");
+    }
+    return checkpoint.project;
+  }
   const project = await requestBackendJson("POST", "/api/projects/create", {
     project_name: "Packaged Agent-first Smoke",
     rawdata_dir: rawdataDir,
@@ -858,11 +869,13 @@ async function ensureSmokeProjectFixture() {
         name: "Agent-first synthetic two-region atlas",
         path: atlasPath,
         license: "CC0-1.0",
+        space: "native",
       },
       default_template: {
         name: "Agent-first synthetic 3D template",
         path: templatePath,
         license: "CC0-1.0",
+        space: "MNI152",
       },
       cpu_policy: "auto",
       compute_policy: "auto",
@@ -1123,6 +1136,64 @@ async function collectWorkflowRunEvidence(project, task) {
   };
 }
 
+async function restartExecutionIdentity(project, task) {
+  const projectId = encodeURIComponent(project.project_id);
+  const taskId = encodeURIComponent(task.task_id);
+  const detail = await requestBackendJson("GET", `/api/projects/${projectId}/agent-lifecycles/${taskId}`);
+  const lifecycle = detail.lifecycle;
+  const page = await requestBackendJson("GET", `/api/projects/${projectId}/runs`);
+  const runs = (page.runs || []).filter((run) => run.reviewed_plan_id === lifecycle.reviewed_plan_id);
+  const run = runs.find((item) => item.run_id === lifecycle.run_id);
+  if (!lifecycle.run_id || !lifecycle.execution_ticket_id || !run?.dispatch_id || !(detail.events || []).some((event) => event.to_state === "APPROVED")) {
+    throw new Error("restart_approved_execution_binding_missing");
+  }
+  const events = detail.events || [];
+  return {
+    task_id: task.task_id, reviewed_plan_id: lifecycle.reviewed_plan_id,
+    run_id: lifecycle.run_id, ticket_id: lifecycle.execution_ticket_id,
+    dispatch_id: run.dispatch_id, state: lifecycle.state,
+    run_ids: runs.map((item) => item.run_id).sort(),
+    dispatch_ids: runs.map((item) => item.dispatch_id).sort(),
+    approval_event_ids: events.filter((event) => event.to_state === "APPROVED").map((event) => event.event_id).sort(),
+    dispatch_event_ids: events.filter((event) => event.to_state === "RUNNING" && event.from_state !== "RUNNING").map((event) => event.event_id).sort(),
+    event_ids: events.map((event) => event.event_id),
+  };
+}
+
+async function verifyRestartWorkflow(win, project) {
+  const phase = process.env.MEDIMAGE_DESKTOP_SMOKE_RESTART_PHASE;
+  if (phase === "prepare") return verifyBidsToFcWorkflow(win, project);
+  if (phase !== "resume") throw new Error("restart_phase_invalid");
+  const checkpoint = readJsonEvidence(process.env.MEDIMAGE_DESKTOP_SMOKE_RESTART_CHECKPOINT);
+  await navigateToAgentWorkspace(win);
+  const initial = checkpoint.identity;
+  for (let index = 0; index < 480; index += 1) {
+    const task = await requestBackendJson("GET", `/api/projects/${encodeURIComponent(project.project_id)}/agent/tasks/${encodeURIComponent(initial.task_id)}`);
+    const current = await restartExecutionIdentity(project, task);
+    for (const field of ["task_id", "reviewed_plan_id", "run_id", "ticket_id", "dispatch_id"]) {
+      if (current[field] !== initial[field]) throw new Error("restart_original_binding_changed");
+    }
+    for (const field of ["run_ids", "dispatch_ids", "approval_event_ids", "dispatch_event_ids"]) {
+      if (JSON.stringify(current[field]) !== JSON.stringify(initial[field])) throw new Error("restart_duplicate_execution");
+    }
+    if (!initial.event_ids.every((id) => current.event_ids.includes(id))) throw new Error("restart_original_events_missing");
+    if (["completed", "needs_attention", "cancelled"].includes(task.state)) {
+      return {
+        _schema_version: 1, original_run_id: initial.run_id,
+        original_ticket_id: initial.ticket_id, original_dispatch_id: initial.dispatch_id,
+        original_bindings_preserved: true, duplicate_execution_count: 0,
+        execution_resubmitted: false, first_owner: checkpoint.owner,
+        second_owner: { pid: process.pid, executable: process.execPath },
+        before: initial, after: current, task,
+        outcome: task.outcome, scientific_scope: "synthetic_fixture",
+        artifact_capability_levels: [...new Set((task.result_summary?.artifacts || []).map((item) => item.capability_level))],
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("restart_reconciliation_timeout");
+}
+
 function collectExistingOutputPaths(value, paths = new Set()) {
   if (typeof value === "string") {
     if (fs.existsSync(value) && fs.statSync(value).isFile()) {
@@ -1229,6 +1300,23 @@ async function verifyBidsToFcWorkflow(win, project, attempts = 360) {
     );
     lastTask = Array.isArray(page.items) ? page.items[0] || null : null;
     const action = lastTask?.next_action?.type || "";
+    if (project.smokeWorkflow === "restart" && approvalSubmitted && lastTask?.technical_details?.run_id) {
+      const identity = await restartExecutionIdentity(project, lastTask);
+      if (identity.state !== "RUNNING" && identity.state !== "RETRYING") {
+        throw new Error("restart_checkpoint_not_running");
+      }
+      const checkpoint = {
+        _schema_version: 1, phase: "prepared", project,
+        workspace: getUserWorkspace(), userData: app.getPath("userData"),
+        owner: { pid: process.pid, executable: process.execPath },
+        sidecar: { pid: backendState.pid, executable: backendState.executablePath },
+        identity, explicitOperations, approvalSubmitted,
+      };
+      const checkpointPath = process.env.MEDIMAGE_DESKTOP_SMOKE_RESTART_CHECKPOINT;
+      fs.writeFileSync(checkpointPath + ".tmp", JSON.stringify(checkpoint));
+      fs.renameSync(checkpointPath + ".tmp", checkpointPath);
+      await new Promise(() => {});
+    }
     if (approvalSubmitted && action === "approve_execution") {
       const fetchErrors = await win.webContents.executeJavaScript(
         `window.__medimageSmokeFetchErrors || []`,
@@ -1803,6 +1891,8 @@ async function createWindow() {
       smokeProject?.smokeWorkflow === "recovery"
         ? await verifyRecoveryWorkflow(win, smokeProject)
         : null;
+    const restart = smokeProject?.smokeWorkflow === "restart"
+      ? await verifyRestartWorkflow(win, smokeProject) : null;
     if (rendererExit) {
       throw new Error(`Frontend renderer exited during smoke verification: ${rendererExit.reason}`);
     }
@@ -1820,6 +1910,7 @@ async function createWindow() {
       agentFirstNavigation,
       bidsToFc,
       recovery,
+      restart,
       smokeProject,
       rendererConsoleErrors,
       finalScreenshot,
@@ -1833,12 +1924,13 @@ async function createWindow() {
 // Packaged smoke runs use a fresh, isolated userData root and may overlap with
 // a developer-owned desktop instance. They must not steal or depend on the
 // production singleton lock; normal application launches remain single-owner.
-const hasSingleInstanceLock = IS_SMOKE_TEST || app.requestSingleInstanceLock();
+const hasSingleInstanceLock = (IS_SMOKE_TEST && process.env.MEDIMAGE_DESKTOP_SMOKE_WORKFLOW !== "restart") || app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
+    if (IS_SMOKE_TEST && !IS_VISIBLE_SMOKE_TEST) return;
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) {
         mainWindow.restore();

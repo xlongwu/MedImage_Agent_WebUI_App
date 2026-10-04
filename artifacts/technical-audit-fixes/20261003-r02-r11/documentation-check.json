@@ -1,0 +1,26 @@
+{
+  "scope": "changed task Markdown plus repair plan/report/handoff",
+  "files": [
+    "AGENTS.md",
+    "PROJECT_STATE.md",
+    "TASK_HANDOFF.md",
+    "docs/安全与审批/安全边界.md",
+    "docs/文档索引.md",
+    "docs/架构与决策/系统架构.md",
+    "docs/桌面与前端/桌面应用打包.md",
+    "docs/规划与运行时/受控单AgentHarness.md",
+    "specs/待人工审核校验清单.md",
+    "specs/索引.md",
+    "specs/阶段记录/Harness优化/03_恢复入口与等待工作预算验收.md",
+    "specs/阶段记录/Harness优化/04_记忆召回与消费者验收.md",
+    "specs/阶段记录/Harness优化/06_综合故障注入与实际效果评估.md",
+    "specs/阶段记录/Harness优化/Harness框架分阶段优化实施方案.md",
+    "specs/阶段记录/审核计划/修复执行报告.md",
+    "specs/阶段记录/审核计划/审核问题修复实施计划.md",
+    "src/backend/app/agent_skills/planning_evidence_review.v1/SKILL.md"
+  ],
+  "local_links_checked": 97,
+  "pytest_path_arguments_checked": 32,
+  "failures": [],
+  "limits": "Local path and Markdown fence checks. No external-link requests or inferred scientific/document claims."
+}

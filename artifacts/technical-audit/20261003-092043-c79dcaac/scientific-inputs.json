@@ -1,0 +1,268 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "level": "synthetic fixture identity/header metadata only; no arrays retained",
+  "inputs": [
+    {
+      "data_id": "examples/synthetic_bids/rawdata/dataset_description.json",
+      "kind": "tracked synthetic fixture",
+      "sha256": "aa72b495f7b74a2cb03adc241411191f0d48568cb669454060b9f205c816c4a0"
+    },
+    {
+      "data_id": "examples/synthetic_bids/rawdata/participants.tsv",
+      "kind": "tracked synthetic fixture",
+      "sha256": "80330c0f46bd41b4b5719d5576abb42e1f0f96ad6bcf0095458c189236acd17a"
+    },
+    {
+      "data_id": "examples/synthetic_bids/rawdata/sub-001/anat/sub-001_T1w.json",
+      "kind": "tracked synthetic fixture",
+      "sha256": "75bf6f9de3eff6157e8d350825a602a8f76d72fc1a6ee6bab2b34b372c928d3c"
+    },
+    {
+      "data_id": "examples/synthetic_bids/rawdata/sub-001/anat/sub-001_T1w.nii.gz",
+      "kind": "tracked synthetic fixture",
+      "sha256": "054e2e5b716a59c897081f9ca550eeb9dfc077990e2ead4db20f9743b9cc07dc",
+      "shape": [
+        16,
+        16,
+        16
+      ],
+      "dtype": "float32",
+      "affine_sha256": "ccc7977ae7987f37c2235e57c320a5142d6b58413825b6457a4a1c9fe469ac1c"
+    },
+    {
+      "data_id": "examples/synthetic_bids/rawdata/sub-001/func/sub-001_task-rest_bold.json",
+      "kind": "tracked synthetic fixture",
+      "sha256": "34fd8507e02a4fe11f32d1f429b4f13f546ca44e6558d3518303e58f7fe7cd9f"
+    },
+    {
+      "data_id": "examples/synthetic_bids/rawdata/sub-001/func/sub-001_task-rest_bold.nii.gz",
+      "kind": "tracked synthetic fixture",
+      "sha256": "4b99eddffd064ad2459bfbf1f78f446eb6dac81953fde13419a44b37f9b0395d",
+      "shape": [
+        16,
+        16,
+        16,
+        10
+      ],
+      "dtype": "float32",
+      "affine_sha256": "ccc7977ae7987f37c2235e57c320a5142d6b58413825b6457a4a1c9fe469ac1c"
+    },
+    {
+      "data_id": "examples/synthetic_bids/rawdata/sub-002/anat/sub-002_T1w.json",
+      "kind": "tracked synthetic fixture",
+      "sha256": "75bf6f9de3eff6157e8d350825a602a8f76d72fc1a6ee6bab2b34b372c928d3c"
+    },
+    {
+      "data_id": "examples/synthetic_bids/rawdata/sub-002/anat/sub-002_T1w.nii.gz",
+      "kind": "tracked synthetic fixture",
+      "sha256": "682c83e53ea727368a06169ad499328d71f04096df624c77d8119810f055b7ae",
+      "shape": [
+        16,
+        16,
+        16
+      ],
+      "dtype": "float32",
+      "affine_sha256": "ccc7977ae7987f37c2235e57c320a5142d6b58413825b6457a4a1c9fe469ac1c"
+    },
+    {
+      "data_id": "examples/synthetic_bids/rawdata/sub-002/func/sub-002_task-rest_bold.json",
+      "kind": "tracked synthetic fixture",
+      "sha256": "34fd8507e02a4fe11f32d1f429b4f13f546ca44e6558d3518303e58f7fe7cd9f"
+    },
+    {
+      "data_id": "examples/synthetic_bids/rawdata/sub-002/func/sub-002_task-rest_bold.nii.gz",
+      "kind": "tracked synthetic fixture",
+      "sha256": "c7c4dea1d2a4071f6c5ad96aecce9569dc7324e013e1d00c2efd3abb85837746",
+      "shape": [
+        16,
+        16,
+        16,
+        10
+      ],
+      "dtype": "float32",
+      "affine_sha256": "ccc7977ae7987f37c2235e57c320a5142d6b58413825b6457a4a1c9fe469ac1c"
+    },
+    {
+      "data_id": "tests/fixtures/agent_eval/v2/manifest.json",
+      "kind": "tracked synthetic fixture",
+      "sha256": "0e78be08f1294362e333bdcc6bfb3119909266dac17e87f1125baf1093eac8b3"
+    },
+    {
+      "data_id": "tests/fixtures/agent_harness_replay.json",
+      "kind": "tracked synthetic fixture",
+      "sha256": "389b177b560386983b09ad5164709a19ab9b484f12414be7427c8efff825c61e"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/generate_golden.py",
+      "kind": "tracked synthetic fixture",
+      "sha256": "3308a0ad224dbbaada1d4122f408b93c07d7b967de7713fe07c1ffb7f441ad56"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/golden/alff_constant_golden.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "f8886d3d4598297a7d58fd85e5823053938593d9d7ffab01e8c3e621a94444c4",
+      "shape": [
+        6,
+        6,
+        6
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/golden/alff_golden.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "27d3fd4da3b1d6bc5cd9741b5864005f16e878e52fea651988b4fdbb89d5dc83",
+      "shape": [
+        10,
+        10,
+        8
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/golden/falff_constant_golden.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "f8886d3d4598297a7d58fd85e5823053938593d9d7ffab01e8c3e621a94444c4",
+      "shape": [
+        6,
+        6,
+        6
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/golden/falff_golden.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "c594bd04e9355762384454aa752cd54fb845e1218c8da325a24ab35b91083043",
+      "shape": [
+        10,
+        10,
+        8
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/golden/fc_matrix_golden.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "2241f018551ffc92b3749a3c9601c102d6d5a67d361a6b65dd442db94ea8ee69",
+      "shape": [
+        5,
+        5
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/golden/fisherz_golden.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "719db70f7ea28697c383bccf9b1aee4d516ccc66325e59cba2ed9833e714c07b",
+      "shape": [
+        5,
+        5
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/golden/manifest.json",
+      "kind": "tracked synthetic fixture",
+      "sha256": "e34bf19069993af2cfdb674b4e21b00c6d275c4dbf24ce1ff3dcb23f8d546206"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/golden/reho_19_golden.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "d2e7a21725f94bd4509e1f10604bd7ba1c7c0d8079165f523d89dcec3ea1ceb8",
+      "shape": [
+        8,
+        8,
+        8
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/golden/reho_27_golden.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "abb2de31f6a375849883bde999cf177a2b928c09af3ce42e19489daecc73b4a2",
+      "shape": [
+        8,
+        8,
+        8
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/golden/reho_7_golden.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "1cceea616c8b1b84e99080bd476c7a63f717411155939c8a1e5318aba4ae8753",
+      "shape": [
+        8,
+        8,
+        8
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/input/sidecar.json",
+      "kind": "tracked synthetic fixture",
+      "sha256": "ee9139c822f7d8030620918ded8ddfb3e4f79ac49c301f909ee5b3c9218252ba"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/input/tiny_atlas.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "6c654becacb5c96972f3fc66b63db18d184ab1081505cf771b6c38708b91c012",
+      "shape": [
+        10,
+        10,
+        8
+      ],
+      "dtype": "int16"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/input/tiny_bold.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "3d7b4a9a1d934671037a54f18eb128475dc05594e5331897880cbd2248fa97fa",
+      "shape": [
+        10,
+        10,
+        8,
+        50
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/input/tiny_fc_bold.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "ad3f896a2c3045ef0dda7df420480a44cf15f808161f6062a109e282f4414481",
+      "shape": [
+        16,
+        16,
+        12,
+        60
+      ],
+      "dtype": "float32"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/input/tiny_gm_mask.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "efee300e5b2faa1757e8acc599553ac9e217fd46b72d71c344449613adca63c3",
+      "shape": [
+        10,
+        10,
+        8
+      ],
+      "dtype": "uint8"
+    },
+    {
+      "data_id": "tests/fixtures/scientific/input/tiny_reho_bold.npy",
+      "kind": "tracked synthetic fixture",
+      "sha256": "6e62ddb529e8c2bfc89e52414d993e1ec40caf761cd7d7cdfb49ee6e871e24e6",
+      "shape": [
+        8,
+        8,
+        8,
+        40
+      ],
+      "dtype": "float32"
+    }
+  ],
+  "independent_external_reference_available": false,
+  "gpu_or_external_science_executed": false
+}

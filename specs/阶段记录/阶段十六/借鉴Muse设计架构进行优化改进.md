@@ -13,7 +13,7 @@
 
 本节是本文件唯一的实施范围权威。下方 §1～§29 保留为**设计推理与目标形态记录**，其中的现状描述若与本节冲突，以本节及其 `file:line` 证据为准。本节由 2026-10-02 的逐节源码复核和维护者对 §0.4 四项决策的批准产生；未获批准的条目不构成待办、实现授权或当前行为描述。
 
-2026-10-02 归档审计：本节裁定**无一条被后续提交推翻**，锚点层面的偏离已就地校正（§0.2 §7 行的注册表方法锚点与 `max_model_calls`、§0.2 §17 行与 §0.5-③ 的消费者清单、§0.3 §19 的文件计数）。本阶段**不归档**，因为 §0.4-D1 唯一获批包 §17 仍是 NOT IMPLEMENTED（`schemas/sandbox.py:38,79` 未改、provider 无网络实现）。本文件中需要人工取证或人工拍板的条目集中登记在 `specs/待人工审核校验清单.md`：§17 见 D-03，§12/G0 见 L-01…L-04 与 D-01，§18 的前端信息层级部分已随阶段十二 简洁方案 §5.2（清单 D-06）于 2026-10-02 落到源码，剩余只在 ③ 层人工走查（清单 A-13）。
+2026-10-02 实施更新：用户已在本轮明确批准采用 **无 capability 的 AppContainer + write-restricted token + Job Object**。§17 已接入 provider、策略/环境指纹、审批摘要/Ticket、持久尝试、API、前端中英文展示与固定 smoke 合同。基线、机制、消费者链和最终全量自动验收均通过（见 §0.6）。D-03 的机制选型已批准；SDK 资料已按微软头文件核实，人工核对及实测判读尚不冒充已确认。本文件在 D-03 闭环前继续留在当前路径。§18 的 GUI 层仍归清单 A-13，不因本次基础设施硬化获得验证。
 
 ## 0.1 裁定的证据层级约定
 
@@ -38,7 +38,7 @@
 | §14 优化十一 | 统一 Human Attention Policy | **未实现-建议跳过**（与阶段十五已批准决策冲突） | 阶段十五 `00` §D1/Phase B **明确批准**把 attention 协调器保持为“仅浏览器内的 action-key/dismissal hook”，理由是不落库、不改审批哈希；当前实现即 `src/frontend/src/features/agent/attentionAction.ts:3-6`（`decision｜approval｜recovery`，注释第 18-19 行）。§14.1 的 `EXPORT_APPROVAL`/`SECURITY_WARNING` **没有生产者**（导出动作不存在；`EXECUTION_ENVIRONMENT_CHANGED` 只是错误码，见 `services/execution_environment_service.py:102,159`）。`schemas/agent_attention.py`、`services/agent_attention_service.py` 0 命中。 |
 | §15 优化十二 | Memory Taxonomy | **部分实现**，且 §15.1 **实质已实现** | §15.1 九个字段全部有对应实现，只是命名不同：`memory_type`→`schemas/memory.py:77` `kind`、`scope`→`:76` `scope_type: Literal["project"]`、`source_ref`→`:82` `source: MemorySource`、`confidence`→`:88`、`sensitivity`→`:89`、`requires_confirmation`→`:91` `requires_review` + `MemoryRevision:113` `confirmation_status`/`:118` `confirmation_event_id`，`MemoryItem` 另有 `:137-138` `valid_from`/`valid_until`。§15 提议的 6 个类型名与现存 `:10-16` 六类（`user_preference`/`project_decision`/`environment_fact`/`workflow_lesson`/`error_lesson`/`presentation_preference`）**语义重叠但不得并列为第二套分类**（`AGENTS.md` §3.6：独立 memory SQLite 是唯一长期记忆权威）。 |
 | §16 优化十三 | Medical Data Taint Policy | **部分实现**；§16.3 部分**未实现-随 §0.4-D2 跳过** | 记忆侧外发门**已实现**：`schemas/memory.py:19` `MemorySensitivity = public｜project_internal｜restricted｜rejected`，`services/memory_repository.py:575,606,641` 在检索/投影处以 SQL + 读时二次校验阻止 `restricted`/`rejected` 离开仓库。模型侧的同等控制是**字段白名单**而非 taint 标签：`agent_harness_context_service.py:105-112` 逐节允许字段、`agent_evidence.py` 全文无 `data_class`。§16.3 的 `data_class` 只在**新增读工具**上才有挂载点，因此其剩余量完全依赖被跳过的 §5。 |
-| §17 优化十四 | Windows Sandbox 网络隔离 | **未实现-获批立项**（本阶段唯一获批实施包，见 §0.4-D1） | 真实缺口，且不依赖任何能力扩展：`schemas/sandbox.py:38,79` 把 `network_isolation` 声明为 `Literal["not_enforced"] = "not_enforced"`——**类型上无法表达“已强制”**；`runtime/windows_process_sandbox.py` 全文无一处网络相关实现（只有 `:191-202` Job Object 限额/`_KILL_ON_JOB_CLOSE` 与 `:204-257` 受限令牌 4 个 SID）；`sandbox_policy_service.py:72`、`execution_environment_service.py:159`、`desktop_backend_entry.py:360` 三处固定自检报 `not_enforced`，并被 4 个测试文件中的 5 处断言/夹具固定（`tests/api/test_sandbox_attempt_api.py:23,65`、`tests/integration/test_windows_process_sandbox.py:38`、`tests/unit/test_desktop_backend_entry.py:116`、`tests/unit/test_execution_ticket.py:220`）；消费者还有路由透传 `api/sandbox_routes.py:24` 与前端类型 `src/frontend/src/lib/types/sandbox.ts:23`（2026-10-02 复核补齐，见 §0.5-③）。**范围事实需一并修正**：见 §0.5。 |
+| §17 优化十四 | Windows Sandbox 网络隔离 | **已实现（①源码、② provider 自动化实测；最终回归见 §0.6）** | `WindowsProcessSandbox.run()` 以 suspended 创建无 capability AppContainer 子进程，经 `_verify_network_token()` 和 Job 绑定后恢复；`SandboxPolicy.network_isolation` 表达要求，`SandboxAttemptRecord.network_isolation` 为 `unverified/enforced`。`sandbox_runtime_fingerprint()` 哈希实际实现内容，环境复验阻止旧审批跨实现漂移；所有当前消费者已同步，外部科学契约保持 `executable=false`。用户已批准机制，D-03 人工判读尚待确认。 |
 | §18 优化十五 | Trace → 用户可读 Explainability | **部分实现** | 后端已实现且已对外：`services/agent_trace_service.py:20` `calculate_trace_integrity_hash()`、`:37/74` `get()`/`page()`，端点 `api/agent_task_routes.py:176-184` `GET /{task_id}/trace`（docstring 明示“paginated, redacted … advanced review only”）。§18.2 的高级字段**前端已在展示**：`features/agent/components/TechnicalEvidence.tsx:12-38` 逐行输出 `plan_hash`/`evidence_snapshot_hash`/`goal_hash`/`planning_inputs_hash`/`ticket_id`/`run_id`/`memory_context_hash` 等。剩余量是 §18.1 的**叙事式分层展示**与默认折叠策略，属前端信息层级工作，与阶段十二 简洁方案 §5.2「单一 `TaskCard` 信息层级」为**同一条改造线**；该线已于 2026-10-02 按清单 D-06 的拍板落到源码（`components/TaskCard.tsx` 为唯一视觉卡片、Harness 投影移入 Level-3 `TaskDetails`，见简洁方案标头），本节的剩余差异只在 ③ 层可见 GUI 走查（清单 A-13），不得另立第二条改造线，也不得把它写成 ① ② 层未闭合。 |
 
 ## 0.3 结构性章节与 Phase 归属
@@ -76,22 +76,24 @@
 | **D3** | **跳过** §6 `AgentPolicyService`，不新增策略服务或 `AgentPolicyDecision`/`policy_hash` schema。 | 策略权威保持为 `assert_capability_allowed()` + Approval Gate + Execution Ticket + 唯一 Execution Gateway 这一条链，避免第二个策略判决点。 | 动作面因 D2 重启而真实扩大、且 `assert_capability_allowed()` 出现**跨 handler 的重复判断**时；届时应先扩展现有函数而不是新建服务。 |
 | **D4** | 文档处置：**保持单文件**，加本节裁定表并就地更正矛盾描述；不拆子方案目录、不归档。 | 避免为一份只有一个获批实施项的提案引入 3 个索引与全部交叉引用的移动风险。 | 若 §0.4-D1 实施完成且 §17 闭环，本文件按 `specs/索引.md` 生命周期规则整体移入 `已完成实施方案/`。 |
 
-## 0.5 §17 获批范围的事实修正与实施约束
+## 0.5 §17 获批范围与实施约束
 
-复核发现提案 §17 低估了一个前提，实施前必须一并采纳：
+- **不扩展能力或执行入口。** `node_contract_registry.py` 仍仅将不可执行的 MATLAB/SPM/DPABI 契约标为 `sandbox_process`；生产 `SandboxPolicySet` 仍为空。实际验收仅到 provider 级，不能称为科学执行、packaged smoke 或 release 验证。
+- **唯一获批机制。** 用户于本轮明确批准无 capability AppContainer + 现有 write-restricted token + Job Object。Windows 为每次尝试创建独立 profile，结束后销毁；子进程不获 profile 写权限。`LOCALAPPDATA/TEMP/TMP` 显式绑定隔离临时根，不继承凭据或用户环境。初始化、token 检查和 Job 绑定失败必须阻止恢复，不得退化启动。
+- **实施顺序。** 先以 characterization 锁定现有行为；再实现隔离机制并实测网络与旧边界；最后同步全部消费者并回归完整审批与状态链，每个阶段通过后才开始下一阶段。验收记录见 §0.6。
+- **当前消费者。** `schemas/sandbox.py`、`SandboxPolicyService`、`ExecutionEnvironmentService`、`SandboxWorkspaceService`、审批摘要与 Ticket schema/service、`api/sandbox_routes.py`、sidecar 固定自检、前端 sandbox 类型/API/面板/i18n、packaged smoke 合同和 CI 均须同步。旧 `not_enforced`、旧 policy version 与旧 attempt schema 必须被拒绝，不增加兼容读取。
+- **真实证据。** 准备记录 `unverified`；恢复子进程前实际查询 `TokenIsAppContainer` 与 `TokenCapabilities`，只有 AppContainer 且 capability 数为零才记录 `enforced`。固定 curl 网络案例另以 IPv4/IPv6 回环及本机非回环的沙箱外前后成功连接作对照，要求沙箱连接没有到达服务器。WFP 可拒绝或丢弃连接，连接失败/连接超时必须与进程超时区分，不能用不可达对照冒充隔离成功。
+- **指纹与审批。** `sandbox_runtime_fingerprint()` 对当前源码或冻结 loader 的实际 bytecode 求哈希；不可获得实现内容时阻断。实际内容变化使环境 hash 变化，必须在 Gateway 记录 dispatch/消费 Ticket 之前拒绝，重新规划审批。
+- **SDK 证据。** 常量和 ctypes 布局核对 [微软 WinBase.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/WinBase.h)（`ProcThreadAttributeSecurityCapabilities=9`、输入位 `0x20000`、`STARTUPINFOEX`）及 [微软 winnt.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/winnt.h)（`SECURITY_CAPABILITIES`、Token information class、`WRITE_RESTRICTED`）；启动流程参考 [AppContainer 官方文档](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)。指针宽度/字段偏移已有正式回归；资料核对不替代清单 D-03 的人工确认。
+- **历史机制探测。** 先前对 Job 网络速率候选 class 13/14/15 与尺寸 37/38/40 的九次失败，只是本机探测结果，既不证明 SDK 正确布局，也不外推到其他 Windows。该路径未被采用，不留 fallback。
 
-- **该 provider 当前没有生产消费者。** `runtime/node_contract_registry.py:664-668` 只对 `backend in {"matlab-spm","dpabi"}` 给出 `process_mode="sandbox_process"`，而这些外部后端的契约 `executable` 为 `False`（`:583,589` 等），`services/sandbox_policy_service.py:56` 对无 executable 的契约 `continue`，因此 `SandboxPolicySet` 在生产配置下为**空集**。
-- 直接后果：网络隔离**无法**用“真实科学节点跑一遍”来取证；可取证的最强层级是 **provider 级实测**——由 `tests/integration/test_windows_process_sandbox.py` 与 CI `windows-sandbox` job 用探针进程验证“沙箱内出站连接失败、沙箱外成功”的对照，且必须证明原有文件系统写入/超时/进程树终止保证未退化。
-- 因此 §17 的验收必须包含：① 先补 characterization 测试锁定现有 provider 公共行为；② 把 `schemas/sandbox.py` 的 `Literal["not_enforced"]` 改为可表达真实施加状态并**由自检实测得出**，禁止用常量或硬编码标签冒充（`AGENTS.md` §3.6 末段关于“由对象自身内容导出的哈希/指纹”同一原则）；③ 全部当前消费者同步切换且不保留 `not_enforced` 兼容读取（`AGENTS.md` §3.0、§3.4）：后端三处自检 `sandbox_policy_service.py:72`、`execution_environment_service.py:159`、`desktop_backend_entry.py:360`，加类型定义 `schemas/sandbox.py:38,79`，加**2026-10-02 复核补齐的两个遗漏消费者**——路由透传 `api/sandbox_routes.py:24` 与前端类型 `src/frontend/src/lib/types/sandbox.ts:23`；测试侧 `not_enforced` 共 5 处、分布在 4 个文件（`tests/api/test_sandbox_attempt_api.py:23,65`、`tests/integration/test_windows_process_sandbox.py:38`、`tests/unit/test_desktop_backend_entry.py:116`、`tests/unit/test_execution_ticket.py:220`）；④ 不得因此开启 MATLAB/SPM/DPABI 或任何外部执行入口。
-- 实施机制（受限令牌去除网络权限 / Job Object 网络速率控制 / AppContainer 无 capability 启动）之间的隔离强度与副作用差异很大，属于需要维护者单独确认的架构选择，已登记为 `specs/待人工审核校验清单.md` D-03（该条同时收录探针实测的人工判读与 SDK 结构体核实）。
-- **2026-10-02 已做的机制探测（结论：Job Object 网络速率控制在当前环境不可用）**：在 `10.0.26200`
-  上用 ctypes 直接调用 `SetInformationJobObject`，对 `JobObjectNetRateControlInformation` 的候选
-  information class 13/14/15、结构体尺寸 37/38/40 共九种组合**全部返回 `ERROR_BAD_LENGTH`(24)**，
-  且 `kernel32` 未导出 `IsEnhancedJobSupported`。因此“用 Job Object 把网络速率限为 0 B/s”这条最省事的路径
-  **未被证实**，实施前必须先对照真实 Windows SDK 头文件确认常量与结构体，不得凭记忆拼 Win32 布局。
-  该探测只说明**本机本次测量结果**，不外推为其他 Windows 版本的能力结论。
+## 0.6 审核后剩余责任（2026-10-03）
 
----
+已通过的§17实现、消费者切换和自动化验证不再保留为活跃实施任务或重复验收流水。当前技术复核、精确命令、普通/受限桌面token对照与证据见[审核执行报告](../审核计划/审核执行报告.md)阶段1和D-03；原实现内容保留在源码、测试及专项文档。
+
+唯一本阶段人工剩余为[待人工清单](../../待人工审核校验清单.md)D-03：SDK布局/资料和“沙箱内无到达、沙箱外前后可达”对照判读，继续“保留待人工复核”。suspended → Job绑定 → 实际无capability AppContainer token核验 → resume，任一前置失败阻断；不为纠正文档而重排生产路径。
+
+packaged/GUI/独立科学证据仍分别由P/S/A条目承接，不能从source通过推导。没有生产科学消费者，外部契约不可执行，动作扩展/读工具/独立policy/event权威仍按§0.4跳过，multi仍归阶段十四Deferred。D-03未人工闭环前不整体归档本文件。
 
 # 1. 方案摘要
 
@@ -1909,60 +1911,9 @@ Context Egress Policy
 
 ---
 
-# 17. 优化十四：补齐 Windows Sandbox 的网络隔离
+# 17. 优化十四：Windows Sandbox 网络隔离（技术范围已通过）
 
-> **裁定（2026-10-02）：未实现-获批立项。这是本阶段唯一获批的实施包（§0.4-D1）。** 缺口真实存在且不依赖
-> 任何能力扩展：`schemas/sandbox.py:38,79` 把 `network_isolation` 声明为
-> `Literal["not_enforced"] = "not_enforced"`——**类型上无法表达“已强制”**；
-> `runtime/windows_process_sandbox.py` 全文没有一处网络相关实现（只有 `:191-202` 的 Job Object 资源限额与
-> `:204-257` 的受限令牌）；`sandbox_policy_service.py:72`、`execution_environment_service.py:159`、
-> `desktop_backend_entry.py:360` 三处自检固定上报 `not_enforced`，并被 4 个测试文件中的 5 处断言/夹具固定；
-> 消费者还包括路由透传 `api/sandbox_routes.py:24` 与前端类型 `src/frontend/src/lib/types/sandbox.ts:23`
-> （完整切换清单见 §0.5-③）。
->
-> **必须同时修正的范围前提**：本节把该缺口描述为“外部 CLI/connector/subprocess 上线前必须补”，但复核发现
-> **该 provider 当前没有生产消费者**——`runtime/node_contract_registry.py:664-668` 只对
-> `backend in {"matlab-spm","dpabi"}` 给出 `process_mode="sandbox_process"`，而这些外部契约的
-> `executable` 为 `False`，`sandbox_policy_service.py:56` 据此 `continue`，所以生产配置下
-> `SandboxPolicySet` 为空集。后果是**无法**用真实科学节点取证；可获得的最强证据层级是
-> **provider 级实测**（`tests/integration/test_windows_process_sandbox.py` 与 CI `windows-sandbox` job
-> 用探针进程做“沙箱内出站失败 / 沙箱外成功”的对照）。完整实施约束与验收见 §0.5。
-
-当前 Windows restricted-process provider 已经具备：
-
-- restricted token；
-- Job Object；
-- environment restriction；
-- ACL；
-- process-tree kill。
-
-但当前网络隔离仍然是：
-
-```text
-not_enforced
-```
-
-如果未来支持：
-
-- external CLI；
-- third-party tools；
-- connector；
-- generated helper；
-- subprocess；
-
-这一点必须补。
-
-目标：
-
-```text
-Agent Process
- ├── restricted token
- ├── Job Object
- ├── restricted filesystem
- ├── controlled environment
- ├── no inherited credentials
- └── deny-by-default network
-```
+已通过的实施任务退出活跃正文；当前机制与安全不变量保留于§0.5及专项安全文档，技术复核/证据见§0.6。仅D-03人工判读仍未闭环；新packaged/GUI/科学验收按原清单独立取证，不启用生产外部科学节点。
 
 ---
 

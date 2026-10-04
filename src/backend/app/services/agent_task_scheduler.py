@@ -48,6 +48,7 @@ class AgentTaskScheduler:
         self._accepting = True
         self._condition = Condition()
         self._worker: Thread | None = None
+        self._scan_pending = False
 
     def enqueue(self, *, project_id: str, lifecycle_id: str, step_key: str, reason: str) -> AgentTaskWakeRecord:
         now = self.now()
@@ -154,32 +155,13 @@ class AgentTaskScheduler:
         return wake.lifecycle_id
 
     def rescan(self) -> tuple[str, ...]:
-        """Recreate acceleration hints only from persisted nonterminal state."""
-        scheduled: list[str] = []
-        ready = {"CREATED", "CONTEXT_READY", "PLAN_DRAFTED", "PLAN_VALIDATED"}
-        for project in self.store.list_projects()[:self.RESCAN_LIMIT]:
-            for lifecycle in self.store.list_agent_lifecycles(project.id):
-                if lifecycle.state not in ready:
-                    continue
-                key = f"{lifecycle.state}:{lifecycle.updated_at.isoformat()}"
-                existing = [
-                    wake
-                    for wake in self.store.list_agent_task_wakes(
-                        project_id=project.id, include_consumed=True,
-                    )
-                    if wake.lifecycle_id == lifecycle.lifecycle_id and wake.step_key == key
-                ]
-                # Every non-consumed row is already a durable continuation:
-                # pending/retry rows wait for their due time; claimed rows are
-                # either actively leased or directly reclaimable after expiry.
-                if any(wake.status != "CONSUMED" for wake in existing):
-                    continue
-                self.enqueue(
-                    project_id=project.id, lifecycle_id=lifecycle.lifecycle_id,
-                    step_key=key, reason="persistent_rescan",
-                )
-                scheduled.append(lifecycle.lifecycle_id)
-        return tuple(scheduled)
+        """Commit one bounded page; the worker continues a finite scan cycle."""
+        page = self.store.scan_agent_recovery_page(
+            consumer="planning", now=self.now(), limit=self.RESCAN_LIMIT,
+        )
+        self._scan_pending = page.has_more
+        self.notify()
+        return page.lifecycle_ids
 
     def recover_once_on_startup(self) -> tuple[str, ...]:
         self.rescan()
@@ -209,7 +191,11 @@ class AgentTaskScheduler:
 
     def _run_worker(self) -> None:
         while self._accepting:
+            if self._scan_pending:
+                self.rescan()
             if self.run_once() is None:
+                if self._scan_pending:
+                    continue
                 next_due = getattr(self.store, "next_agent_task_wake_at", lambda: None)()
                 with self._condition:
                     if not self._accepting:

@@ -90,6 +90,7 @@ def run_quickstart_demo_workflow() -> dict[str, Any]:
     })
 
     export_rsfmri_report_package(
+        project_dir=str(Path.cwd()),
         derivatives_dir=str(dd), reports_dir=str(rpd), work_dir=str(wd),
         exports_dir=str(ed), export_id=f"quickstart_{demo_id}",
     )

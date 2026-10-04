@@ -1,0 +1,22 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "operation": "repeat same create command twice after source service restart",
+  "http_status": 200,
+  "same_task_id": true,
+  "before": {
+    "agent_lifecycles": 3,
+    "agent_lifecycle_events": 20,
+    "reviewed_plans": 2,
+    "execution_tickets": 0,
+    "run_links": 0
+  },
+  "after": {
+    "agent_lifecycles": 3,
+    "agent_lifecycle_events": 20,
+    "reviewed_plans": 2,
+    "execution_tickets": 0,
+    "run_links": 0
+  },
+  "assertions_passed": true,
+  "no_execution_approved": true
+}

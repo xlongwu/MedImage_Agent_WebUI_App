@@ -47,7 +47,7 @@ class _BasePlanningAction(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     reason: str = Field(min_length=1, max_length=512)
     expected_state: str = Field(min_length=1, max_length=64)
     input_refs: tuple[str, ...] = Field(default_factory=tuple, max_length=16)

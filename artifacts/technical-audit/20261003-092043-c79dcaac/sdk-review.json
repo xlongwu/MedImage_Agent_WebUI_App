@@ -1,0 +1,32 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "stage": 1,
+  "ids": [
+    "D-03"
+  ],
+  "access_date": "2026-10-03",
+  "local_installed_sdk_version": "not found in standard Windows Kits Include; unknown",
+  "documentation_versions": {
+    "SECURITY_CAPABILITIES_last_updated": "2024-02-22",
+    "implementing_appcontainer_last_updated": "2025-09-03"
+  },
+  "urls": [
+    "https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-security_capabilities",
+    "https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer",
+    "https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute",
+    "https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessasuserw",
+    "https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken",
+    "https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/WinBase.h",
+    "https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/winnt.h"
+  ],
+  "checked_values": {
+    "amd64_security_capabilities_size": 24,
+    "Reserved": 0,
+    "PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES": "0x20009",
+    "WRITE_RESTRICTED": 8,
+    "TokenIsAppContainer": 29,
+    "TokenCapabilities": 30
+  },
+  "scope": "Source/header/ctypes ABI checks and real provider tests; no claim of a locally installed SDK or packaged approval",
+  "repository_header_revision": "main URLs read; not commit-pinned. Follow-up commit API lookup inaccessible via web tool; do not claim a frozen SDK snapshot."
+}

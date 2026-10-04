@@ -42,7 +42,7 @@ def test_project_agent_settings_register_resources_and_preserve_auto_defaults(tm
     updated = service.update(
         project_id="project-1",
         request=UpdateProjectAgentSettingsRequest(
-            default_atlas=ScientificResourceInput(name="Test atlas", path=str(atlas), license="CC-BY-4.0"),
+            default_atlas=ScientificResourceInput(name="Test atlas", path=str(atlas), license="CC-BY-4.0", space="MNI152"),
         ),
     )
 
@@ -62,7 +62,7 @@ def test_project_agent_settings_reject_resource_outside_project_resources(tmp_pa
         ProjectAgentSettingsService(store).update(
             project_id="project-1",
             request=UpdateProjectAgentSettingsRequest(
-                default_atlas=ScientificResourceInput(name="Outside", path=str(outside), license="CC0"),
+                default_atlas=ScientificResourceInput(name="Outside", path=str(outside), license="CC0", space="MNI152"),
             ),
         )
 
@@ -79,7 +79,7 @@ def test_project_agent_settings_reject_non_nifti_and_blank_license(tmp_path: Pat
             project_id="project-1",
             request=UpdateProjectAgentSettingsRequest(
                 default_atlas=ScientificResourceInput(
-                    name="Atlas", path=str(resource), license="CC0"
+                    name="Atlas", path=str(resource), license="CC0", space="MNI152"
                 ),
             ),
         )
@@ -91,7 +91,7 @@ def test_project_agent_settings_reject_non_nifti_and_blank_license(tmp_path: Pat
             project_id="project-1",
             request=UpdateProjectAgentSettingsRequest(
                 default_atlas=ScientificResourceInput(
-                    name="Atlas", path=str(resource), license="   "
+                    name="Atlas", path=str(resource), license="   ", space="MNI152"
                 ),
             ),
         )
@@ -106,7 +106,7 @@ def test_registered_resource_is_ignored_after_checksum_drift(tmp_path: Path) -> 
         project_id="project-1",
         request=UpdateProjectAgentSettingsRequest(
             default_atlas=ScientificResourceInput(
-                name="Atlas", path=str(atlas), license="CC0"
+                name="Atlas", path=str(atlas), license="CC0", space="MNI152"
             ),
         ),
     )

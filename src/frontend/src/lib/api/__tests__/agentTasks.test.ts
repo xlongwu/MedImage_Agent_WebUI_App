@@ -8,6 +8,8 @@ import {
   createAgentTask,
   getAgentTask,
   getAgentTaskHarness,
+  getAgentPlanEvidence,
+  registerAgentTemplate,
   listAgentTaskEvents,
   listAgentTasks,
 } from "../agentTasks";
@@ -31,6 +33,33 @@ afterEach(() => {
 });
 
 describe("Agent Task API", () => {
+  it("reads bound plan evidence and registers a template through project-scoped APIs", async () => {
+    const fetchMock = mockFetch();
+    const signal = new AbortController().signal;
+    await getAgentPlanEvidence("http://api", "project / 1", "task / 1", "hash:1", { signal });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://api/api/projects/project%20%2F%201/agent/tasks/task%20%2F%201/plan-evidence?plan_hash=hash%3A1",
+      expect.objectContaining({ signal }),
+    );
+    const request = {
+      batch_id: "batch",
+      command_id: "command",
+      actor: "user",
+      resource: {
+        name: "fixture",
+        path: "resources/template.nii.gz",
+        license: "CC0",
+        space: "MNI152" as const,
+      },
+    };
+    await registerAgentTemplate("http://api", "project / 1", "task / 1", request);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://api/api/projects/project%20%2F%201/agent/tasks/task%20%2F%201/register-template",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(request) }),
+    );
+  });
   it("uses project-scoped list, detail, and cursor event endpoints", async () => {
     const fetchMock = mockFetch();
     const signal = new AbortController().signal;

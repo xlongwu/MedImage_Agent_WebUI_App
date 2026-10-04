@@ -21,6 +21,12 @@ _METADATA_GOAL_NODES = {
     "dataset_evaluation",
     "environment_check",
     "native_preproc_full_dry_run",
+    "data_readiness_check",
+    "bids_validation_check",
+    "rsfmri_bold_reference_check",
+    "rsfmri_motion_qc_plan",
+    "rsfmri_preprocessing_plan_stub",
+    "rsfmri_report_plan_stub",
 }
 
 _NATIVE_STAGE_ARTIFACT_TYPES = {
@@ -163,6 +169,11 @@ def build_goal_contract_semantics(
         and requested_goal_kind in native_goal_artifacts
         and requested_artifact_set == native_goal_artifacts.get(requested_goal_kind)
     )
+    if plan_only and not node_set.issubset(_METADATA_GOAL_NODES):
+        return GoalContractBuildResult(
+            ok=False, clarification_required=True,
+            reason="GOAL_KIND_UNSUPPORTED_OR_AMBIGUOUS",
+        )
     if plan_only:
         goal_kind = "rsfmri_preprocessing_plan"
         minimum = "metadata_only"
@@ -170,6 +181,17 @@ def build_goal_contract_semantics(
         goal_kind = requested_goal_kind
         artifact_types = tuple(str(item) for item in requested_artifacts)
         minimum = "computed"
+    elif {"motion_qc_subject", "motion_qc_dataset_report"} <= node_set and node_set <= {
+        "data_inspection", "spm_realign_subject", "motion_qc_subject", "motion_qc_dataset_report",
+    }:
+        goal_kind = "motion_qc"
+        # A scaffolded realignment prerequisite cannot produce motion outputs.
+        # The candidate is reviewable but has no computed evidence contract.
+        if "spm_realign_subject" in node_set:
+            minimum = "metadata_only"
+        else:
+            minimum = "computed"
+            artifact_types = ("motion_qc", "motion_qc_dataset_report")
     elif "functional_connectivity_subject" in node_set:
         goal_kind = "functional_connectivity"
         artifact_types = ("fc_matrix",)

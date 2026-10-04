@@ -1,0 +1,13 @@
+{
+  "command": [
+    "npm.cmd",
+    "--prefix",
+    "src/frontend",
+    "run",
+    "typecheck"
+  ],
+  "exit_code": 2,
+  "stdout": "\n> medimage-agent-frontend@0.6.0-rc1 typecheck\n> tsc --noEmit\n\nsrc/features/agent/__tests__/AgentAttentionDialog.test.tsx(11,5): error TS2353: Object literal may only specify known properties, and 'registerTemplate' does not exist in type 'AgentTaskResponse'.\nsrc/features/agent/__tests__/AgentAttentionDialog.test.tsx(67,3): error TS2741: Property 'registerTemplate' is missing in type '{ answer: Mock<Procedure>; approve: Mock<Procedure>; approveRecovery: Mock<Procedure>; cancel: Mock<Procedure>; ... 13 more ...; tasks: AgentTaskResponse[]; }' but required in type 'AgentTaskController'.\nsrc/features/agent/__tests__/AgentWorkspace.test.tsx(12,5): error TS2353: Object literal may only specify known properties, and 'registerTemplate' does not exist in type 'AgentTaskResponse'.\nsrc/features/agent/__tests__/AgentWorkspace.test.tsx(88,3): error TS2741: Property 'registerTemplate' is missing in type '{ answer: Mock<Procedure>; approve: Mock<Procedure>; approveRecovery: Mock<Procedure>; cancel: Mock<Procedure>; ... 11 more ...; tasks: AgentTaskResponse[]; }' but required in type 'AgentTaskController'.\n",
+  "stderr": "",
+  "isolated": true
+}

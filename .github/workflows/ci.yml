@@ -130,6 +130,24 @@ jobs:
           tests/unit/test_runtime_subprocess_boundary.py
           tests/unit/test_sandbox_process_request.py
           tests/unit/test_windows_process_sandbox.py
+          tests/unit/test_sandbox_policy.py
+          tests/unit/test_execution_environment_service.py
+          tests/unit/test_execution_ticket.py
+          tests/api/test_sandbox_attempt_api.py
           tests/integration/test_windows_process_sandbox.py
           tests/integration/test_windows_sandbox_process_tree.py
-          --tb=short
+          --tb=short --basetemp=.pytest_tmp
+
+      - name: Clean Windows sandbox test intermediates
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = (Resolve-Path ".").Path
+          foreach ($item in (Get-ChildItem -LiteralPath $root -Force | Where-Object { $_.Name -eq ".pytest_cache" -or $_.Name -like ".pytest_tmp*" })) {
+            $target = (Resolve-Path -LiteralPath $item.FullName).Path
+            if ((Split-Path -Parent $target) -ne $root -or (git ls-files -- $item.Name)) { throw "Unsafe test cleanup" }
+            Remove-Item -LiteralPath $target -Recurse -Force
+          }
+          if (Get-ChildItem -LiteralPath $root -Force | Where-Object { $_.Name -eq ".pytest_cache" -or $_.Name -like ".pytest_tmp*" }) { throw "Test residue remains" }
+          git status --short

@@ -1,3 +1,21 @@
+export type SystemMessage = {
+  code: string;
+  params: {
+    count?: number | null;
+    subject_ids?: string[];
+    resource_name?: string | null;
+    license?: string | null;
+    checksum?: string | null;
+    source?: "bids" | "project" | "dicom" | null;
+    value?: string | number | boolean | null;
+    decision_kind?: string | null;
+    backend_facts?: { backend_id: string; status: "available" | "disabled" | "unavailable" }[];
+    artifact_id?: string | null;
+    template_id?: string | null;
+    diagnostic_id?: string | null;
+  };
+};
+
 export type AgentTaskPublicState =
   | "preparing"
   | "waiting_for_user"
@@ -99,16 +117,16 @@ export type AgentTaskBackendSelection = {
 
 export type AgentTaskDecisionOption = {
   id: string;
-  label: string;
-  description: string;
+  label: SystemMessage;
+  description: SystemMessage;
   recommended: boolean;
 };
 
 export type AgentTaskDecision = {
   item_id: string;
   kind: AgentTaskDecisionKind;
-  question: string;
-  impact: string;
+  question: SystemMessage;
+  impact: SystemMessage;
   options: AgentTaskDecisionOption[];
   recommended_option: string | null;
   source?: "planner" | "memory_suggestion";
@@ -119,6 +137,8 @@ export type AgentTaskDecision = {
   max_value: number | null;
   required: boolean;
   evidence_refs: string[];
+  readiness: "ready" | "input_required";
+  allowed_actions: "register_template"[];
 };
 
 export type AgentTaskDecisionBatch = {
@@ -157,12 +177,13 @@ export type AgentTaskProgress = {
 
 export type AgentTaskApprovalSection = {
   id: string;
-  title: string;
-  summary: string;
-  warnings: string[];
+  title: SystemMessage;
+  summary: SystemMessage;
+  warnings: SystemMessage[];
 };
 
 export type AgentTaskApprovalSummary = {
+  schema_version: 6;
   summary_hash: string;
   execution_environment_snapshot_id: string;
   execution_environment_hash: string;
@@ -173,12 +194,12 @@ export type AgentTaskApprovalSummary = {
   write_roots: string[];
   rawdata_read_only: boolean;
   external_tools: string[];
-  limitations: string[];
-  science_changes: string[];
+  limitations: SystemMessage[];
+  science_changes: SystemMessage[];
   resource_policy?: Record<string, unknown>;
   memory_context_hash?: string | null;
   memory_refs?: Record<string, unknown>[];
-  memory_influence_summary?: string[];
+  memory_influence_summary?: SystemMessage[];
   planning_inputs_hash?: string | null;
   revision_no?: number | null;
   parent_reviewed_plan_id?: string | null;
@@ -191,7 +212,7 @@ export type AgentTaskApprovalSummary = {
 export type AgentTaskArtifactSummary = {
   artifact_id: string;
   artifact_type: string;
-  label: string;
+  label: SystemMessage;
   uri: string;
   checksum: string | null;
   capability_level: "unavailable" | "scaffolded" | "metadata_only" | "computed" | "validated";
@@ -249,7 +270,7 @@ export type AgentTaskRecoverySummary = {
 export type AgentTaskEvidenceLink = {
   id: string;
   type: AgentTaskEvidenceType;
-  label: string;
+  label: SystemMessage;
   uri: string;
   available: boolean;
 };
@@ -347,6 +368,14 @@ export type AgentHarnessModelCall = {
 };
 
 export type AgentHarnessActivityEntry = {
+  rationale_code:
+    | "REQUEST_CURRENT_SCIENCE_CONFIRMATION"
+    | "DRAFT_REVIEWED_PLAN"
+    | "NO_ACCEPTED_ACTION";
+  service_name: "AgentPlanningActionService" | "none";
+  decision_kind: string | null;
+  evidence_facts: { key: string; value: number | boolean | string | null }[];
+  evidence_missing: string[];
   step_id: string;
   step_no: number;
   context_refs: AgentHarnessActivityReference[];
@@ -373,8 +402,30 @@ export type AgentHarnessActivityPage = {
   next_cursor: number | null;
 };
 
+export type AgentPlanEvidence = {
+  schema_version: 1;
+  project_id: string;
+  task_id: string;
+  available: boolean;
+  missing_code: "AGENT_PLAN_NOT_SAVED" | "AGENT_PLAN_RECORD_MISSING" | null;
+  reviewed_plan_id: string | null;
+  plan_hash: string | null;
+  revision_no: number | null;
+  parent_reviewed_plan_id: string | null;
+  parent_plan_hash: string | null;
+  revision_reason: string | null;
+  goal_kind: string | null;
+  subject_ids: string[];
+  session_ids: string[];
+  include: string[];
+  exclude: string[];
+  completeness_required: boolean;
+  nodes: { node_id: string; backend: string | null; depends_on: string[] }[];
+  input_refs: { ref_type: string; ref_id: string; content_hash: string | null }[];
+};
+
 export type AgentTaskResponse = {
-  schema_version: 2;
+  schema_version: 3;
   task_id: string;
   project_id: string;
   state: AgentTaskPublicState;
@@ -399,7 +450,7 @@ export type AgentTaskResponse = {
 };
 
 export type AgentTaskListResponse = {
-  schema_version: 2;
+  schema_version: 3;
   items: AgentTaskResponse[];
   total: number;
 };

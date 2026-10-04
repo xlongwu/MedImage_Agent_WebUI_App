@@ -1,3 +1,4 @@
+import { formatSystemMessage } from "../systemMessages";
 import { Badge, Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentResultExplanation, AgentTaskResultSummary } from "../../../lib/types/agentTask";
@@ -93,7 +94,7 @@ export function TaskResultPanel({
           <ul>
             {result.artifacts.map((artifact) => (
               <li key={artifact.artifact_id}>
-                {artifact.label} · {artifact.reload_status}
+                {formatSystemMessage(t, artifact.label)} · {artifact.reload_status}
               </li>
             ))}
           </ul>

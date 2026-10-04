@@ -1,0 +1,13 @@
+{
+  "command": [
+    "npm.cmd",
+    "--prefix",
+    "src/frontend",
+    "run",
+    "typecheck"
+  ],
+  "exit_code": 0,
+  "stdout": "\n> medimage-agent-frontend@0.6.0-rc1 typecheck\n> tsc --noEmit\n\n",
+  "stderr": "",
+  "isolated": true
+}

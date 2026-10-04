@@ -613,7 +613,7 @@ class AgentHarnessService:
             model_profile_hash=request.model_profile_hash,
             request_bytes=len(serialized_request),
             request_builder_version=REQUEST_BUILDER_VERSION,
-            response_schema_version=2,
+            response_schema_version=3,
             repair=repair, started_at=started,
         )
         started_step = step.model_copy(update={"model_calls": (*step.model_calls, pending_call)})
@@ -1016,6 +1016,18 @@ class AgentHarnessService:
             return self._recover_accepted_action(
                 claimed=claimed, lifecycle=lifecycle, step=step, action=action,
             )
+        if action is not None and action.status == "rejected" and action.error_code == "AGENT_DECISION_ALREADY_CONFIRMED":
+            # The transaction committed before the process lost its step/lease.
+            # Complete this business rejection once; never ask the provider again.
+            step = step.model_copy(update={
+                "kind": action.kind, "action_id": action.action_id, "action_hash": action.action_hash,
+                "validation_result": "accepted", "state_after": lifecycle.state,
+                "action_result_code": action.error_code,
+                "action_result_hash": stable_hash({"action_id": action.action_id, "code": action.error_code}),
+                "completed_at": action.completed_at, "error_code": None,
+                "summary": "AGENT_DECISION_ALREADY_CONFIRMED",
+            })
+            self.store.update_agent_harness_step(step)
         if self._is_pre_network_call(step):
             skipped = step.model_copy(update={
                 "completed_at": self.now(),
@@ -1070,6 +1082,7 @@ class AgentHarnessService:
     ) -> HarnessRunResult:
         """Finish or replay a durable local action, never its model request."""
         try:
+            action_already_applied = False
             envelope = parse_action_envelope(action.action_payload)
             if envelope.kind != action.kind or envelope.expected_state != action.expected_state:
                 raise ValueError("AGENT_HARNESS_ACTION_PAYLOAD_INVALID")
@@ -1077,14 +1090,16 @@ class AgentHarnessService:
                 applied = self._apply(envelope, lifecycle, "system-agent-task-recovery", action)
                 lifecycle = applied.lifecycle
                 action_result_code = applied.action_result_code
+                action_already_applied = applied.action_already_applied
             else:
                 # The action service only leaves expected_state after its side
                 # effect is durable. Replaying here could duplicate a plan.
                 action_result_code = "AGENT_HARNESS_ACTION_RECONCILED"
-            self.store.update_agent_harness_action(
-                action.model_copy(update={"status": "applied", "completed_at": self.now()}),
-                expected_status="accepted",
-            )
+            if not action_already_applied:
+                self.store.update_agent_harness_action(
+                    action.model_copy(update={"status": "applied", "completed_at": self.now()}),
+                    expected_status="accepted",
+                )
         except Exception as exc:
             code = str(
                 getattr(exc, "code", None)

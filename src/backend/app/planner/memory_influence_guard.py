@@ -42,20 +42,21 @@ class MemoryInfluenceGuard:
             return
         answers = science_answers or {}
         project_values = project_context_values or {}
-        suggested: dict[str, tuple[str, Any]] = {}
+        suggested: list[tuple[str, str, Any]] = []
         for suggestion in memory_context.decision_suggestions:
             parameter = _DECISION_PARAMETER.get(suggestion.decision_kind)
             if parameter:
-                suggested[parameter] = (
+                suggested.append((
+                    parameter,
                     suggestion.decision_kind,
                     suggestion.typed_value.get("value"),
-                )
+                ))
         for node in plan.get("nodes", []):
             if not isinstance(node, dict):
                 continue
             node_id = str(node.get("id") or "")
             params = node.get("params") if isinstance(node.get("params"), dict) else {}
-            for parameter, (decision_kind, suggested_value) in suggested.items():
+            for parameter, decision_kind, suggested_value in suggested:
                 actual = node.get("backend") if parameter == "backend" else params.get(parameter)
                 if actual != suggested_value:
                     continue

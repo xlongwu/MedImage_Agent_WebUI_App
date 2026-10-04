@@ -94,6 +94,8 @@ class AgentApprovalExecutionService:
         raw = reviewed.payload.get("approval_envelope")
         if not isinstance(raw, dict):
             raise SafetyError("APPROVAL_SUMMARY_MISSING", code="APPROVAL_SUMMARY_MISSING")
+        if raw.get("schema_version") != 6:
+            raise SafetyError("APPROVAL_SUMMARY_VERSION_UNSUPPORTED", code="APPROVAL_SUMMARY_VERSION_UNSUPPORTED")
         summary = ApprovalSummary.model_validate(raw)
         self.summary_service.verify(summary)
         rebuilt = self.summary_service.build(

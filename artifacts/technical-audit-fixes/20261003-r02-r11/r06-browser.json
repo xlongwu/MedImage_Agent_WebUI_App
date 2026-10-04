@@ -1,0 +1,10 @@
+{
+  "workflow": "real browser UI create plan-only then read EN/ZH and return",
+  "task_state": "SUCCEEDED",
+  "plan_hash": "7925ba76a0f03d6ee54127158659585053d6cc99f3294c2866492ad2fdebc36f",
+  "revision_no": 1,
+  "run_id": null,
+  "execution_ticket_id": null,
+  "network_provider": false,
+  "renderer_errors": 0
+}

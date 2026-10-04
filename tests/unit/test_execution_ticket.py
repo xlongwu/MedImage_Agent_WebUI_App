@@ -208,16 +208,17 @@ def test_gateway_persists_sandbox_preparation_before_ticket_consumption(tmp_path
     service = _service(tmp_path)
     identity = {
         "schema_version": 1,
-        "policy_version": "windows-sandbox-v1",
+        "policy_version": "windows-sandbox-v2",
         "node_id": "contract_smoke",
         "backend_id": "python",
         "provider": "windows_restricted_process",
         "executable_id": "python",
         "executable_path_hash": "environment-bound",
+        "provider_runtime_hash": "implementation-bound",
         "readonly_root_hashes": (),
         "output_root_hashes": (),
         "allowed_environment_keys": ("SystemRoot",),
-        "network_isolation": "not_enforced",
+        "network_isolation": "appcontainer_no_network",
         "limits": {"timeout_seconds": 10, "memory_limit_bytes": 16 * 1024 * 1024, "max_processes": 1},
     }
     policy = SandboxPolicy(policy_hash=stable_hash(identity), **identity)
@@ -240,6 +241,29 @@ def test_gateway_persists_sandbox_preparation_before_ticket_consumption(tmp_path
     assert len(attempt) == 1 and attempt[0].status == "PREPARED"
     events = service.store.list_gateway_dispatch_events(result["dispatch_id"])
     assert [event.event_type for event in events] == ["sandbox_prepared", "dispatch_started", "dispatch_succeeded"]
+
+
+def test_provider_fingerprint_drift_blocks_gateway_before_dispatch_or_consumption(tmp_path, monkeypatch):
+    service = _service(tmp_path)
+    ticket = _issue(service, tmp_path)
+    monkeypatch.setattr(
+        "src.backend.app.services.execution_environment_service.sandbox_runtime_fingerprint",
+        lambda: "changed-implementation",
+    )
+    calls = []
+    with pytest.raises(SafetyError) as error:
+        ExecutionGateway(service).dispatch(
+            execution_ticket_id=ticket.execution_ticket_id, project_id=ticket.project_id,
+            reviewed_plan_id=ticket.reviewed_plan_id, plan_hash=ticket.plan_hash,
+            approval_summary_hash=ticket.approval_summary_hash, memory_context_hash=ticket.memory_context_hash,
+            scope_hash=ticket.scope_hash, normalized_params_hash=ticket.normalized_params_hash,
+            contract_versions=ticket.contract_versions, project_config_path=ticket.project_config_path,
+            pipeline_path=ticket.pipeline_path, command_id="drift", run_id="drift",
+            executor=lambda **_kwargs: calls.append("executed"),
+        )
+    assert error.value.code == "EXECUTION_ENVIRONMENT_CHANGED"
+    assert calls == []
+    assert service.store.get_execution_ticket(ticket.execution_ticket_id).status == "issued"
 def test_gateway_resumes_prepared_dispatch_but_never_replays_unknown_outcome(
     tmp_path, monkeypatch
 ):

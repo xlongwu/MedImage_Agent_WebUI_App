@@ -5,6 +5,7 @@ export type RegisteredScientificResource = {
   path: string;
   license: string;
   checksum: string;
+  space: "MNI152" | "native";
 };
 
 export type ProjectAgentSettings = {

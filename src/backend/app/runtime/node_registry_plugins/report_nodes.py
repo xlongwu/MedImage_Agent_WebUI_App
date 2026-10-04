@@ -11,6 +11,7 @@ from src.backend.app.tools.report_package_validator import validate_rsfmri_repor
 def run_rsfmri_report_exporter_node(context, node):
     """Export rs-fMRI report package with checksums and safety manifest."""
     result = export_rsfmri_report_package(
+        project_dir=str(context.project_config["project"]["root_dir"]),
         derivatives_dir=context.derivatives_dir,
         reports_dir=context.project_config.get("runtime", {}).get("report_dir", "./reports"),
         work_dir=context.work_dir,

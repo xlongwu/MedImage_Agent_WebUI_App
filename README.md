@@ -8,269 +8,125 @@
 
 **English** | [中文](README_CN.md)
 
-MedImage Agent is a deterministic Plan-then-Execute desktop platform for
-resting-state fMRI (rs-fMRI) research. The LLM plans and advises; execution
-stays inside the Pipeline Runtime and registered node runners.
+MedImage Agent is a local, deterministic Plan-then-Execute platform for resting-state fMRI (rs-fMRI) research engineering. A language model may help plan, explain, and validate requests. Actual computation follows the reviewed project lifecycle and runs only through the Pipeline Runtime and registered node runners.
 
-This is a research engineering platform, not a clinical diagnosis or clinical
-decision product.
+This is a research engineering platform. It is not for clinical diagnosis, treatment decisions, or other clinical use.
 
-Current release line: **v0.6.0-rc1**. See
-[release notes](docs/发布记录/v0.6.0-rc1.md).
+## Current project status
 
-## Quick Start
+The version reported by the application and package remains **0.6.0-rc1**. The 0.6.0-rc2 convergence was terminated; no 0.6.0-rc2 or 0.7.0 release is claimed. The current source tree contains ongoing development changes, so the locally built Windows app is a diagnostic package, not a release candidate. See [PROJECT_STATE.md](PROJECT_STATE.md) for its provenance and the remaining review and release gates.
+
+## What the project provides
+
+- Project-scoped workflows for BIDS and converted imaging data, with read-only inspection of source data.
+- An Agent Task interface that creates a Reviewed Plan, gathers required decisions, presents a hashed Approval Summary, and uses the existing Approval Gate, Execution Ticket, Execution Gateway, and Pipeline Runtime for approved work.
+- Native Python preprocessing and rs-fMRI metric paths when their required inputs exist. The exact capability and validation level of each stage is listed in the [capability matrix](docs/项目概览/能力矩阵.md).
+- Read-only run, artifact, evaluation, audit, and provenance projections.
+- Optional project memory and a bounded advisory Harness. Their consent and feature gates are closed by default; neither grants execution permission or scientific validity.
+
+Numerical output is not automatically reference-validated. Some native preprocessing stages are simplified, and independent reference data is not available for every metric. The capability matrix records these distinctions.
+
+## Architecture and safety
+
+    React + TypeScript frontend (browser or Electron)
+        -> shared HTTP API
+    FastAPI routes and schemas
+        -> domain services and read models
+    Reviewed Agent lifecycle
+        -> Approval Gate -> Execution Ticket -> sole Execution Gateway
+        -> Pipeline Runtime -> registered node runners
+        -> project-scoped state, artifacts, audit, and provenance
+
+Rawdata and registered source datasets are read-only. Writes are confined to approved project output roots. The frontend uses the shared API client and approved Electron bridge; it does not access the filesystem directly. Model output, chat text, and memory are never execution authority.
+
+DICOM conversion is default-blocked and requires current release-readiness evidence, explicit confirmation, audit records, and safe output paths. The in-project converter supports classic single-frame MR series and Siemens single-frame mosaic MR time series. The project does not invoke MATLAB, SPM, or DPABI executables.
+
+## Quick start
 
 ### Requirements
 
-- Python 3.11+
-- Node.js `^20.19.0` or `>=22.12.0` (Vite 8 engine requirement)
-- `nibabel` and `pydicom` are included in the core requirements for the
-  in-project NIfTI and DICOM paths
-- CuPy optional, only for GPU paths
+- Python 3.11 or later.
+- Node.js 20.19 or later in the 20.x line, or 22.12 or later.
+- Windows is required to build and run the packaged Electron desktop app.
+- CuPy is optional and used only by explicitly supported GPU paths.
 
 ### Install
 
-```bash
-pip install -r requirements.txt
-cd src/frontend && npm install
-```
+    python -m venv .venv
 
-### Start Development Servers
+Activate the environment, then install the backend and frontend dependencies:
 
-```bash
-uvicorn src.backend.app.main:app --host 127.0.0.1 --port 8000
-cd src/frontend && npm run dev
+    # Windows PowerShell
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install -r requirements.txt
+    npm --prefix src/frontend install
 
-# Or one-click:
-start.bat
-./start.sh
-```
+    # macOS or Linux
+    source .venv/bin/activate
+    python -m pip install -r requirements.txt
+    npm --prefix src/frontend install
 
-The one-click scripts refuse to start when ports `8000` or `5173` are already
-occupied. They never terminate an existing process; stop the owning service
-explicitly before retrying.
+### Run the development app
 
-### Run Tests
+Start the backend in one terminal:
 
-Use the active project Python environment. On Windows, activate `.venv` or pass
-the project interpreter explicitly.
+    python -m uvicorn src.backend.app.main:app --host 127.0.0.1 --port 8000
 
-```bash
-python -m pytest --collect-only -q --basetemp=.pytest_tmp
-python -m pytest --tb=short --basetemp=.pytest_tmp
-```
+Start the frontend in another terminal:
 
-Frontend validation:
+    npm --prefix src/frontend run dev
 
-```bash
-npm --prefix src/frontend run format:check
-npm --prefix src/frontend run typecheck
-npm --prefix src/frontend run test
-npm --prefix src/frontend run build
-```
+The repository also provides start.bat on Windows and start.sh on macOS/Linux. These scripts stop when their required ports are already occupied and do not terminate existing processes.
 
-## Desktop App
+### Validate changes
 
-The Windows desktop app uses an Electron shell and a PyInstaller backend
-sidecar. The frontend still talks to the backend through HTTP APIs; it does not
-access the local filesystem directly.
+Use the active project Python environment for backend checks:
 
-The main Windows packaging entry point builds the frontend, PyInstaller backend
-sidecar, launcher, and Electron desktop package:
+    python -m pytest --collect-only -q --basetemp=.pytest_tmp
+    python -m pytest --tb=short --basetemp=.pytest_tmp
 
-```powershell
-powershell -ExecutionPolicy Bypass -File desktop\packaging\build_all_windows.ps1 -DirOnly -PythonExe .\.venv\Scripts\python.exe
-```
+Frontend checks:
 
-The unpacked Windows executable is produced under
-`desktop/electron/dist/win-unpacked/MedImage Agent.exe`. A successful package
-build proves the artifact was assembled; it is not a substitute for an
-interactive GUI workflow smoke test.
+    npm --prefix src/frontend run format:check
+    npm --prefix src/frontend run typecheck
+    npm --prefix src/frontend run test
+    npm --prefix src/frontend run build
 
-See [Desktop App Packaging](docs/桌面与前端/桌面应用打包.md).
+After pytest exits, follow AGENTS.md to inspect and remove only the test cache and temporary directories created by that run.
 
-## Architecture
+## Windows desktop package
 
-```text
-Frontend (React + TypeScript + Vite)
-    -> HTTP API
-API Layer (FastAPI + Pydantic)
-    -> Services and Schemas
-Agent Runtime (Plan-then-Execute + Approval Gate)
-    -> Pipeline Runtime (DAG Executor + Scheduler)
-    -> Plugin Node Registry + canonical Node Contracts
-    -> Tool Catalog (read-only presentation projection)
-```
+Build the unpacked Electron application from the repository root:
 
-State is local and project-scoped: SQLite stores project metadata and JSON
-files store run state and artifacts. Runtime state writes use atomic file
-writes. The Pipeline Runtime is the only pipeline execution path.
+    powershell -ExecutionPolicy Bypass -File desktop\packaging\build_all_windows.ps1 -DirOnly -PythonExe .\.venv\Scripts\python.exe
 
-Project memory is available as a default-disabled feature. When both install
-and project consent gates are enabled, reviewed preferences and project
-experience are stored in a separate local SQLite authority and injected only
-as a bounded, typed context before planning. Scientific memory is never an
-execution constraint: it requires a new task-level confirmation and its exact
-snapshot is bound to the Reviewed Plan and Approval Summary. Explicitly disabled
-memory produces a typed disabled context; enabled memory with a failed database
-or outbox preflight blocks planning with a structured error instead of silently
-continuing with an empty context. Operational lag is reported as partial. See the
-[Memory System Design](docs/架构与决策/记忆系统设计方案.md).
+The current daily package surface is desktop/electron/dist/win-unpacked/. Keep the executable with its adjacent resources and Electron runtime files; the executable alone is not portable. Routine builds should replace this canonical directory. Do not keep timestamped copies, installers, or portable executables unless a release task requests them.
 
-See [Architecture](docs/架构与决策/系统架构.md) for current router, service, schema,
-node registry, frontend API, storage, and desktop boundaries.
+Check the Electron contract and run the packaged smoke scripts after rebuilding:
 
-The optional controlled Harness accepts only `request_decision` and
-`draft_plan` actions and ships one Product Skill,
-`planning_evidence_review.v1`. Result summaries and recovery decisions remain
-deterministic services. A 24-case, bilingual, data-free evaluation v2 runs the
-real isolated lifecycle/Harness stack with scripted providers; its strict
-safety gates are CI evidence only and never grant production authority. Run it
-with `python scripts/run_agent_evaluation.py --manifest
-tests/fixtures/agent_eval/v2/manifest.json --provider rule_based --output
-artifacts/agent-eval/report.json`.
+    npm --prefix desktop/electron run check
+    powershell -ExecutionPolicy Bypass -File desktop\packaging\test_electron_packaged_smoke.ps1
+    powershell -ExecutionPolicy Bypass -File desktop\packaging\test_sandbox_packaged_smoke.ps1
 
-The Agent workspace also exposes a read-only seven-day operational projection
-for bounded lifecycle, latency, retry/dead-letter, invariant and Memory-health
-signals. These operational signals are not scientific validation. Structured
-Agent logs retain identifiers and error codes only, not goals, prompts, paths,
-credentials, Memory text, or model responses.
+A successful build, sidecar health check, packaged renderer smoke, visible GUI workflow, and scientific validation are separate evidence levels. One does not establish the others. See [Desktop App Packaging](docs/桌面与前端/桌面应用打包.md).
 
-## Current Source Workflow
+## Repository map
 
-```text
-Select BIDS/rawdata or converted BIDS
--> Create project
--> Generate project_config.yaml and dataset_index.json
--> Describe the goal in the project Agent workspace
--> Answer all required data or scientific decisions together in one bounded form
--> Review one hashed Approval Summary
--> Approve the unchanged plan and execution scope
--> Follow bounded progress and inspect the result
--> Open Runs or technical details for validation, logs, artifacts, and provenance
-```
+- src/backend/app: API, schemas, domain services, Pipeline Runtime, node registry, and scientific kernels.
+- src/frontend/src: shared API client, types, internationalization, and feature workspaces.
+- desktop/electron: Electron shell, preload bridge, and packaged renderer.
+- desktop/packaging: Windows build and isolated smoke scripts.
+- docs: current architecture, safety boundaries, capability levels, user guides, and versioned release notes.
+- specs: durable specifications, phase records, and human review gates.
+- tests: backend unit, contract, integration, and frontend tests.
 
-When an active Agent Task needs a decision, plan approval, or separately scoped
-recovery approval, the project shell presents one project-bound confirmation
-dialog from Agent, Runs, Settings, and read-only detail views. Closing it makes
-no request and merely leaves a local reopen indicator. Submitting the existing
-structured command lets the persisted scheduler, approval service, ticket,
-Gateway, monitor, observation, and evaluation chain advance to the next real
-blocking point; it does not grant an automatic approval or create a second
-execution path. Legacy single-stage preprocessing and derived-metric mutation
-panels are not part of the ordinary UI path.
+## Project documents
 
-The Agent Task API and source UI are a projection and command surface over the
-existing lifecycle, Reviewed Plan, Approval Gate, Execution Ticket, sole
-Execution Gateway, Pipeline Runtime, and artifact evidence. They do not create
-a second execution path. The source implementation is not yet a packaged or
-released `v0.7.0` claim; the published version surfaces remain `v0.6.0-rc1`.
-Each attempt persists an immutable dispatch and ordered gateway events. Replaying
-the same command returns the persisted result without running the executor again;
-an interrupted dispatch that had already started is reported as outcome-unknown
-and requires inspection rather than automatic re-execution.
-
-All current planning begins with the project-scoped Agent Task API. The former
-file-backed Agent plan endpoint and `agent_runs/` plan files are removed; task
-details and project Runs are the only supported planning and run projections.
-
-DICOM/FunRaw/T1Raw datasets support read-only detection and conversion dry-run
-preview. Native conversion can enter the reviewed gateway path only when its
-release-readiness evidence is present. Conversion is never inferred from
-rawdata alone.
-
-Reviewed preprocessing operates on converted/sandboxed inputs and remains
-explicit, confirmable, and environment gated. The current stage catalog tracks
-metadata-only, planned, blocked, computed, partial, and preview states
-separately so the UI does not present placeholders as completed numerical
-outputs.
-
-## Project Structure
-
-```text
-src/backend/app/
-  api/                         domain routers and API middleware
-  core/                        config, exceptions, logging
-  schemas/                     request/response and contract schemas
-  services/                    business logic and read models
-  runtime/                     pipeline executor, state store, node registry
-  runtime/node_registry_plugins/
-                               plugin registries for node runners
-  tools/                       processing, QC, wrappers, CLI helpers
-
-src/frontend/src/
-  lib/api/                     shared client and domain API modules
-  components/                  reusable UI panels
-  features/                    feature-level UI composition
-  hooks/                       shared React hooks
-  state/                       workflow state models
-  types/                       shared frontend types
-
-desktop/
-  electron/                    Electron shell and smoke checks
-  packaging/                   PyInstaller and Windows build scripts
-
-docs/
-  文档索引.md                   current documentation index
-  架构与决策/                   current architecture and ADRs
-  项目概览/                     capability matrix and compatibility pointers
-  安全与审批/                   safety boundaries and run lifecycle
-  预处理与科学计算/             scientific and external-tool contracts
-  桌面与前端/                   desktop packaging and frontend guidance
-  发布记录/                     version-bound historical release notes
-
-specs/
-  规范/                         durable engineering and scientific specifications
-  阶段记录/                     retained phase-level historical records
-
-tests/
-  unit/                        unit and source-contract tests
-  integration/                 integration and opt-in smoke tests
-```
-
-## Safety Architecture
-
-| Rule | Mechanism |
-| --- | --- |
-| Rawdata read-only | path policy, checksum checks, approval wording |
-| Approval required | Tool Catalog + Approval Gate + explicit confirmations |
-| Path traversal blocked | `path_safety.py` and project/run artifact IDs |
-| Frontend isolated | HTTP API modules and approved Electron bridge |
-| Execution contained in project | registered Python runners, approval/readiness checks, audit records; future external processes must use the Windows restricted-process provider without a normal-process fallback |
-| Memory is advisory and project-scoped | install/project consent, provenance, confirmation, plan hash binding, tombstone forgetting |
-| Research use only | UI and documentation warnings |
-
-## Known Limitations
-
-- Not for clinical diagnosis or medical decision-making.
-- Preprocessing uses the in-project Python implementation; MATLAB, SPM, and
-  DPABI executables are not required or invoked.
-- DICOM conversion execution is default-blocked and requires release approval
-  evidence and multiple confirmations.
-- Native DICOM conversion currently supports classic single-frame MR series
-  and Siemens single-frame mosaic MR time series; unsupported or mixed series
-  fail closed.
-- ALFF/fALFF, ReHo, and functional connectivity have Python backend paths where
-  their required inputs exist; metadata-only and preview outputs remain labeled
-  as such.
-- No group statistics, classification, diagnosis model, report editor, or
-  auto-update workflow is included in the current release line.
-- Desktop packaging and GUI smoke require a compatible local Windows desktop
-  environment.
-
-## Documentation
-
-- [Current Project State](PROJECT_STATE.md)
-- [Architecture](docs/架构与决策/系统架构.md)
-- [Memory System Design](docs/架构与决策/记忆系统设计方案.md)
-- [Release Notes v0.6.0-rc1](docs/发布记录/v0.6.0-rc1.md)
-- [Release Notes v0.4.0-rc1](docs/发布记录/v0.4.0-rc1.md)
-- [Release Notes v0.3.0-rc1](docs/发布记录/v0.3.0-rc1.md)
-- [Desktop App Packaging](docs/桌面与前端/桌面应用打包.md)
-- [Real Project Run Lifecycle](docs/安全与审批/真实项目运行生命周期.md)
-- [Safety Boundaries](docs/安全与审批/安全边界.md)
-- [Read-only Execution Graph](docs/规划与运行时/处理流程图.md)
-
-## License
-
-This project is for academic research purposes.
+- [Current project state](PROJECT_STATE.md)
+- [Documentation index](docs/文档索引.md)
+- [System architecture](docs/架构与决策/系统架构.md)
+- [Capability matrix](docs/项目概览/能力矩阵.md)
+- [Safety boundaries](docs/安全与审批/安全边界.md)
+- [Real project run lifecycle](docs/安全与审批/真实项目运行生命周期.md)
+- [Desktop packaging](docs/桌面与前端/桌面应用打包.md)
+- [Release notes: 0.6.0-rc1](docs/发布记录/v0.6.0-rc1.md)

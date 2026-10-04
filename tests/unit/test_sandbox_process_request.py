@@ -18,7 +18,7 @@ def _request(tmp_path: Path) -> SandboxProcessRequest:
         executable_path=str(executable),
         argv=(str(executable), "--fixed"),
         cwd=str(tmp_path),
-        environment={"TEMP": str(tmp_path / "tmp"), "TMP": str(tmp_path / "tmp")},
+        environment={key: str(tmp_path / "tmp") for key in ("TEMP", "TMP", "LOCALAPPDATA")},
         policy_hash="policy",
         timeout_seconds=10,
         memory_limit_bytes=16 * 1024 * 1024,
@@ -53,3 +53,20 @@ def test_process_request_accepts_fixed_executable_and_isolated_temp(tmp_path: Pa
     request = _request(tmp_path)
 
     WindowsProcessSandbox._validate(request, 10)
+
+
+@pytest.mark.parametrize("case", ["missing_localappdata", "external_localappdata", "extra_key", "duplicate_case"])
+def test_process_request_rejects_unreviewed_environment_or_external_profile_path(tmp_path, case) -> None:
+    request = _request(tmp_path)
+    environment = dict(request.environment)
+    if case == "missing_localappdata":
+        del environment["LOCALAPPDATA"]
+    elif case == "external_localappdata":
+        environment["LOCALAPPDATA"] = str(tmp_path.parent)
+    elif case == "extra_key":
+        environment["OTHER_API_KEY"] = "secret"
+    else:
+        environment["localappdata"] = str(tmp_path.parent)
+    with pytest.raises(SafetyError) as error:
+        WindowsProcessSandbox._validate(request.model_copy(update={"environment": environment}), 10)
+    assert error.value.code == "SANDBOX_PROCESS_START_FAILED"

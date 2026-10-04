@@ -3,13 +3,13 @@ import { fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { I18nProvider } from "../../../i18n/I18nProvider";
-import type { AgentTaskResponse } from "../../../lib/types/agentTask";
+import type { AgentTaskResponse, AgentPlanEvidence } from "../../../lib/types/agentTask";
 import { AgentWorkspaceView } from "../AgentWorkspace";
 import type { AgentTaskController } from "../useAgentTaskController";
 
 function approvalTask(): AgentTaskResponse {
   return {
-    schema_version: 2,
+    schema_version: 3,
     task_id: "task-1",
     project_id: "project-1",
     state: "waiting_for_user",
@@ -38,6 +38,7 @@ function approvalTask(): AgentTaskResponse {
     },
     decision_batch: null,
     approval_summary: {
+      schema_version: 6,
       summary_hash: "sha256:summary",
       execution_environment_snapshot_id: "environment-1",
       execution_environment_hash: "environment-hash-1",
@@ -48,8 +49,10 @@ function approvalTask(): AgentTaskResponse {
       write_roots: ["project://derivatives", "project://runs"],
       rawdata_read_only: true,
       external_tools: [],
-      limitations: ["GPU auto may select CPU"],
-      science_changes: ["Schaefer 200 atlas"],
+      limitations: [
+        { code: "resource.name", params: { resource_name: "GPU auto may select CPU" } },
+      ],
+      science_changes: [{ code: "resource.name", params: { resource_name: "Schaefer 200 atlas" } }],
       sections: [],
       expires_at: null,
     },
@@ -59,7 +62,7 @@ function approvalTask(): AgentTaskResponse {
       {
         id: "plan",
         type: "reviewed_plan",
-        label: "Reviewed plan",
+        label: { code: "resource.name", params: { resource_name: "Reviewed plan" } },
         uri: "project://plan/1",
         available: true,
       },
@@ -83,8 +86,120 @@ function approvalTask(): AgentTaskResponse {
   };
 }
 
+function savedPlan(): AgentPlanEvidence {
+  return {
+    schema_version: 1,
+    project_id: "project-1",
+    task_id: "task-1",
+    available: true,
+    missing_code: null,
+    reviewed_plan_id: "plan-1",
+    plan_hash: "saved-plan-hash",
+    revision_no: 2,
+    parent_reviewed_plan_id: "parent-plan",
+    parent_plan_hash: "parent-hash",
+    revision_reason: "decision_answered",
+    goal_kind: "rsfmri_preprocessing_plan",
+    subject_ids: [],
+    session_ids: [],
+    include: [],
+    exclude: [],
+    completeness_required: true,
+    nodes: [{ node_id: "data_inspection", backend: "python", depends_on: [] }],
+    input_refs: [
+      { ref_type: "dataset_summary", ref_id: "dataset-1", content_hash: "dataset-hash" },
+    ],
+  };
+}
+
+describe("saved plan evidence", () => {
+  it.each(["en", "zh-CN"] as const)(
+    "opens plan-only evidence and returns without a run in %s",
+    async (locale) => {
+      const task: AgentTaskResponse = {
+        ...approvalTask(),
+        state: "completed",
+        task_kind: "plan_only",
+        approval_summary: null,
+      };
+      const active = controller(task);
+      active.readPlanEvidence = vi.fn().mockResolvedValue(savedPlan());
+      const runs = vi.fn();
+      render(
+        <I18nProvider locale={locale}>
+          <AgentWorkspaceView
+            advancedMode={false}
+            controller={active}
+            dataStateLabel="fixture"
+            onOpenRuns={runs}
+            projectName="fixture"
+          />
+        </I18nProvider>,
+      );
+      fireEvent.click(screen.getByText(locale === "en" ? /Task details/ : /任务详情/));
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: locale === "en" ? "View saved plan" : "查看已保存方案",
+        }),
+      );
+      const detail = await screen.findByRole("region", {
+        name: locale === "en" ? "Saved plan evidence" : "已保存的方案证据",
+      });
+      expect(detail).toHaveTextContent("saved-plan-hash");
+      expect(detail).toHaveTextContent("data_inspection");
+      expect(detail).toHaveTextContent("dataset-1");
+      expect(runs).not.toHaveBeenCalled();
+      fireEvent.click(
+        within(detail).getByRole("button", {
+          name: locale === "en" ? "Back to task details" : "返回任务详情",
+        }),
+      );
+      expect(detail).not.toBeInTheDocument();
+    },
+  );
+
+  it("shows loading, failure, retry and missing record", async () => {
+    const active = controller(approvalTask());
+    let rejectRead!: (reason: Error) => void;
+    active.readPlanEvidence = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectRead = reject;
+          }),
+      )
+      .mockResolvedValue({
+        ...savedPlan(),
+        available: false,
+        missing_code: "AGENT_PLAN_RECORD_MISSING",
+      });
+    render(
+      <I18nProvider locale="en">
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={active}
+          dataStateLabel="fixture"
+          onOpenRuns={vi.fn()}
+          projectName="fixture"
+        />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByText(/Task details/));
+    fireEvent.click(screen.getByRole("button", { name: "View saved plan" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Loading saved plan");
+    rejectRead(new Error("fixture"));
+    const failure = await screen.findByRole("alert");
+    expect(failure).toHaveTextContent("could not be loaded");
+    fireEvent.click(within(failure).getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText(/The saved plan record is unavailable/)).toBeVisible();
+  });
+});
+
 function controller(task: AgentTaskResponse | null): AgentTaskController {
   return {
+    registerTemplate: vi.fn().mockResolvedValue(undefined),
+    readPlanEvidence: vi.fn(),
     answer: vi.fn(),
     approve: vi.fn(),
     approveRecovery: vi.fn(),
@@ -272,6 +387,7 @@ describe("AgentWorkspace", () => {
     const task: AgentTaskResponse = {
       ...approvalTask(),
       approval_summary: {
+        schema_version: 6,
         ...approvalTask().approval_summary!,
         registered_subject_count: 2,
         selected_subject_ids: [],
@@ -305,6 +421,7 @@ describe("AgentWorkspace", () => {
           controller={controller({
             ...task,
             approval_summary: {
+              schema_version: 6,
               ...task.approval_summary!,
               selected_subject_ids: ["sub-001", "sub-002"],
             },
@@ -503,6 +620,7 @@ describe("AgentWorkspace", () => {
         approval_summary_hash: "sha256:recovery",
       },
       approval_summary: {
+        schema_version: 6,
         ...approvalTask().approval_summary!,
         summary_hash: "sha256:recovery",
       },
@@ -525,6 +643,29 @@ describe("AgentWorkspace", () => {
     expect(screen.getByText(/sub-001 · sub-002 · rawdata/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve recovery" })).toBeInTheDocument();
     expect(document.querySelectorAll('[data-primary-action="true"]')).toHaveLength(1);
+  });
+
+  it.each([
+    ["en", "AGENT_APPROVAL_AUTH_UNCONFIGURED", "Execution approval is not configured"],
+    ["en", "AGENT_APPROVAL_AUTH_REQUIRED", "Execution approval authorization is required"],
+    ["zh-CN", "AGENT_APPROVAL_AUTH_UNCONFIGURED", "尚未配置执行审批"],
+    ["zh-CN", "AGENT_APPROVAL_AUTH_REQUIRED", "执行审批需要授权"],
+  ] as const)("explains approval authorization failure in %s: %s", (locale, errorCode, title) => {
+    render(
+      <I18nProvider locale={locale}>
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={{ ...controller(approvalTask()), error: errorCode, errorCode }}
+          dataStateLabel="Converted BIDS/NIfTI"
+          onOpenRuns={vi.fn()}
+          projectName="Demo Project"
+        />
+      </I18nProvider>,
+    );
+    const alert = screen.getByRole("alert");
+    expect(within(alert).getByText(title)).toBeInTheDocument();
+    expect(alert).not.toHaveTextContent(errorCode);
+    expect(within(alert).queryByRole("button", { name: /Retry|重试/ })).not.toBeInTheDocument();
   });
 
   it("shows partial results as limited evidence instead of success", () => {
@@ -695,7 +836,7 @@ describe("AgentWorkspace", () => {
           {
             artifact_id: "plan-1",
             artifact_type: "reviewed_plan",
-            label: "Reviewed plan",
+            label: { code: "resource.name", params: { resource_name: "Reviewed plan" } },
             uri: "project://project-1/reviewed_plan/plan-1",
             checksum: "sha256:plan",
             capability_level: "metadata_only",
@@ -755,8 +896,11 @@ describe("AgentWorkspace", () => {
           {
             item_id: "goal_revision",
             kind: "goal_revision",
-            question: "Revise the research goal.",
-            impact: "UNSUPPORTED_GOAL",
+            question: {
+              code: "resource.name",
+              params: { resource_name: "Revise the research goal." },
+            },
+            impact: { code: "resource.name", params: { resource_name: "UNSUPPORTED_GOAL" } },
             options: [],
             recommended_option: null,
             answer_type: "text",
@@ -764,6 +908,8 @@ describe("AgentWorkspace", () => {
             max_value: null,
             required: true,
             evidence_refs: [],
+            readiness: "ready",
+            allowed_actions: [],
           },
         ],
       },
@@ -835,21 +981,30 @@ describe("AgentWorkspace", () => {
           {
             item_id: "atlas",
             kind: "atlas",
-            question: "Choose an atlas",
-            impact: "Changes the analysis.",
-            options: [{ id: "aal", label: "AAL", description: "Atlas A", recommended: true }],
+            question: { code: "resource.name", params: { resource_name: "Choose an atlas" } },
+            impact: { code: "resource.name", params: { resource_name: "Changes the analysis." } },
+            options: [
+              {
+                id: "aal",
+                label: { code: "resource.name", params: { resource_name: "AAL" } },
+                description: { code: "resource.name", params: { resource_name: "Atlas A" } },
+                recommended: true,
+              },
+            ],
             recommended_option: "aal",
             answer_type: "option",
             min_value: null,
             max_value: null,
             required: true,
             evidence_refs: [],
+            readiness: "ready",
+            allowed_actions: [],
           },
           {
             item_id: "gsr",
             kind: "global_signal_regression",
-            question: "Include GSR",
-            impact: "Changes correlations.",
+            question: { code: "resource.name", params: { resource_name: "Include GSR" } },
+            impact: { code: "resource.name", params: { resource_name: "Changes correlations." } },
             options: [],
             recommended_option: null,
             answer_type: "boolean",
@@ -857,12 +1012,14 @@ describe("AgentWorkspace", () => {
             max_value: null,
             required: true,
             evidence_refs: [],
+            readiness: "ready",
+            allowed_actions: [],
           },
           {
             item_id: "tr",
             kind: "repetition_time",
-            question: "TR seconds",
-            impact: "Controls filtering.",
+            question: { code: "resource.name", params: { resource_name: "TR seconds" } },
+            impact: { code: "resource.name", params: { resource_name: "Controls filtering." } },
             options: [],
             recommended_option: null,
             answer_type: "number",
@@ -870,12 +1027,14 @@ describe("AgentWorkspace", () => {
             max_value: 10,
             required: true,
             evidence_refs: [],
+            readiness: "ready",
+            allowed_actions: [],
           },
           {
             item_id: "other",
             kind: "other",
-            question: "Explain the scope",
-            impact: "Documents the request.",
+            question: { code: "resource.name", params: { resource_name: "Explain the scope" } },
+            impact: { code: "resource.name", params: { resource_name: "Documents the request." } },
             options: [],
             recommended_option: null,
             answer_type: "text",
@@ -883,6 +1042,8 @@ describe("AgentWorkspace", () => {
             max_value: null,
             required: true,
             evidence_refs: [],
+            readiness: "ready",
+            allowed_actions: [],
           },
         ],
       },

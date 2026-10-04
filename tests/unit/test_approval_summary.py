@@ -7,6 +7,7 @@ import pytest
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.schemas.desktop import ProjectDetail, ReviewedPlanRecord
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
+from src.backend.app.schemas.system_message import message
 
 NOW = datetime(2026, 7, 16, tzinfo=UTC)
 
@@ -108,10 +109,8 @@ def test_summary_binds_selected_subject_and_changes_hash_with_scope(tmp_path) ->
     assert first.registered_subject_count == 2
     assert first.selected_subject_ids == ("sub-001",)
     assert changed.selected_subject_ids == ("sub-002",)
-    assert first.sections[0].summary == (
-        "Approve exactly 1 reviewed node(s) for subject sub-001."
-    )
-    assert first.schema_version == 5
+    assert first.sections[0].summary == message("approval.scope.summary", count=1, subject_ids=("sub-001",))
+    assert first.schema_version == 6
     assert first.resource_policy == {
         "cpu_policy": {"mode": "auto"},
         "compute_policy": {"backend": "auto", "allow_cpu_fallback": True},

@@ -65,8 +65,10 @@ def _verified_project_resource(value: Any, project_dir: Path | None) -> dict[str
     if (
         path is None
         or not path.is_file()
+        or not (project_dir / "resources").resolve().is_relative_to(project_dir.resolve())
         or not path.is_relative_to((project_dir / "resources").resolve())
         or not str(value.get("license") or "").strip()
+        or value.get("space") not in {"MNI152", "native"}
         or not expected.startswith("sha256:")
     ):
         return None

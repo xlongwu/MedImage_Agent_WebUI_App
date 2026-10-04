@@ -11,6 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from src.backend.app.planner.audit_record import stable_hash
+from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.schemas.agent_harness import (
     AgentActionRecord,
     AgentHarnessAttempt,
@@ -22,6 +23,9 @@ from src.backend.app.schemas.agent_invariant import AgentInvariantAuditRecord
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
 from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
 from src.backend.app.schemas.agent_execution_wake import AgentExecutionWakeRecord
+from src.backend.app.schemas.agent_recovery_scan import (
+    AgentRecoveryScanPage, RecoveryScanConsumer, RECOVERY_SCAN_STATES,
+)
 from src.backend.app.schemas.desktop import (
     ApprovalRecord,
     DatasetImportRequest,
@@ -58,6 +62,13 @@ DEFAULT_STORE_PATH = Path("outputs/work/desktop/desktop_state.sqlite")
 
 def utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _decode_agent_lifecycle(payload: str) -> AgentLifecycleRecord:
+    data = json.loads(payload)
+    if data.get("schema_version") != 6:
+        raise SafetyError("AGENT_LIFECYCLE_VERSION_UNSUPPORTED", code="AGENT_LIFECYCLE_VERSION_UNSUPPORTED")
+    return AgentLifecycleRecord.model_validate(data)
 
 
 def get_desktop_store_path() -> Path:
@@ -250,6 +261,17 @@ class SQLiteDesktopStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_lifecycles_project_updated
                     ON agent_lifecycles(project_id, updated_at);
+                CREATE INDEX IF NOT EXISTS idx_agent_lifecycles_recovery
+                    ON agent_lifecycles(state, lifecycle_id);
+                CREATE TABLE IF NOT EXISTS agent_recovery_scans (
+                    consumer TEXT NOT NULL,
+                    project_scope TEXT NOT NULL,
+                    schema_version INTEGER NOT NULL CHECK(schema_version = 1),
+                    cursor TEXT NOT NULL,
+                    upper_bound TEXT NOT NULL,
+                    completed INTEGER NOT NULL,
+                    PRIMARY KEY(consumer, project_scope)
+                );
                 CREATE TABLE IF NOT EXISTS agent_lifecycle_events (
                     event_id TEXT PRIMARY KEY,
                     lifecycle_id TEXT NOT NULL,
@@ -2606,7 +2628,7 @@ class SQLiteDesktopStore:
                 "SELECT payload FROM agent_lifecycles WHERE lifecycle_id = ?",
                 (lifecycle_id,),
             ).fetchone()
-        return AgentLifecycleRecord(**json.loads(row["payload"])) if row else None
+        return _decode_agent_lifecycle(row["payload"]) if row else None
 
     def add_agent_evidence_snapshot(self, record: EvidenceSnapshot) -> EvidenceSnapshot:
         """Persist immutable redacted evidence by its canonical hash."""
@@ -3156,6 +3178,99 @@ class SQLiteDesktopStore:
             ).fetchall()
         return [AgentExecutionWakeRecord(**json.loads(row["payload"])) for row in rows]
 
+    def scan_agent_recovery_page(
+        self, *, consumer: RecoveryScanConsumer, now: datetime,
+        project_id: str | None = None, limit: int = 100,
+    ) -> AgentRecoveryScanPage:
+        """Commit at most one keyset page and its missing wakes atomically.
+
+        The fixed cycle upper bound makes continuation finite. A completed
+        cycle resets on the next call so newly inserted lower IDs are covered.
+        Repeated/crashed scans cannot resurrect an already consumed checkpoint.
+        """
+        if consumer not in RECOVERY_SCAN_STATES or not 1 <= limit <= 100:
+            raise ValueError("AGENT_RECOVERY_SCAN_INVALID")
+        states = RECOVERY_SCAN_STATES[consumer]
+        predicate = f"state IN ({','.join('?' for _ in states)}) AND json_extract(payload, '$.schema_version')=?"
+        # Unsupported historical contracts remain untouched and explicitly
+        # unreadable. They cannot starve current tasks or acquire new wakes.
+        args: tuple = (*states, AgentLifecycleRecord.model_fields["schema_version"].default)
+        if project_id is not None:
+            predicate += " AND project_id=?"
+            args += (project_id,)
+        scheduled: list[str] = []
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            checkpoint = conn.execute(
+                "SELECT * FROM agent_recovery_scans WHERE consumer=? AND project_scope=?",
+                (consumer, project_id or ""),
+            ).fetchone()
+            if checkpoint is None or checkpoint["completed"]:
+                cursor = ""
+                row = conn.execute(
+                    f"SELECT lifecycle_id FROM agent_lifecycles WHERE {predicate} ORDER BY lifecycle_id DESC LIMIT 1", args,
+                ).fetchone()
+                upper = row[0] if row else ""
+            else:
+                cursor, upper = checkpoint["cursor"], checkpoint["upper_bound"]
+            rows = conn.execute(
+                f"SELECT payload FROM agent_lifecycles WHERE {predicate} AND lifecycle_id>? AND lifecycle_id<=? ORDER BY lifecycle_id LIMIT ?",
+                (*args, cursor, upper, limit),
+            ).fetchall()
+            for row in rows:
+                lifecycle = _decode_agent_lifecycle(row["payload"])
+                cursor = lifecycle.lifecycle_id
+                if consumer == "planning":
+                    step_key = f"{lifecycle.state}:{lifecycle.updated_at.isoformat()}"
+                    exists = conn.execute(
+                        "SELECT 1 FROM agent_task_wake_outbox WHERE lifecycle_id=? AND step_key=?",
+                        (lifecycle.lifecycle_id, step_key),
+                    ).fetchone()
+                    if exists:
+                        continue
+                    self._insert_agent_task_wake(conn, AgentTaskWakeRecord(
+                        wake_id=f"agent_wake_{uuid4().hex}", project_id=lifecycle.project_id,
+                        lifecycle_id=lifecycle.lifecycle_id, step_key=step_key,
+                        reason="persistent_rescan", available_at=now, created_at=now, updated_at=now,
+                    ))
+                else:
+                    # An empty run reference identifies a persisted intermediate
+                    # checkpoint; it never claims a run was dispatched.
+                    run_id = lifecycle.run_id or ""
+                    exists = conn.execute(
+                        "SELECT 1 FROM agent_execution_wake_outbox WHERE lifecycle_id=? AND run_id=?",
+                        (lifecycle.lifecycle_id, run_id),
+                    ).fetchone()
+                    if exists:
+                        scheduled.append(lifecycle.lifecycle_id)
+                        continue
+                    wake = AgentExecutionWakeRecord(
+                        wake_id=f"agent_execution_wake_{uuid4().hex}",
+                        project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id,
+                        run_id=run_id, available_at=now, created_at=now, updated_at=now,
+                    )
+                    conn.execute(
+                        """INSERT INTO agent_execution_wake_outbox
+                           (wake_id, project_id, lifecycle_id, run_id, status, attempts,
+                            available_at, payload, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (wake.wake_id, wake.project_id, wake.lifecycle_id, wake.run_id,
+                         wake.status, wake.attempts, now.isoformat(), self._dump_model(wake),
+                         now.isoformat(), now.isoformat()),
+                    )
+                scheduled.append(lifecycle.lifecycle_id)
+            has_more = conn.execute(
+                f"SELECT 1 FROM agent_lifecycles WHERE {predicate} AND lifecycle_id>? AND lifecycle_id<=? LIMIT 1",
+                (*args, cursor, upper),
+            ).fetchone() is not None
+            conn.execute(
+                """INSERT INTO agent_recovery_scans VALUES (?, ?, 1, ?, ?, ?)
+                   ON CONFLICT(consumer, project_scope) DO UPDATE SET
+                   cursor=excluded.cursor, upper_bound=excluded.upper_bound, completed=excluded.completed""",
+                (consumer, project_id or "", cursor, upper, int(not has_more)),
+            )
+        return AgentRecoveryScanPage(lifecycle_ids=tuple(scheduled), has_more=has_more)
+
     def list_agent_lifecycles(self, project_id: str) -> list[AgentLifecycleRecord]:
         with self._lock, self._connect() as conn:
             rows = conn.execute(
@@ -3165,7 +3280,7 @@ class SQLiteDesktopStore:
                 """,
                 (project_id,),
             ).fetchall()
-        return [AgentLifecycleRecord(**json.loads(row["payload"])) for row in rows]
+        return [_decode_agent_lifecycle(row["payload"]) for row in rows]
 
     def transition_agent_lifecycle(
         self,
@@ -3213,6 +3328,37 @@ class SQLiteDesktopStore:
             self._insert_agent_task_wake(conn, wake)
         return record
 
+    def transition_agent_lifecycle_with_template(
+        self, record: AgentLifecycleRecord, event: AgentLifecycleEvent, wake: AgentTaskWakeRecord,
+        *, resource: dict[str, str], expected_batch_id: str,
+    ) -> AgentLifecycleRecord:
+        """Publish registration, invalidation, event and wake in one transaction."""
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT payload FROM projects WHERE id=?", (record.project_id,)).fetchone()
+            if row is None:
+                raise RuntimeError("PROJECT_NOT_FOUND")
+            project = ProjectDetail(**json.loads(row["payload"]))
+            metadata = dict(project.metadata)
+            defaults = dict(metadata.get("agent_defaults") or {})
+            defaults.update(schema_version=1, default_template=resource)
+            metadata["agent_defaults"] = defaults
+            cursor = conn.execute(
+                """UPDATE agent_lifecycles SET state=?, payload=?, updated_at=?
+                   WHERE lifecycle_id=? AND project_id=? AND state='WAITING_FOR_SCIENCE_DECISION'
+                   AND json_extract(payload, '$.pending_decision_batch.batch_id')=?""",
+                (record.state, self._dump_model(record), record.updated_at.isoformat(),
+                 record.lifecycle_id, record.project_id, expected_batch_id),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_DECISION_STALE")
+            conn.execute("UPDATE projects SET payload=? WHERE id=?", (
+                self._dump_model(project.model_copy(update={"metadata": metadata})), record.project_id,
+            ))
+            self._insert_agent_lifecycle_event(conn, event)
+            self._insert_agent_task_wake(conn, wake)
+        return record
+
     def transition_agent_lifecycle_with_harness_action(
         self,
         record: AgentLifecycleRecord,
@@ -3221,10 +3367,36 @@ class SQLiteDesktopStore:
         *,
         expected_state: str,
         expected_action_status: str,
+        duplicate_guard=None,
+        duplicate_event: AgentLifecycleEvent | None = None,
     ) -> AgentLifecycleRecord:
         """Atomically publish a Harness business result and its action ledger."""
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            if duplicate_guard is not None:
+                row = conn.execute(
+                    "SELECT payload FROM agent_lifecycles WHERE lifecycle_id=? AND project_id=? AND state=?",
+                    (record.lifecycle_id, record.project_id, expected_state),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError("LIFECYCLE_CONCURRENT_TRANSITION")
+                authoritative = _decode_agent_lifecycle(row["payload"])
+                if duplicate_guard(authoritative):
+                    rejected = action.model_copy(update={
+                        "status": "rejected", "error_code": "AGENT_DECISION_ALREADY_CONFIRMED",
+                        "decision_batch_id": None, "decision_batch_hash": None,
+                    })
+                    cursor = conn.execute(
+                        "UPDATE agent_harness_actions SET status=?, payload=?, completed_at=? WHERE action_id=? AND attempt_id=? AND step_id=? AND status=?",
+                        (rejected.status, rejected.model_dump_json(), rejected.completed_at.isoformat(),
+                         rejected.action_id, rejected.attempt_id, rejected.step_id, expected_action_status),
+                    )
+                    if cursor.rowcount != 1:
+                        raise RuntimeError("AGENT_HARNESS_ACTION_CONCURRENT_UPDATE")
+                    if duplicate_event is None:
+                        raise RuntimeError("AGENT_DECISION_DUPLICATE_EVENT_MISSING")
+                    self._insert_agent_lifecycle_event(conn, duplicate_event)
+                    return authoritative
             cursor = conn.execute(
                 """UPDATE agent_lifecycles SET state=?, payload=?, updated_at=?
                    WHERE lifecycle_id=? AND project_id=? AND state=?""",

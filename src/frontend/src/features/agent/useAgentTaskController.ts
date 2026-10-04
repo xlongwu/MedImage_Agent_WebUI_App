@@ -8,12 +8,16 @@ import {
   createAgentTask,
   getAgentTask,
   getAgentTaskHarness,
+  getAgentPlanEvidence,
   listAgentTaskEvents,
   listAgentTasks,
+  registerAgentTemplate,
 } from "../../lib/api/agentTasks";
 import { ApiError } from "../../lib/api/client";
+import type { RegisteredScientificResource } from "../../lib/api/agentSettings";
 import type {
   AgentHarnessActivityPage,
+  AgentPlanEvidence,
   AgentTaskEvent,
   AgentTaskResponse,
 } from "../../lib/types/agentTask";
@@ -39,11 +43,16 @@ export type AgentTaskController = {
   harnessActivity: AgentHarnessActivityPage | null;
   create: (goal: string) => Promise<void>;
   answer: (batchId: string, answers: { item_id: string; value: string }[]) => Promise<void>;
+  registerTemplate: (
+    batchId: string,
+    resource: Omit<RegisteredScientificResource, "checksum">,
+  ) => Promise<void>;
   approve: () => Promise<void>;
   approveRecovery: () => Promise<void>;
   cancel: (reason?: string) => Promise<void>;
   dismissTask: () => void;
   loadHarnessActivity: () => Promise<void>;
+  readPlanEvidence: () => Promise<AgentPlanEvidence>;
   refresh: () => Promise<void>;
   selectTask: (taskId: string) => Promise<void>;
 };
@@ -327,6 +336,22 @@ export function useAgentTaskController({
     [actor, applyCommand, baseUrl, projectId, task],
   );
 
+  const registerTemplate = useCallback(
+    async (batchId: string, resource: Omit<RegisteredScientificResource, "checksum">) => {
+      if (!projectId || !visibleTask) return;
+      await applyCommand((signal) =>
+        registerAgentTemplate(
+          baseUrl,
+          projectId,
+          visibleTask.task_id,
+          { actor, batch_id: batchId, command_id: commandId("register-template"), resource },
+          { signal },
+        ),
+      );
+    },
+    [actor, applyCommand, baseUrl, projectId, visibleTask],
+  );
+
   const approve = useCallback(async () => {
     if (!projectId || !task?.approval_summary?.summary_hash) {
       throw new Error("The approval summary is unavailable or stale.");
@@ -410,7 +435,25 @@ export function useAgentTaskController({
     setLastErrorDetails({});
   }, []);
 
+  const readPlanEvidence = useCallback(async () => {
+    if (!projectId || !visibleTask) throw new DOMException("No selected task", "AbortError");
+    const selectedId = visibleTask.task_id;
+    const generation = generationRef.current;
+    const response = await getAgentPlanEvidence(
+      baseUrl,
+      projectId,
+      selectedId,
+      visibleTask.technical_details?.plan_hash ?? null,
+    );
+    if (generationRef.current !== generation || selectedTaskIdRef.current !== selectedId) {
+      throw new DOMException("Selection changed", "AbortError");
+    }
+    return response;
+  }, [baseUrl, projectId, visibleTask]);
+
   return {
+    readPlanEvidence,
+    registerTemplate,
     answer,
     approve,
     approveRecovery,

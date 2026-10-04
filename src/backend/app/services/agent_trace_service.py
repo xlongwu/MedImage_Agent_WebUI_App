@@ -14,6 +14,8 @@ from src.backend.app.schemas.agent_trace import (
     AgentTraceLifecycleEvent,
     AgentTracePage,
     AgentTraceReference,
+    AgentTraceActionProjection,
+    AgentTraceEvidenceFact,
 )
 
 
@@ -120,6 +122,11 @@ class AgentTraceService:
             context_refs = self._contexts(step, project_id, lifecycle_id, issues)
             refs = list(context_refs)
             refs.extend(self._step_references(step, project_id, lifecycle_id, issues))
+            action = actions.get(step.step_id)
+            facts, missing = self._evidence_content(context_refs)
+            decision_kind = ((action.action_payload.get("decision") or {}).get("kind")) if action else None
+            if decision_kind not in {"missing_input", "goal_revision", "dicom_conversion", "subject_id", "atlas", "global_signal_regression", "repetition_time", "template", "overwrite", "experimental_backend", "other"}:
+                decision_kind = None
             entries.append(AgentTraceEntry(
                 step_id=step.step_id,
                 step_no=step.step_no,
@@ -127,7 +134,16 @@ class AgentTraceService:
                 context_refs=tuple(context_refs),
                 context_projection=self._context_projection(context_refs),
                 model_calls=step.model_calls,
-                action_record=actions.get(step.step_id),
+                action_record=AgentTraceActionProjection(
+                    action_id=action.action_id, kind=action.kind, status=action.status, action_hash=action.action_hash,
+                    error_code=action.error_code, decision_batch_id=action.decision_batch_id,
+                    reviewed_plan_id=action.reviewed_plan_id,
+                ) if action else None,
+                rationale_code=("REQUEST_CURRENT_SCIENCE_CONFIRMATION" if action and action.kind == "request_decision"
+                                else "DRAFT_REVIEWED_PLAN" if action else "NO_ACCEPTED_ACTION"),
+                decision_kind=decision_kind,
+                service_name="AgentPlanningActionService" if action else "none",
+                evidence_facts=facts, evidence_missing=missing,
                 action_kind=step.kind,
                 action_hash=step.action_hash,
                 action_result_hash=step.action_result_hash,
@@ -140,6 +156,28 @@ class AgentTraceService:
                 references=tuple(sorted(refs, key=lambda item: (item.ref_type, item.ref_id))),
             ))
         return entries
+
+    def _evidence_content(self, references):
+        """Only known typed facts from the actual consumed Context projection."""
+        from src.backend.app.services.agent_plan_evidence_service import safe_record_identifier
+        numeric_keys = {"subject_count", "bold_sidecar_count", "registered_atlas_count", "unfinished_run_count",
+                        "dataset_subject_count", "registered_input_count", "reviewed_plan_count", "run_count",
+                        "observation_count", "goal_evaluation_count", "memory_suggestion_count"}
+        for ref in references:
+            if ref.ref_type != "context" or ref.status != "present":
+                continue
+            context = self.store.get_agent_harness_context(ref.ref_id)
+            data = context.sections.project_evidence.data
+            facts = []
+            for raw in data.get("facts", [])[:32]:
+                key, value = raw.get("key"), raw.get("value")
+                if key in numeric_keys and isinstance(value, (int, float)):
+                    facts.append(AgentTraceEvidenceFact(key=key, value=value))
+                elif key == "dataset_type" and value in {"rs-fMRI", "BIDS", "DICOM", "NIfTI"}:
+                    facts.append(AgentTraceEvidenceFact(key=key, value=value))
+            missing = tuple(raw for raw in data.get("missing", [])[:32] if raw in {"dataset_summary", "registered_input"})
+            return tuple(facts), missing
+        return (), ()
 
     def _contexts(self, step, project_id: str, lifecycle_id: str, issues: list[str]) -> list[AgentTraceReference]:
         hashes = sorted({call.context_hash for call in step.model_calls})

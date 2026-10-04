@@ -1,0 +1,110 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "stage": "after",
+  "level": "source API and browser; no execution approval",
+  "projects": [
+    {
+      "id": "audit-synthetic-a-3b5eddda71",
+      "tasks": [
+        {
+          "task_id": "lifecycle_4afb2b3ce6004799bed036cbe79e5bd0",
+          "state": "waiting_for_user",
+          "outcome": null,
+          "task_kind": "execution",
+          "execution_performed": false,
+          "technical_details": {
+            "lifecycle_id": "lifecycle_4afb2b3ce6004799bed036cbe79e5bd0",
+            "internal_state": "WAITING_FOR_APPROVAL",
+            "reviewed_plan_id": "reviewed_15b0db88e5c95a078ba8",
+            "plan_hash": "a0c3d485e095b34cc8bff034dc4ade0a9b38966e219759ba67506a5a64449f64",
+            "parent_reviewed_plan_id": null,
+            "revision_reason": "goal_revised",
+            "ticket_id": null,
+            "run_id": null
+          },
+          "summary_hash": "3643723cc2a71c7341db18fb1bebd2eba355329320db14585acc63ab12ba3c0a",
+          "decision_batch_id": null,
+          "decision_items": [],
+          "trace_integrity": "complete",
+          "trace_entries": 0
+        },
+        {
+          "task_id": "lifecycle_a8db3ce2e9684b7c96925aa458e453e4",
+          "state": "completed",
+          "outcome": "succeeded",
+          "task_kind": "plan_only",
+          "execution_performed": false,
+          "technical_details": {
+            "lifecycle_id": "lifecycle_a8db3ce2e9684b7c96925aa458e453e4",
+            "internal_state": "SUCCEEDED",
+            "reviewed_plan_id": "reviewed_a4b37bc8da887d6240f9",
+            "plan_hash": "4f8114700edc0e64324ce90cba7c39d754da9040db5fdc49fe647086e02143fe",
+            "parent_reviewed_plan_id": null,
+            "revision_reason": "initial",
+            "ticket_id": null,
+            "run_id": null
+          },
+          "summary_hash": "e0251db1f0cf77fd2b92089b72cc237b3a6bfbbcbd8b786be92ec33804c2e26d",
+          "decision_batch_id": null,
+          "decision_items": [],
+          "trace_integrity": "complete",
+          "trace_entries": 0
+        }
+      ],
+      "runs_count": 0
+    },
+    {
+      "id": "audit-synthetic-b-4e5ba864be",
+      "tasks": [
+        {
+          "task_id": "lifecycle_1f1298ffd08b4d478354f48605d37b5b",
+          "state": "waiting_for_user",
+          "outcome": null,
+          "task_kind": "execution",
+          "execution_performed": false,
+          "technical_details": {
+            "lifecycle_id": "lifecycle_1f1298ffd08b4d478354f48605d37b5b",
+            "internal_state": "WAITING_FOR_SCIENCE_DECISION",
+            "reviewed_plan_id": null,
+            "plan_hash": null,
+            "parent_reviewed_plan_id": null,
+            "revision_reason": null,
+            "ticket_id": null,
+            "run_id": null
+          },
+          "summary_hash": null,
+          "decision_batch_id": "decision_batch_0e070bf909a5438e89a075d2d11db49a",
+          "decision_items": [
+            {
+              "kind": "template",
+              "required": true,
+              "option_count": 0
+            }
+          ],
+          "trace_integrity": "complete",
+          "trace_entries": 0
+        }
+      ],
+      "runs_count": 0
+    }
+  ],
+  "table_counts": {
+    "reviewed_plans": 2,
+    "run_links": 0,
+    "execution_tickets": 0,
+    "execution_ticket_events": 0,
+    "agent_lifecycles": 3,
+    "agent_lifecycle_events": 20,
+    "agent_task_wake_outbox": 5,
+    "agent_execution_wake_outbox": 0,
+    "agent_harness_attempts": 0,
+    "agent_harness_contexts": 0,
+    "agent_evidence_snapshots": 3,
+    "agent_harness_steps": 0,
+    "agent_harness_actions": 0,
+    "agent_invariant_audits": 0
+  },
+  "assertions": {
+    "all_execution_performed_false": true
+  }
+}

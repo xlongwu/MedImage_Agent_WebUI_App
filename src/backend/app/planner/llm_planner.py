@@ -161,6 +161,9 @@ _PREPROCESSING_PLAN_TERMS = (
     "preprocess",
     "静息态",
     "预处理",
+    "motion qc",
+    "head motion",
+    "头动",
 )
 
 _BIDS_SUBJECT_RE = re.compile(r"(?<![A-Za-z0-9])sub[-_]?([A-Za-z0-9]+)", re.IGNORECASE)
@@ -211,7 +214,7 @@ _MINIMAL_RSFMRI_STAGE_OVERRIDES: dict[str, bool] = {
 # Each entry: set of trigger keywords → (pipeline_id, list of node ids)
 _RULES: list[tuple[set[str], str, list[str]]] = [
     (
-        {"realign", "头动", "运动校正", "motion correction"},
+        {"realign", "检查头动", "分析头动", "头动检查", "头动质控", "头动校正", "运动校正", "motion correction", "motion qc", "head motion qc", "check head motion"},
         "planned_motion_qc",
         [
             "data_inspection",
@@ -395,6 +398,7 @@ def _matches_native_full_goal(goal_lower: str) -> bool:
             "run ",
             "执行",
             "运行",
+            "进行",
         )
     )
     has_registered_rsfmri_scope = any(
@@ -640,7 +644,7 @@ def _build_native_full_preprocessing_plan(
         "native_dicom_conversion": bool(conversion_nodes),
     }
     science_decisions: dict[str, Any] = {}
-    if default_template is None:
+    if native_params.get("stage_overrides", {}).get("normalization") is not False:
         science_decisions.update(
             {
                 "template_required": True,
@@ -1026,6 +1030,15 @@ def generate_plan_from_goal(
     # ── Rule matching ──
     goal_lower = stripped.lower()
     project_context = _project_context_from_constraints(constraints)
+    intent = re.sub(
+        r"(?:不用于|不进行|不作|no |not for |without )(?:clinical )?(?:diagnosis|诊断)",
+        "", goal_lower,
+    )
+    if re.search(r"诊断|diagnos|头动预测|predict(?:ion)?\s+(?:head\s+)?motion", intent):
+        return response(
+            ok=False, provider=provider, goal=goal, plan={}, validation={},
+            errors=["UNSUPPORTED_GOAL: requested prediction or diagnosis is outside the research workflow."],
+        )
     if _matches_acpc_goal(goal_lower):
         plan, missing = _build_acpc_plan(goal=stripped, provider=provider, project_context=project_context)
         if missing:
@@ -1150,6 +1163,18 @@ def generate_plan_from_goal(
             confidence=1.0,
             clarification_required=True,
             goal_contract_candidate=goal_contract.semantics,
+        )
+    if (
+        _matches_native_full_goal(goal_lower)
+        and any(term in goal_lower for term in ("运行", "进行", "执行", "run ", "execute"))
+        and any(term in goal_lower for term in ("静息态", "resting-state", "registered", "已登记", "bids"))
+        and not (_has_registered_nifti_evidence(project_context) or _has_prepared_conversion_evidence(project_context))
+    ):
+        return response(
+            ok=False, provider=provider, goal=goal, plan={}, validation={},
+            clarification_required=True,
+            errors=["REGISTERED_FUNCTIONAL_INPUT_REQUIRED: register BIDS/NIfTI functional input before preprocessing."],
+            missing_prerequisites=["REGISTERED_FUNCTIONAL_INPUT_REQUIRED"],
         )
     if (
         (

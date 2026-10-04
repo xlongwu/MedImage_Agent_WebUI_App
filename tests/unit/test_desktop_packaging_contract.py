@@ -51,7 +51,7 @@ def test_packaged_electron_smoke_contract():
     assert "MEDIMAGE_DESKTOP_VISIBLE_SMOKE" in smoke
     assert "backend.managed" in smoke
     assert "agent_first_routes_visited" in smoke
-    assert 'ValidateSet("shell", "bids", "dicom", "recovery")' in smoke
+    assert 'ValidateSet("shell", "bids", "dicom", "recovery", "restart")' in smoke
     assert "create_agent_first_e2e_fixture.py" in smoke
     assert "MEDIMAGE_ENABLE_REVIEWED_EXECUTION" in smoke
     assert "RawdataManifestBefore" in smoke
@@ -68,8 +68,28 @@ def test_packaged_electron_smoke_contract():
     assert "release-artifacts.json" in smoke
     assert "rawdata-before.json" in smoke
     assert "rawdata-after.json" in smoke
+
+
+def test_packaged_smoke_tolerates_owner_exit_during_tree_observation():
+    smoke = read("desktop/packaging/test_electron_packaged_smoke.ps1")
+
+    assert "if ($AllowExited) { return @() }" in smoke
+    assert smoke.count("Get-OwnedTree $ElectronProcess.Id -AllowExited") >= 3
+    assert "$Owner.CreationDate -ne $ExpectedOwner.CreationDate" in smoke
+    assert "if ($Current -and ($Current.ExecutablePath -ne $Record.ExecutablePath -or $Current.CreationDate -ne $Record.CreationDate)) { return $null }" in smoke
     assert "final-screenshot.png" in smoke
     assert "Refusing to overwrite non-empty evidence directory" in smoke
+
+
+def test_packaged_sandbox_smoke_requires_measured_network_controls():
+    smoke = read("desktop/packaging/test_sandbox_packaged_smoke.ps1")
+    for case in ("network_loopback_ipv4", "network_loopback_ipv6", "network_host_ipv4"):
+        assert case in smoke
+    assert '$Result.network_isolation -ne "enforced"' in smoke
+    assert "$Result.network_probe.host_allowed" in smoke
+    assert "$Result.network_probe.sandbox_denied" in smoke
+    assert "not_enforced" not in smoke
+    assert "Refusing unsafe sandbox smoke cleanup" in smoke
 
 
 def test_electron_main_contract():
@@ -387,3 +407,80 @@ def test_desktop_docs_record_safety_boundaries():
     ]
     for phrase in required:
         assert phrase in docs
+
+
+def test_packaged_restart_is_a_separate_owned_two_launch_workflow():
+    smoke = read("desktop/packaging/test_electron_packaged_smoke.ps1")
+    main = read("desktop/electron/main.cjs")
+    assert '"restart"' in smoke
+    for contract in ("MEDIMAGE_DESKTOP_SMOKE_RESTART_PHASE", "restart-checkpoint.json", "Assert-OwnedProcess", "Wait-OwnedTreeExit", "first_owner", "second_owner", "original_run_id", "original_ticket_id", "original_dispatch_id"):
+        assert contract in smoke
+    assert "Stop-Process -Id $ElectronProcess.Id -Force" in smoke
+    assert "restartSmokeCheckpoint" in main and "verifyRestartWorkflow" in main
+    assert 'phase !== "resume"' in main
+    assert "run_id" in main and "dispatch_id" in main
+    assert "restart_original_binding_changed" in main
+    assert "restart_duplicate_execution" in main
+    assert "restart_checkpoint_not_running" in main
+
+
+def test_restart_resume_checks_original_authority_without_submitting_commands():
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    assert node is not None
+    # Execute the real entry-point functions with an offline read-only API.
+    # This verifies behavior, rather than treating text checks as a GUI smoke.
+    script = r'''
+const fs = require("node:fs"), vm = require("node:vm"), assert = require("node:assert/strict");
+const source = fs.readFileSync("desktop/electron/main.cjs", "utf8");
+const functions = source.slice(source.indexOf("async function restartExecutionIdentity"), source.indexOf("function collectExistingOutputPaths"));
+async function scenario(mutation) {
+  const initial = {task_id:"task", reviewed_plan_id:"plan", run_id:"run", ticket_id:"ticket", dispatch_id:"dispatch", state:"RUNNING", run_ids:["run"], dispatch_ids:["dispatch"], approval_event_ids:["approval"], dispatch_event_ids:["running"], event_ids:["approval","running"]};
+  const checkpoint = {identity: initial, owner:{pid:1, executable:"app"}};
+  const requests = [];
+  const context = {process:{env:{MEDIMAGE_DESKTOP_SMOKE_RESTART_PHASE:"resume"},pid:2,execPath:"app"}, readJsonEvidence:()=>checkpoint, navigateToAgentWorkspace:async()=>true, setTimeout,
+    requestBackendJson:async(method, route)=>{
+      requests.push({method, route}); assert.equal(method,"GET");
+      if(route.includes("agent/tasks"))return {task_id:"task",state:"needs_attention",outcome:"partial"};
+      if(route.includes("agent-lifecycles"))return {lifecycle:{reviewed_plan_id:"plan",run_id:mutation==="run"?"new-run":"run",execution_ticket_id:"ticket",state:"HUMAN_HANDOFF"},events:[{event_id:"approval",to_state:"APPROVED"},{event_id:"running",from_state:"EXECUTION_READY",to_state:"RUNNING"}]};
+      return {runs:[{reviewed_plan_id:"plan",run_id:mutation==="run"?"new-run":"run",dispatch_id:"dispatch"},...(mutation==="duplicate"?[{reviewed_plan_id:"plan",run_id:"other",dispatch_id:"other-dispatch"}]:[])]};
+    }};
+  vm.createContext(context); vm.runInContext(functions,context);
+  const result = await context.verifyRestartWorkflow({}, {project_id:"project"});
+  assert.equal(result.original_run_id,"run"); assert.equal(result.outcome,"partial");
+  assert.equal(result.execution_resubmitted,false); assert.equal(requests.length,3);
+}
+(async()=>{await scenario(null); await assert.rejects(()=>scenario("run"), /restart_original_binding_changed/); await assert.rejects(()=>scenario("duplicate"), /restart_duplicate_execution/);})().catch(error=>{console.error(error);process.exitCode=1});
+'''
+    result = subprocess.run([node, "-e", script], cwd=ROOT, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_restart_rejects_actual_asar_hash_drift_before_workspace_or_launch(tmp_path):
+    import json
+    import os
+    import shutil
+    import subprocess
+    import pytest
+    if os.name != "nt":
+        pytest.skip("Windows packaged entry point")
+    node = shutil.which("node")
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    assert node and shell
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "main.cjs").write_text("actual-current-entrypoint", encoding="utf-8")
+    resources = tmp_path / "app/resources"
+    (resources / "release").mkdir(parents=True)
+    exe = resources.parent / "test.exe"
+    exe.write_bytes(b"must never be executed")
+    asar = ROOT / "desktop/electron/node_modules/@electron/asar"
+    packed = subprocess.run([node, "-e", "require(process.argv[1]).createPackage(process.argv[2],process.argv[3]).catch(e=>{console.error(e);process.exitCode=1})", str(asar), str(package), str(resources / "app.asar")], capture_output=True, text=True)
+    assert packed.returncode == 0, packed.stderr
+    (resources / "release/build-provenance.json").write_text(json.dumps({"git": {"sha": "a" * 40, "clean": True}, "packaged_inputs": [{"path": "desktop/electron/main.cjs", "sha256": "0" * 64}]}), encoding="utf-8")
+    evidence = tmp_path / "evidence"
+    result = subprocess.run([shell, "-NoProfile", "-File", str(ROOT / "desktop/packaging/test_electron_packaged_smoke.ps1"), "-Workflow", "restart", "-AppExe", str(exe), "-ExpectedGitSha", "a" * 40, "-EvidenceDir", str(evidence)], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    assert result.returncode != 0
+    assert "Restart packaged input hash mismatch" in result.stdout + result.stderr
+    assert not evidence.exists()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.backend.app.schemas.sandbox import SANDBOX_POLICY_VERSION
+
 from datetime import UTC, datetime, timedelta
 import logging
 from pathlib import Path
@@ -222,7 +224,7 @@ class ExecutionTicketService:
         execution_environment_snapshot_id: str,
         execution_environment_hash: str,
         sandbox_policies: tuple[dict[str, object], ...] = (),
-        sandbox_policy_version: str = "windows-sandbox-v1",
+        sandbox_policy_version: str = SANDBOX_POLICY_VERSION,
         sandbox_policies_hash: str | None = None,
         execution_provider_kind: str = "local",
         memory_context_hash: str | None,

@@ -20,7 +20,8 @@ def _attempt(**updates: object) -> SimpleNamespace:
         "ended_at": None,
         "result_code": None,
         "output_count": 0,
-        "network_isolation": "not_enforced",
+        "policy_version": "windows-sandbox-v2",
+        "network_isolation": "unverified",
         "command_hash": "must-not-be-public",
         "policy_hash": "must-not-be-public",
     }
@@ -62,7 +63,8 @@ def test_sandbox_attempt_list_is_project_scoped_redacted_and_read_only() -> None
     assert store.list_calls == [("project-1", "run-1")]
     payload = response.json()["sandbox_attempts"][0]
     assert payload["sandbox_id"] == "sandbox-1"
-    assert payload["network_isolation"] == "not_enforced"
+    assert payload["network_isolation"] == "unverified"
+    assert payload["policy_version"] == "windows-sandbox-v2"
     assert "command_hash" not in payload
     assert "policy_hash" not in payload
 
@@ -73,6 +75,14 @@ def test_sandbox_attempt_detail_rejects_cross_project_reference() -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_measured_network_status_is_projected_without_execution() -> None:
+    store = ReadOnlySandboxStore(_attempt(status="SUCCEEDED", network_isolation="enforced"))
+    response = _client(store).get("/api/projects/project-1/runs/run-1/sandbox-attempts/sandbox-1")
+    assert response.status_code == 200
+    assert response.json()["sandbox_attempt"]["network_isolation"] == "enforced"
+    assert store.list_calls == []
 
 
 def test_sandbox_attempt_routes_require_a_registered_run() -> None:

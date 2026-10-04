@@ -117,10 +117,18 @@ def test_startup_recovery_hands_off_incomplete_intermediate_state(tmp_path, stat
         source_command="crash_fixture", occurred_at=datetime.now(UTC), from_state=task.state, to_state=state)
     store.transition_agent_lifecycle(changed, event, expected_state=task.state)
     reopened = SQLiteDesktopStore(tmp_path / "harness.sqlite")
-    assert AgentTaskReconciler(reopened).reconcile_incomplete_on_startup() == (task.lifecycle_id,)
+    reconciler = AgentTaskReconciler(reopened)
+    assert reconciler.reconcile_incomplete_on_startup() == (task.lifecycle_id,)
+    # Startup now atomically registers bounded durable work. Reading or
+    # registering the checkpoint must not perform its evidence transition.
+    assert reopened.get_agent_lifecycle(task.lifecycle_id).state == state
+    assert len(reopened.list_agent_execution_wakes(project_id=task.project_id)) == 1
+    reconciler.reconcile_once(project_id=task.project_id, lifecycle_id=task.lifecycle_id)
     recovered = reopened.get_agent_lifecycle(task.lifecycle_id)
     assert recovered.state == "HUMAN_HANDOFF"
     assert recovered.last_error is not None
+    assert reopened.list_execution_tickets(task.project_id) == []
+    assert reopened.list_run_links(task.project_id) == []
 
 
 def test_old_unique_memory_hit_survives_fts_candidate_filtering(tmp_path, monkeypatch):

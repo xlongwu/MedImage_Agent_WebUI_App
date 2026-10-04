@@ -20,7 +20,7 @@ export interface SandboxAttempt {
   result_code: string | null;
   output_count: number;
   policy_version: string;
-  network_isolation: "not_enforced";
+  network_isolation: "unverified" | "enforced";
 }
 
 export interface SandboxAttemptsResponse {

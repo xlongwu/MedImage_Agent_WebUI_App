@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import re
+import os
 import shutil
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
+
+from src.backend.app.core.exceptions import SafetyError
 
 from src.backend.app.tools.artifact_utils import (
+    is_safe_artifact_id,
     read_json_artifact,
     sha256_file,
     write_json_artifact,
@@ -39,6 +43,7 @@ def _iso_now() -> str:
 
 
 def _copy_file(source: Path, destination: Path) -> dict[str, Any]:
+    _assert_windows_export_path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
     return {
@@ -96,22 +101,12 @@ def _subject_ids_from_native_payloads(*payloads: dict[str, Any]) -> list[str]:
                 if isinstance(item, dict):
                     sid = str(item.get("subject_id") or "").strip()
                     if sid and sid.lower() != "unknown":
+                        if _SUBJECT_RE.fullmatch(sid) is None:
+                            raise SafetyError("REPORT_EXPORT_SUBJECT_ID_INVALID", code="REPORT_EXPORT_SUBJECT_ID_INVALID")
                         subjects.add(sid)
         for match in _SUBJECT_RE.findall(str(payload)):
             subjects.add(match)
     return sorted(subjects)
-
-
-def _candidate_project_roots(*paths: Path) -> list[Path]:
-    roots: list[Path] = []
-    for path in paths:
-        for base in (path, path.parent):
-            if base not in roots:
-                roots.append(base)
-    cwd = Path.cwd()
-    if cwd not in roots:
-        roots.append(cwd)
-    return roots
 
 
 def _native_run_score(run_dir: Path) -> float:
@@ -453,10 +448,8 @@ def _write_index(path: Path, export_id: str, gs: dict[str, Any] | None, es: dict
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _zip_directory(source_dir: Path, zip_path: Path) -> None:
-    if zip_path.exists():
-        zip_path.unlink()
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+def _zip_directory(source_dir: Path, archive: BinaryIO) -> None:
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for p in sorted(source_dir.rglob("*")):
             if p.is_file():
                 zf.write(p, arcname=p.relative_to(source_dir).as_posix())
@@ -467,8 +460,11 @@ def _package_relative_path(pkg: Path, path: Path) -> str:
 
 
 def _register(
-    copied: list[dict[str, Any]], pkg: Path, src: Path, dest: Path, category: str
+    copied: list[dict[str, Any]], pkg: Path, src: Path, dest: Path, category: str, project_root: Path
 ) -> None:
+    _assert_project_source(src, project_root)
+    if not dest.resolve().is_relative_to(pkg.resolve()):
+        raise SafetyError("REPORT_EXPORT_PATH_OUTSIDE_PACKAGE", code="REPORT_EXPORT_PATH_OUTSIDE_PACKAGE")
     info = _copy_file(src, dest)
     info["relative_path"] = _package_relative_path(pkg, dest)
     info["category"] = category
@@ -565,7 +561,93 @@ def _write_checksums(
     checksums_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
 
+def _assert_windows_export_path(path: Path) -> None:
+    length = len(str(path.resolve()).encode("utf-16-le")) // 2
+    if os.name == "nt" and length >= 260:
+        raise SafetyError("REPORT_EXPORT_PATH_TOO_LONG", code="REPORT_EXPORT_PATH_TOO_LONG", details={"path_length": length, "file_name": path.name})
+
+
+def _assert_project_source(path: Path, project_root: Path) -> None:
+    resolved = path.resolve()
+    if not resolved.is_relative_to(project_root):
+        raise SafetyError("REPORT_EXPORT_SOURCE_OUTSIDE_PROJECT", code="REPORT_EXPORT_SOURCE_OUTSIDE_PROJECT")
+    if "rawdata" in {part.casefold() for part in resolved.relative_to(project_root).parts}:
+        raise SafetyError("REPORT_EXPORT_RAWDATA_FORBIDDEN", code="REPORT_EXPORT_RAWDATA_FORBIDDEN")
+
+
 def export_rsfmri_report_package(
+    *, project_dir: str,
+    derivatives_dir: str = "./derivatives", reports_dir: str = "./reports",
+    work_dir: str = "./work", exports_dir: str = "./exports",
+    export_id: str | None = None, include_subject_qc: bool = True,
+    include_metrics: bool = True, include_fc: bool = True,
+    include_contracts: bool = True, include_pipeline_runs: bool = True,
+) -> dict[str, Any]:
+    """Build one project-scoped package, rolling back only this newly owned output."""
+    project = Path(project_dir).expanduser().resolve()
+    eid = export_id or _now_id()
+    if not is_safe_artifact_id(eid):
+        raise SafetyError("REPORT_EXPORT_ID_INVALID", code="REPORT_EXPORT_ID_INVALID")
+    roots = []
+    for value in (derivatives_dir, reports_dir, work_dir, exports_dir):
+        candidate = Path(value).expanduser()
+        resolved = (candidate if candidate.is_absolute() else project / candidate).resolve()
+        _assert_project_source(resolved, project)
+        roots.append(resolved)
+    d, rpt, work, exports = roots
+    relative = exports.relative_to(project)
+    if not relative.parts or relative.parts[0] not in {"work", "logs", "reports", "derivatives", "exports", "outputs"}:
+        raise SafetyError("REPORT_EXPORT_WRITE_ROOT_INVALID", code="REPORT_EXPORT_WRITE_ROOT_INVALID")
+    proot = (exports / "rsfmri_report_package").resolve()
+    if not proot.is_relative_to(exports):
+        raise SafetyError("REPORT_EXPORT_WRITE_ROOT_INVALID", code="REPORT_EXPORT_WRITE_ROOT_INVALID")
+    _assert_project_source(proot, project)
+    package = proot / eid
+    archive = proot / (eid + ".zip")
+    if package.exists() or archive.exists() or package.is_symlink() or archive.is_symlink():
+        raise SafetyError("REPORT_EXPORT_ALREADY_EXISTS", code="REPORT_EXPORT_ALREADY_EXISTS")
+    _assert_windows_export_path(package / "summary/group_summary/native_preproc_validation_report.json")
+    owned = False
+    archive_owned = False
+    try:
+        proot.mkdir(parents=True, exist_ok=True)
+        package.mkdir(exist_ok=False)
+        owned = True
+        result = _build_report_package(
+            project_dir=str(project), derivatives_dir=str(d), reports_dir=str(rpt),
+            work_dir=str(work), exports_dir=str(exports), export_id=eid,
+            include_subject_qc=include_subject_qc, include_metrics=include_metrics,
+            include_fc=include_fc, include_contracts=include_contracts,
+            include_pipeline_runs=include_pipeline_runs,
+        )
+        with archive.open("xb") as archive_handle:
+            archive_owned = True
+            _zip_directory(package, archive_handle)
+        with zipfile.ZipFile(archive) as handle:
+            if handle.testzip() is not None:
+                raise OSError("REPORT_EXPORT_ZIP_CORRUPT")
+        result["zip_size_bytes"] = archive.stat().st_size
+        return result
+    except BaseException as exc:
+        if owned:
+            assert package.resolve().parent == proot.resolve()
+            try:
+                if archive_owned and archive.exists():
+                    archive.unlink()
+                shutil.rmtree(package)
+            except OSError as cleanup_error:
+                raise SafetyError("REPORT_EXPORT_CLEANUP_FAILED", code="REPORT_EXPORT_CLEANUP_FAILED", details={
+                    "package_relative_path": package.relative_to(project).as_posix(),
+                    "original_code": getattr(exc, "code", type(exc).__name__),
+                    "cleanup_errno": cleanup_error.errno,
+                }) from exc
+        if isinstance(exc, OSError):
+            raise SafetyError("REPORT_EXPORT_WRITE_FAILED", code="REPORT_EXPORT_WRITE_FAILED", details={"errno": exc.errno, "winerror": getattr(exc, "winerror", None)}) from exc
+        raise
+
+
+def _build_report_package(
+    project_dir: str,
     derivatives_dir: str = "./derivatives",
     reports_dir: str = "./reports",
     work_dir: str = "./work",
@@ -591,7 +673,11 @@ def export_rsfmri_report_package(
     copied: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     subs = _discover_subjects(d)
-    native_run = _discover_latest_native_run(*_candidate_project_roots(d, rpt, w, e))
+    native_run = _discover_latest_native_run(Path(project_dir))
+    if native_run is not None:
+        _assert_project_source(native_run, Path(project_dir))
+        for relative in (_NATIVE_SUMMARY_REL, _NATIVE_VALIDATION_REL, _NATIVE_FINAL_REL):
+            _assert_project_source(native_run / relative, Path(project_dir))
 
     # Group summary
     gb = rpt / "rsfmri" / "group_summary"
@@ -609,7 +695,7 @@ def export_rsfmri_report_package(
             )
         for src, rel, category in source_specs:
             if src.is_file():
-                _register(copied, pkg, src, pkg / rel, category)
+                _register(copied, pkg, src, pkg / rel, category, project_root=Path(project_dir))
     elif not gfs:
         fallback_group_summary, generated, warning = _write_missing_group_summary(pkg, subs)
         warnings.append(warning)
@@ -622,32 +708,32 @@ def export_rsfmri_report_package(
             )
     for s in gfs:
         dst = pkg / "summary" / "group_summary" / s.name
-        _register(copied, pkg, s, dst, "group_summary")
+        _register(copied, pkg, s, dst, "group_summary", project_root=Path(project_dir))
         if s.name == "subject_metrics_table.csv":
-            _register(copied, pkg, s, pkg / "tables" / "subject_metrics_table.csv", "table")
+            _register(copied, pkg, s, pkg / "tables" / "subject_metrics_table.csv", "table", project_root=Path(project_dir))
     for s in _safe_collect_files(rpt / "rsfmri", ["*.json", "*.md"]):
         if "group_summary" in s.parts:
             continue
-        _register(copied, pkg, s, pkg / "summary" / "stage_reports" / s.name, "stage_report")
+        _register(copied, pkg, s, pkg / "summary" / "stage_reports" / s.name, "stage_report", project_root=Path(project_dir))
 
     # Subject QC & confounds
     if include_subject_qc:
         for sid in subs:
             for s in _safe_collect_files(d / "rsfmri_qc" / sid, ["*.json", "*.md"]):
-                _register(copied, pkg, s, pkg / "subjects" / sid / "qc" / s.name, "subject_qc")
+                _register(copied, pkg, s, pkg / "subjects" / sid / "qc" / s.name, "subject_qc", project_root=Path(project_dir))
             for s in _safe_collect_files(
                 d / "rsfmri_confounds" / sid, ["*.json", "*.tsv", "*.csv", "*.md"]
             ):
                 _register(
                     copied, pkg, s, pkg / "subjects" / sid / "confounds" / s.name, "confounds"
-                )
+                , project_root=Path(project_dir))
 
     # Metrics
     if include_metrics:
         for sid in subs:
             md = d / "rsfmri_metrics" / sid
             for s in _safe_collect_files(md, ["*.json", "*.md", "*.tsv", "*.csv"]):
-                _register(copied, pkg, s, pkg / "metrics" / sid / s.name, "metrics")
+                _register(copied, pkg, s, pkg / "metrics" / sid / s.name, "metrics", project_root=Path(project_dir))
             if md.exists():
                 for s in sorted(md.glob("*")):
                     if s.is_file() and s.suffix in EXCLUDED_EXTENSIONS:
@@ -660,7 +746,7 @@ def export_rsfmri_report_package(
         for sid in subs:
             fd = d / "rsfmri_fc" / sid
             for s in _safe_collect_files(fd, ["*.json", "*.tsv", "*.csv", "*.md"]):
-                _register(copied, pkg, s, pkg / "fc" / sid / s.name, "functional_connectivity")
+                _register(copied, pkg, s, pkg / "fc" / sid / s.name, "functional_connectivity", project_root=Path(project_dir))
             if fd.exists():
                 for s in sorted(fd.glob("*")):
                     if s.is_file() and s.suffix in EXCLUDED_EXTENSIONS:
@@ -675,9 +761,9 @@ def export_rsfmri_report_package(
         if not dc and not gc:
             warnings.append("No DPABI/GPU contracts found.")
         for s in dc:
-            _register(copied, pkg, s, pkg / "contracts" / "dpabi" / s.name, "dpabi_contract")
+            _register(copied, pkg, s, pkg / "contracts" / "dpabi" / s.name, "dpabi_contract", project_root=Path(project_dir))
         for s in gc:
-            _register(copied, pkg, s, pkg / "contracts" / "gpu" / s.name, "gpu_contract")
+            _register(copied, pkg, s, pkg / "contracts" / "gpu" / s.name, "gpu_contract", project_root=Path(project_dir))
 
     # Pipeline runs
     if include_pipeline_runs:
@@ -695,7 +781,7 @@ def export_rsfmri_report_package(
                 s,
                 pkg / "pipeline_runs" / f"{s.parent.name}_summary.json",
                 "pipeline_run",
-            )
+             project_root=Path(project_dir))
 
     rp = pkg / "README.md"
     ip = pkg / "index.md"
@@ -762,9 +848,6 @@ def export_rsfmri_report_package(
     }
     write_json_artifact(mp, manifest)
     _write_checksums(pkg, copied, mp, csp)
-    _zip_directory(pkg, zp)
-
-    es["zip_size_bytes"] = int(zp.stat().st_size) if zp.exists() else None
     return es
 
 

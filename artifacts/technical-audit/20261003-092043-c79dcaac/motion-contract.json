@@ -1,0 +1,28 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "name": "motion-contract",
+  "started_at": "2026-10-03T01:48:33.862283+00:00",
+  "ended_at": "2026-10-03T01:48:36.930273+00:00",
+  "seconds": 3.07,
+  "command": "python -m pytest tests/unit/test_technical_audit_motion_goal_contract.py tests/unit/test_llm_planner.py --tb=short --basetemp=.pytest_tmp -q -ra",
+  "exit_code": 1,
+  "process_id": 29784,
+  "process_exited": true,
+  "baseline_manifest_sha256": "740395baf22d5e754489cde2471af70f215e0ed86c6516a44f4890c1b514e97e",
+  "result_lines": [
+    "F......................                                                  [100%]",
+    "================================== FAILURES ===================================",
+    "___________ test_supported_motion_goal_has_reviewable_goal_contract ___________",
+    "tests\\unit\\test_technical_audit_motion_goal_contract.py:14: in test_supported_motion_goal_has_reviewable_goal_contract",
+    "    assert contract.ok is True, contract.reason",
+    "E   AssertionError: GOAL_KIND_UNSUPPORTED_OR_AMBIGUOUS",
+    "E   assert False is True",
+    "E    +  where False = GoalContractBuildResult(ok=False, clarification_required=True, reason='GOAL_KIND_UNSUPPORTED_OR_AMBIGUOUS', semantics=None).ok",
+    "=========================== short test summary info ===========================",
+    "FAILED tests/unit/test_technical_audit_motion_goal_contract.py::test_supported_motion_goal_has_reviewable_goal_contract",
+    "1 failed, 22 passed in 1.98s"
+  ],
+  "retention_reason": "Minimal redacted command, assertions/summary, exit status and skip/failure evidence; raw temporary logs and databases deleted.",
+  "pre_retention_output_sha256": "30d467c8c1cdb9b78d1c4c48c73afa882b059c5a5678d81ff3fe64abbabcfe9d",
+  "input_identity_ref": "baseline.json#/input_fingerprints; scientific-inputs.json"
+}

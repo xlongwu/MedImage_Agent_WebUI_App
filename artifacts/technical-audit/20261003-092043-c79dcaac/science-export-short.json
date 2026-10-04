@@ -1,0 +1,19 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "name": "science-export-short",
+  "started_at": "2026-10-03T01:53:15.771982+00:00",
+  "ended_at": "2026-10-03T01:53:21.006017+00:00",
+  "seconds": 5.23,
+  "command": "python -m pytest tests/integration/test_native_preproc_run_validator.py::test_native_preproc_run_validator_accepts_report_export_bridge --tb=short --basetemp=.pytest_tmp -q -ra",
+  "exit_code": 0,
+  "process_id": 29504,
+  "process_exited": true,
+  "baseline_manifest_sha256": "740395baf22d5e754489cde2471af70f215e0ed86c6516a44f4890c1b514e97e",
+  "result_lines": [
+    "1 passed in 4.08s"
+  ],
+  "retention_reason": "Minimal redacted command, assertions/summary, exit status and skip/failure evidence; raw temporary logs and databases deleted.",
+  "pre_retention_output_sha256": "702d6a8da3b6b88eaa8c40c04a99ae02fa9f99aa936764f41d64516d1e1ef8d5",
+  "temp_isolation_override": "<repo>/.pytest_tmp (shorter approved task-only TEMP/TMP); desktop/memory/workspace remain command-local",
+  "input_identity_ref": "baseline.json#/input_fingerprints; scientific-inputs.json"
+}

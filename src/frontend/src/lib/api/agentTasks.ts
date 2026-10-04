@@ -1,5 +1,6 @@
 import type {
   AgentTaskEventPage,
+  AgentPlanEvidence,
   AgentHarnessActivityPage,
   AgentTaskListResponse,
   AgentTaskResponse,
@@ -10,6 +11,7 @@ import type {
   CreateAgentTaskRequest,
 } from "../types/agentTask";
 import { getJson, postJson } from "./client";
+import type { RegisteredScientificResource } from "./agentSettings";
 
 type RequestControls = {
   signal?: AbortSignal;
@@ -82,6 +84,20 @@ export function getAgentTaskHarness(
   });
 }
 
+export function getAgentPlanEvidence(
+  baseUrl: string,
+  projectId: string,
+  taskId: string,
+  planHash: string | null,
+  controls: RequestControls = {},
+): Promise<AgentPlanEvidence> {
+  const query = planHash ? `?${new URLSearchParams({ plan_hash: planHash })}` : "";
+  return getJson<AgentPlanEvidence>(`${taskPath(projectId, taskId)}/plan-evidence${query}`, {
+    baseUrl,
+    signal: controls.signal,
+  });
+}
+
 export function createAgentTask(
   baseUrl: string,
   projectId: string,
@@ -102,6 +118,24 @@ export function answerAgentTask(
   controls: RequestControls = {},
 ): Promise<AgentTaskResponse> {
   return postJson<AgentTaskResponse>(`${taskPath(projectId, taskId)}/answer`, request, {
+    baseUrl,
+    signal: controls.signal,
+  });
+}
+
+export function registerAgentTemplate(
+  baseUrl: string,
+  projectId: string,
+  taskId: string,
+  request: {
+    batch_id: string;
+    command_id: string;
+    actor: string;
+    resource: Omit<RegisteredScientificResource, "checksum">;
+  },
+  controls: RequestControls = {},
+): Promise<AgentTaskResponse> {
+  return postJson<AgentTaskResponse>(`${taskPath(projectId, taskId)}/register-template`, request, {
     baseUrl,
     signal: controls.signal,
   });

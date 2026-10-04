@@ -38,6 +38,7 @@ class AgentReplayService:
     def _check_steps(self, bundle: AgentTraceBundle, violations: list[AgentReplayViolation]) -> None:
         previous_no = 0
         previous_state: str | None = None
+        previous_completed_at = None
         idempotency_keys: set[str] = set()
         for entry in bundle.entries:
             if entry.step_no <= previous_no:
@@ -47,9 +48,22 @@ class AgentReplayService:
                 violations.append(self._violation("TRACE_STEP_IDEMPOTENCY_DUPLICATE", entry.step_id, "Step idempotency key is duplicated."))
             idempotency_keys.add(entry.idempotency_key)
             if previous_state is not None and entry.state_before != previous_state:
-                violations.append(self._violation("TRACE_STEP_STATE_MISMATCH", entry.step_id, "Step state does not continue from the preceding step."))
+                # Human answers and deterministic continuation happen between
+                # model steps. Only the recorded, time-bounded lifecycle chain
+                # can bridge them; matching an arbitrary later event is unsafe.
+                bridged = previous_state
+                if previous_completed_at is not None:
+                    for event in bundle.lifecycle_events:
+                        if previous_completed_at < event.occurred_at <= entry.started_at:
+                            if event.from_state != bridged:
+                                bridged = None
+                                break
+                            bridged = event.to_state
+                if bridged != entry.state_before:
+                    violations.append(self._violation("TRACE_STEP_STATE_MISMATCH", entry.step_id, "Step state has no recorded lifecycle continuation from the preceding step."))
             if entry.state_after is not None:
                 previous_state = entry.state_after
+                previous_completed_at = entry.completed_at
             if entry.action_kind is not None and entry.validation_result == "accepted":
                 try:
                     assert_capability_allowed(entry.action_kind, entry.state_before)

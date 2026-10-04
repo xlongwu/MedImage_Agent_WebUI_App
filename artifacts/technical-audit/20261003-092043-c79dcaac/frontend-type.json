@@ -1,0 +1,16 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "name": "frontend-type",
+  "started_at": "2026-10-03T01:32:25.521535+00:00",
+  "ended_at": "2026-10-03T01:32:30.439221+00:00",
+  "seconds": 4.92,
+  "command": "npm --prefix src/frontend run typecheck",
+  "exit_code": 0,
+  "process_id": 1844,
+  "process_exited": true,
+  "baseline_manifest_sha256": "740395baf22d5e754489cde2471af70f215e0ed86c6516a44f4890c1b514e97e",
+  "result_lines": [],
+  "retention_reason": "Minimal redacted command, assertions/summary, exit status and skip/failure evidence; raw temporary logs and databases deleted.",
+  "pre_retention_output_sha256": "6ec6bbafd10ccc9dd4f935f80ddda57611076653626ac64e0e6d4ff1b1bde40d",
+  "input_identity_ref": "baseline.json#/input_fingerprints; scientific-inputs.json"
+}

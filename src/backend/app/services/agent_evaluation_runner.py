@@ -54,6 +54,7 @@ from src.backend.app.services.mock_store import SQLiteDesktopStore
 from src.backend.app.services.recovery_execution_service import RecoveryExecutionService
 from src.backend.app.services.reviewed_conversion_service import ReviewedConversionService
 from src.backend.app.services.reviewed_execution_service import ReviewedExecutionService
+from src.backend.app.schemas.system_message import message
 
 _WAITING_STATES = {"WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"}
 
@@ -470,12 +471,12 @@ class AgentEvaluationRunner:
                 decision=DecisionItem(
                     item_id="eval-input",
                     kind="missing_input",
-                    question="Provide the registered project input.",
-                    impact="Planning cannot continue without registered evidence.",
+                    question=message('decision.missing_input.question'),
+                    impact=message('decision.missing_input.impact'),
                     options=(PendingDecisionOption(
                         id="register",
-                        label="Register input",
-                        description="Register synthetic input.",
+                        label=message('option.register.label'),
+                        description=message('option.register.description'),
                     ),),
                     recommended_option="register",
                 ),

@@ -27,6 +27,7 @@ from src.backend.app.schemas.observation import (
     ScientificObservation,
 )
 from src.backend.app.services.agent_task_read_model import AgentTaskReadModel
+from src.backend.app.schemas.system_message import message
 
 NOW = datetime(2026, 7, 16, tzinfo=UTC)
 
@@ -71,7 +72,7 @@ def _plan() -> ReviewedPlanRecord:
         payload={
             "goal_contract": {"goal_contract_id": "goal-1", "goal_text": "Compute FC"},
             "approval_summary": {
-                "summary_hash": "summary-hash",
+                "schema_version": 6, "summary_hash": "summary-hash",
                 "execution_environment_snapshot_id": "environment-snapshot-1",
                 "execution_environment_hash": "environment-hash",
                 "goal": "Compute FC",
@@ -484,8 +485,8 @@ def test_goal_revision_is_not_project_input_and_exposes_decision_batch_id() -> N
         items=(DecisionItem(
             item_id="goal_revision",
             kind="goal_revision",
-            question="Revise the research goal.",
-            impact="UNSUPPORTED_GOAL",
+            question=message("test.fixture"),
+            impact=message("test.fixture"),
             answer_type="text",
         ),),
     )

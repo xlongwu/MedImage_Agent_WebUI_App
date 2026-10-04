@@ -1,0 +1,18 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "name": "frontend-build",
+  "started_at": "2026-10-03T01:33:45.325611+00:00",
+  "ended_at": "2026-10-03T01:33:49.784362+00:00",
+  "seconds": 4.46,
+  "command": "npm --prefix src/frontend run build -- --outDir .audit-build",
+  "exit_code": 0,
+  "process_id": 30576,
+  "process_exited": true,
+  "baseline_manifest_sha256": "740395baf22d5e754489cde2471af70f215e0ed86c6516a44f4890c1b514e97e",
+  "result_lines": [
+    "✓ built in 481ms"
+  ],
+  "retention_reason": "Minimal redacted command, assertions/summary, exit status and skip/failure evidence; raw temporary logs and databases deleted.",
+  "pre_retention_output_sha256": "7052881abb0d1671ba661178f45a0f7f6879657d32abffee858b17743de0ad05",
+  "input_identity_ref": "baseline.json#/input_fingerprints; scientific-inputs.json"
+}

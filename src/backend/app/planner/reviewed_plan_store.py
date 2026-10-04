@@ -370,7 +370,8 @@ def save_reviewed_plan(
             ),
         },
     )
-    if record.status in {"REVIEWED", "NEEDS_APPROVAL"}:
+    plan_only = normalized_plan.get("metadata", {}).get("plan_only") is True
+    if record.status in {"REVIEWED", "NEEDS_APPROVAL"} and not plan_only:
         from src.backend.app.services.approval_summary_service import (
             ApprovalSummaryService,
         )
@@ -392,7 +393,7 @@ def save_reviewed_plan(
             for key, value in summary.model_dump(mode="json").items()
             if key
             in {
-                "summary_hash",
+                "schema_version", "summary_hash",
                 "execution_environment_snapshot_id",
                 "execution_environment_hash",
                 "goal",

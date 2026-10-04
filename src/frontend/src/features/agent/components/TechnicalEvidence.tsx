@@ -1,9 +1,15 @@
-import { Badge } from "../../../components/ui";
+import { Badge, Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentTaskTechnicalDetails } from "../../../lib/types/agentTask";
 import styles from "../AgentWorkspace.module.css";
 
-export function TechnicalEvidence({ details }: { details: AgentTaskTechnicalDetails }) {
+export function TechnicalEvidence({
+  details,
+  onOpenPlan,
+}: {
+  details: AgentTaskTechnicalDetails;
+  onOpenPlan: () => void;
+}) {
   const { t } = useI18n();
   const gate = (value: boolean | null | undefined) =>
     value == null ? null : value ? t("common.on") : t("common.off");
@@ -64,6 +70,9 @@ export function TechnicalEvidence({ details }: { details: AgentTaskTechnicalDeta
           </div>
         ) : null}
         <Badge tone="warning">{t("agent.advancedMode")}</Badge>
+        <Button disabled={!details.plan_hash} onClick={onOpenPlan} variant="secondary">
+          {t("agent.planEvidence.open")}
+        </Button>
       </div>
       <dl>
         {rows.map(([label, value]) => (

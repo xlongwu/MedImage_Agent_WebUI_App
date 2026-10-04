@@ -1,8 +1,10 @@
+import { formatSystemMessage } from "../systemMessages";
 import { useMemo, useState } from "react";
 
 import { Badge, Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentTaskDecisionBatch } from "../../../lib/types/agentTask";
+import type { RegisteredScientificResource } from "../../../lib/api/agentSettings";
 import styles from "../AgentWorkspace.module.css";
 
 function fieldErrors(details: Record<string, unknown> | undefined): Record<string, string> {
@@ -20,22 +22,31 @@ export function DecisionBatchForm({
   errorDetails,
   mutating,
   onAnswer,
+  onRegisterTemplate,
 }: {
   batch: AgentTaskDecisionBatch;
   errorDetails?: Record<string, unknown>;
   mutating: boolean;
   onAnswer: (batchId: string, answers: { item_id: string; value: string }[]) => Promise<void>;
+  onRegisterTemplate: (
+    batchId: string,
+    resource: Omit<RegisteredScientificResource, "checksum">,
+  ) => Promise<void>;
 }) {
   const { t } = useI18n();
   const [answers, setAnswers] = useState<Record<string, string>>(() =>
     Object.fromEntries(batch.items.map((item) => [item.item_id, item.recommended_option ?? ""])),
   );
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
+  const [template, setTemplate] = useState({ name: "", path: "", license: "", space: "" });
+  const inputRequired = batch.items.some(
+    (item) =>
+      item.readiness === "input_required" ||
+      (item.answer_type === "option" && item.required && item.options.length === 0),
+  );
   const serverErrors = useMemo(() => fieldErrors(errorDetails), [errorDetails]);
-  const question = (item: (typeof batch.items)[number]) =>
-    item.kind === "goal_revision" ? t("agent.decision.goalRevision.question") : item.question;
-  const impact = (item: (typeof batch.items)[number]) =>
-    item.kind === "goal_revision" ? t("agent.decision.goalRevision.impact") : item.impact;
+  const question = (item: (typeof batch.items)[number]) => formatSystemMessage(t, item.question);
+  const impact = (item: (typeof batch.items)[number]) => formatSystemMessage(t, item.impact);
 
   const validate = () => {
     const errors: Record<string, string> = {};
@@ -69,6 +80,7 @@ export function DecisionBatchForm({
       className={styles.decisionForm}
       onSubmit={(event) => {
         event.preventDefault();
+        if (inputRequired) return;
         if (!validate()) return;
         void onAnswer(
           batch.batch_id,
@@ -95,7 +107,59 @@ export function DecisionBatchForm({
                 </small>
               ) : null}
             </div>
-            {item.answer_type === "option" ? (
+            {item.readiness === "input_required" ? (
+              <div>
+                <p>{t("agent.template.inputRequired")}</p>
+                {item.allowed_actions.includes("register_template") ? (
+                  <div className={styles.templateRegistration}>
+                    {(["name", "path", "license"] as const).map((key) => (
+                      <label key={key}>
+                        {t(`settings.agentDefaults.${key}`)}
+                        <input
+                          aria-label={t(`settings.agentDefaults.${key}`)}
+                          value={template[key]}
+                          onChange={(event) =>
+                            setTemplate((value) => ({ ...value, [key]: event.target.value }))
+                          }
+                        />
+                      </label>
+                    ))}
+                    <label>
+                      {t("settings.agentDefaults.space")}
+                      <select
+                        aria-label={t("settings.agentDefaults.space")}
+                        value={template.space}
+                        onChange={(event) =>
+                          setTemplate((value) => ({ ...value, space: event.target.value }))
+                        }
+                      >
+                        <option value="">{t("agent.template.selectSpace")}</option>
+                        <option value="MNI152">MNI152</option>
+                      </select>
+                    </label>
+                    <Button
+                      type="button"
+                      disabled={mutating || Object.values(template).some((value) => !value.trim())}
+                      onClick={() =>
+                        void onRegisterTemplate(batch.batch_id, {
+                          name: template.name.trim(),
+                          path: template.path.trim(),
+                          license: template.license.trim(),
+                          space: "MNI152",
+                        }).catch(() =>
+                          setLocalErrors((value) => ({
+                            ...value,
+                            [item.item_id]: t("agent.template.registrationFailed"),
+                          })),
+                        )
+                      }
+                    >
+                      {mutating ? t("agent.working") : t("agent.template.register")}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : item.answer_type === "option" ? (
               item.options.map((option) => (
                 <label key={option.id}>
                   <input
@@ -106,8 +170,8 @@ export function DecisionBatchForm({
                     value={option.id}
                   />
                   <span>
-                    <strong>{option.label}</strong>
-                    <small>{option.description}</small>
+                    <strong>{formatSystemMessage(t, option.label)}</strong>
+                    <small>{formatSystemMessage(t, option.description)}</small>
                   </span>
                   {option.recommended ? (
                     <Badge size="sm" tone="info">
@@ -168,7 +232,7 @@ export function DecisionBatchForm({
         <Button
           data-agent-action="answer_science_decision"
           data-primary-action="true"
-          disabled={mutating}
+          disabled={mutating || inputRequired}
           type="submit"
           variant="primary"
         >

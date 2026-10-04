@@ -32,6 +32,7 @@ from src.backend.app.schemas.agent_task import (
 from src.backend.app.core.config import ConfigService
 from src.backend.app.schemas.agent_harness import AgentHarnessSummary
 from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
+from src.backend.app.schemas.system_message import message
 
 
 class AgentTaskReadStore(Protocol):
@@ -470,7 +471,7 @@ class AgentTaskReadModel:
                         AgentTaskArtifactSummary(
                             artifact_id=lifecycle.reviewed_plan_id,
                             artifact_type="reviewed_plan",
-                            label="Reviewed preprocessing plan",
+                            label=message('artifact.reviewed_plan'),
                             uri=f"project://{lifecycle.project_id}/plans/{lifecycle.reviewed_plan_id}",
                             checksum=plan.plan_hash,
                             capability_level="metadata_only",
@@ -603,6 +604,8 @@ class AgentTaskReadModel:
                 max_value=item.max_value,
                 required=item.required,
                 evidence_refs=item.evidence_refs,
+                readiness=item.readiness,
+                allowed_actions=item.allowed_actions,
             )
             for item in pending.items
         )
@@ -760,28 +763,33 @@ class AgentTaskReadModel:
         )
 
     def _evidence_links(self, lifecycle, observation, evaluation) -> tuple[AgentTaskEvidenceLink, ...]:
-        entries: list[tuple[str, str, str, str | None]] = [
-            (lifecycle.lifecycle_id, "task_details", "Task details", lifecycle.lifecycle_id),
-            ("reviewed-plan", "reviewed_plan", "Reviewed plan", lifecycle.reviewed_plan_id),
-            ("ticket", "execution_ticket", "Execution ticket", lifecycle.execution_ticket_id),
-            ("run", "run", "Run", lifecycle.run_id),
-            ("observation", "observation", "Observation", observation.observation_id if observation else None),
-            ("evaluation", "goal_evaluation", "Goal evaluation", evaluation.goal_evaluation_id if evaluation else None),
-            ("diagnosis", "diagnosis", "Diagnosis", lifecycle.diagnosis_id),
-            ("recovery", "recovery", "Recovery", lifecycle.recovery_proposal_id),
-            ("audit", "audit", "Audit", lifecycle.audit_id),
+        entries: list[tuple[str, str, str | None]] = [
+            (lifecycle.lifecycle_id, "task_details", lifecycle.lifecycle_id),
+            ("reviewed-plan", "reviewed_plan", lifecycle.reviewed_plan_id),
+            ("ticket", "execution_ticket", lifecycle.execution_ticket_id),
+            ("run", "run", lifecycle.run_id),
+            ("observation", "observation", observation.observation_id if observation else None),
+            ("evaluation", "goal_evaluation", evaluation.goal_evaluation_id if evaluation else None),
+            ("diagnosis", "diagnosis", lifecycle.diagnosis_id),
+            ("recovery", "recovery", lifecycle.recovery_proposal_id),
+            ("audit", "audit", lifecycle.audit_id),
         ]
         links = []
-        for link_id, link_type, label, record_id in entries:
+        for link_id, link_type, record_id in entries:
             if record_id is None and link_type != "task_details":
                 continue
             links.append(
                 AgentTaskEvidenceLink(
                     id=link_id,
                     type=link_type,
-                    label=label,
+                    label=message("evidence." + link_type),
                     uri=self._uri(lifecycle.project_id, link_type, str(record_id)),
-                    available=record_id is not None,
+                    available=(record_id is not None and (
+                        link_type != "reviewed_plan" or (
+                            (linked_plan := self.store.get_reviewed_plan(record_id)) is not None
+                            and linked_plan.project_id == lifecycle.project_id
+                        )
+                    )),
                 )
             )
         return tuple(links)

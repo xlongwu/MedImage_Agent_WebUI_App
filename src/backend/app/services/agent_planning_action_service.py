@@ -11,6 +11,12 @@ from src.backend.app.schemas.agent_harness import DraftPlanAction, RequestDecisi
 from src.backend.app.schemas.agent_lifecycle import PendingDecisionBatch
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
+from src.backend.app.schemas.agent_decision_confirmation import (
+    AgentDecisionConfirmation, normalize_decision_value, value_is_offered,
+)
+from src.backend.app.schemas.memory import MemoryContext
+from src.backend.app.services.agent_evidence_service import AgentEvidenceService
+from src.backend.app.core.exceptions import SafetyError
 
 
 @dataclass(frozen=True)
@@ -121,7 +127,7 @@ class AgentPlanningActionService:
         event = self.orchestrator._event(
             record=result, command_id=command_id, actor=actor,
             source_command="harness_decision_required", from_state=current.state,
-            to_state=state, reason=action.decision.impact,
+            to_state=state, reason=action.decision.impact.code,
             details={"action_id": action_record.action_id, "context_hash": action_record.context_hash},
         )
         applied_action = action_record.model_copy(update={
@@ -132,5 +138,46 @@ class AgentPlanningActionService:
         transition = getattr(self.store, "transition_agent_lifecycle_with_harness_action", None)
         if not callable(transition):
             raise RuntimeError("AGENT_HARNESS_ACTION_TRANSACTION_UNAVAILABLE")
-        transition(result, event, applied_action, expected_state=current.state, expected_action_status="accepted")
+        duplicate_event = self.orchestrator._event(
+            record=current, command_id=f"harness:duplicate:{action_record.action_id}", actor=actor,
+            source_command="harness_decision_already_confirmed", from_state=current.state,
+            to_state=current.state, reason="AGENT_DECISION_ALREADY_CONFIRMED",
+            details={"action_id": action_record.action_id, "kind": action.decision.kind,
+                     "evidence_snapshot_hash": action_record.evidence_snapshot_hash},
+        )
+        committed = transition(
+            result, event, applied_action, expected_state=current.state, expected_action_status="accepted",
+            duplicate_guard=lambda authoritative: self._already_confirmed(authoritative, action, action_record),
+            duplicate_event=duplicate_event,
+        )
+        if committed.pending_decision_batch is None:
+            return HarnessActionResult(committed, "READY", None,
+                                       "AGENT_DECISION_ALREADY_CONFIRMED", action_already_applied=True)
         return HarnessActionResult(result, "WAITING_FOR_USER", None, action_already_applied=True)
+
+    def _already_confirmed(self, lifecycle, action, action_record) -> bool:
+        """Called under the store write transaction, before publishing a batch."""
+        context = lifecycle.command_context
+        memory_raw = context.get("memory_context")
+        memory = MemoryContext.model_validate(memory_raw) if isinstance(memory_raw, dict) else None
+        evidence = AgentEvidenceService(self.store).build_snapshot(
+            project_id=lifecycle.project_id, lifecycle_id=lifecycle.lifecycle_id,
+            memory_context=memory, persist=False,
+        )
+        projected = AgentEvidenceService.select_for_purpose(evidence, purpose=action_record.context_purpose)
+        if projected.snapshot_hash != action_record.evidence_snapshot_hash:
+            raise SafetyError("AGENT_DECISION_EVIDENCE_STALE", code="AGENT_DECISION_EVIDENCE_STALE")
+        raw = (context.get("confirmed_decisions") or {}).get(action.decision.kind)
+        if not isinstance(raw, dict):
+            return False
+        confirmation = AgentDecisionConfirmation.model_validate(raw)
+        value = normalize_decision_value(action.decision, str((context.get("science_answers") or {}).get(action.decision.kind, "")))
+        return (
+            confirmation.status == "confirmed" and confirmation.expires_at > self.now()
+            and confirmation.project_id == lifecycle.project_id
+            and confirmation.lifecycle_id == lifecycle.lifecycle_id
+            and confirmation.goal_hash == stable_hash({"goal": lifecycle.goal_text})
+            and confirmation.kind == action.decision.kind
+            and confirmation.evidence_snapshot_hash == evidence.snapshot_hash
+            and confirmation.value == value and value_is_offered(action.decision, value)
+        )

@@ -146,6 +146,12 @@ export const messagesEn = {
   "agent.decision.error.number": "Enter a valid number.",
   "agent.decision.error.minimum": "Enter a value of at least {value}.",
   "agent.decision.error.maximum": "Enter a value no greater than {value}.",
+  "agent.error.approvalAuthUnconfigured.title": "Execution approval is not configured",
+  "agent.error.approvalAuthUnconfigured.message":
+    "Open the configured desktop application to approve this plan. Execution has not started.",
+  "agent.error.approvalAuthRequired.title": "Execution approval authorization is required",
+  "agent.error.approvalAuthRequired.message":
+    "Reopen the authorized desktop application before approving this plan. Execution has not started.",
   "agent.error.decisionStale": "The decision batch changed. Refresh and review the current items.",
   "agent.error.decisionExpired":
     "The decision batch expired. Refresh and review the current items.",
@@ -3111,7 +3117,8 @@ export const messagesEn = {
     "This project run has no current Agent Task approval summary. No approval state is inferred.",
   "runs.sandbox.title": "Sandbox attempts",
   "runs.sandbox.empty": "No sandbox process was used for this run.",
-  "runs.sandbox.networkNotEnforced": "Network isolation is not enforced by this sandbox provider.",
+  "runs.sandbox.network.unverified": "Network isolation has not been verified for this attempt.",
+  "runs.sandbox.network.enforced": "Network isolation enforced for this attempt.",
   "runs.sandbox.status.PREPARING": "Preparing",
   "runs.sandbox.status.PREPARED": "Prepared",
   "runs.sandbox.status.RUNNING": "Running",
@@ -3217,6 +3224,170 @@ export const messagesEn = {
   "executionGraph.tableCaption": "Pipeline nodes and dependencies",
   "executionGraph.node": "Node",
   "executionGraph.subjectColumn": "Subjects",
+  "agent.planEvidence.title": "Saved plan evidence",
+  "agent.planEvidence.open": "View saved plan",
+  "agent.planEvidence.loading": "Loading saved plan…",
+  "agent.planEvidence.failure":
+    "The saved plan could not be loaded. Refresh the task and try again.",
+  "agent.planEvidence.missing": "The saved plan record is unavailable.",
+  "agent.planEvidence.back": "Back to task details",
+  "agent.planEvidence.scope": "Subject scope",
+  "agent.planEvidence.sessions": "Sessions",
+  "agent.planEvidence.include": "Include",
+  "agent.planEvidence.exclude": "Exclude",
+  "agent.planEvidence.completeness": "Complete scope required",
+  "agent.error.versionUnsupported":
+    "This task uses an unsupported contract version. Preserve its records and create a new reviewed task; its old approval cannot authorize execution.",
+  "agent.planEvidence.projectScope": "Project scope recorded in the reviewed plan",
+  "agent.planEvidence.inputs": "Bound input evidence",
+  "agent.trace.service": "Responsible service",
+  "agent.trace.result": "Recorded result",
+  "agent.trace.missing": "Missing evidence",
+  "agent.trace.reason.REQUEST_CURRENT_SCIENCE_CONFIRMATION":
+    "Request current-task scientific confirmation",
+  "agent.trace.reason.DRAFT_REVIEWED_PLAN": "Draft a plan from the bound evidence",
+  "agent.trace.reason.NO_ACCEPTED_ACTION": "No accepted planning action",
+  "settings.agentDefaults.space": "Declared space",
+  "settings.agentDefaults.nativeSpace": "Native space",
+  "agent.template.selectSpace": "Select the resource's documented space",
+  "agent.template.inputRequired":
+    "Register a licensed 3D MNI152 template from this project's resources folder before confirming scientific choices. Registration does not run normalization.",
+  "agent.template.register": "Register template and rebuild choices",
+  "agent.template.registrationFailed":
+    "Template registration failed. Check the project path, NIfTI volume, license and declared space.",
+  "semantic.decision.dicom_conversion.question":
+    "Approve the reviewed research DICOM conversion package before preprocessing?",
+  "semantic.decision.dicom_conversion.impact":
+    "The controlled package covers {count} DICOM files. This prepares safety evidence only; conversion requires later approval, ticket and gateway dispatch.",
+  "semantic.decision.subject_id.question":
+    "Which registered subject should enter the reviewed preprocessing scope?",
+  "semantic.decision.subject_id.impact":
+    "The selected subject ID is bound into the reviewed node parameters, Approval Summary, execution ticket hash, and output provenance.",
+  "semantic.decision.global_signal_regression.question":
+    "Should global-signal regression be included in nuisance regression?",
+  "semantic.decision.global_signal_regression.impact":
+    "GSR changes correlation structure and can introduce negative correlations.",
+  "semantic.decision.repetition_time.question":
+    "Conflicting repetition-time values were detected. Which source is authoritative?",
+  "semantic.decision.repetition_time.impact":
+    "TR controls slice timing, filtering, and spectral frequency interpretation.",
+  "semantic.decision.template.question": "Which registered normalization template should be used?",
+  "semantic.decision.template.impact":
+    "The template changes spatial correspondence and downstream comparability.",
+  "semantic.decision.overwrite.question":
+    "A prior run already occupies the proposed output scope. How should this run proceed?",
+  "semantic.decision.overwrite.impact": "Existing derivatives are never silently overwritten.",
+  "semantic.decision.experimental_backend.question":
+    "This plan selects an experimental GPU backend. Which reviewed backend should be used?",
+  "semantic.decision.experimental_backend.impact":
+    "Backend selection can change precision, reproducibility, and validation status.",
+  "semantic.decision.missing_input.question": "Provide the registered project input.",
+  "semantic.decision.missing_input.impact": "Planning cannot continue without registered evidence.",
+  "semantic.decision.atlas.question":
+    "Which registered atlas should define functional-connectivity regions?",
+  "semantic.decision.atlas.impact":
+    "The atlas changes matrix dimensions and scientific comparability.",
+  "semantic.option.bids.label": "Use BIDS TR",
+  "semantic.option.bids.description": "Use the BIDS sidecar value.",
+  "semantic.option.project.label": "Use project TR",
+  "semantic.option.project.description": "Use the registered project value.",
+  "semantic.resource.name": "{resource_name}",
+  "semantic.resource.details": "Registered resource; license={license}; checksum={checksum}",
+  "semantic.option.approve_conversion.label": "Approve conversion preparation",
+  "semantic.option.approve_conversion.description":
+    "Review all detected mappings and bind the project-local native converter, read-only rawdata checksum, fail-if-exists outputs, rollback plan, audit record, and research-only restrictions.",
+  "semantic.option.revise_goal.label": "Revise goal",
+  "semantic.option.revise_goal.description":
+    "Do not prepare conversion; revise the task goal or project input.",
+  "semantic.decision.goal_revision.question":
+    "Revise the research goal to match a supported workflow.",
+  "semantic.decision.goal_revision.impact":
+    "Revise the goal to match a supported research workflow.",
+  "semantic.option.subject.description": "Run the reviewed scope only for {subject_ids}.",
+  "semantic.option.tr.label": "Use {source} TR",
+  "semantic.option.tr.description": "Use the {source} value ({value} s).",
+  "semantic.option.include.label": "Include GSR",
+  "semantic.option.include.description": "Regress the global mean signal.",
+  "semantic.option.exclude.label": "Exclude GSR",
+  "semantic.option.exclude.description": "Keep the global mean signal.",
+  "semantic.option.fail_if_exists.label": "Stop if present",
+  "semantic.option.fail_if_exists.description": "Preserve existing outputs and stop safely.",
+  "semantic.option.write_new_run_directory.label": "Create new run",
+  "semantic.option.write_new_run_directory.description":
+    "Write to a distinct versioned run directory.",
+  "semantic.option.use_cpu.label": "Use CPU",
+  "semantic.option.use_cpu.description": "Use the validated CPU path.",
+  "semantic.option.allow_experimental_gpu.label": "Keep experimental GPU",
+  "semantic.option.allow_experimental_gpu.description":
+    "Keep the explicitly labeled experimental backend.",
+  "semantic.option.memory_value.label": "Use {value}",
+  "semantic.option.__ignore_memory__.label": "Do not use memory",
+  "semantic.option.__ignore_memory__.description":
+    "Ignore this suggestion for the current Agent Task.",
+  "semantic.option.register.label": "Register input",
+  "semantic.option.register.description": "Register synthetic input.",
+  "semantic.approval.scope.title": "Execution scope",
+  "semantic.approval.scope.summary":
+    "Approve exactly {count} reviewed node(s) for the selected scope: {subject_ids}.",
+  "semantic.approval.safety.title": "Safety boundary",
+  "semantic.approval.safety.summary":
+    "Source rawdata remains read-only; writes are limited to the listed project roots.",
+  "semantic.approval.environment.title": "Execution environment",
+  "semantic.approval.environment.summary":
+    "Approve the current environment for the reviewed backends: {backend_facts}.",
+  "semantic.approval.resource_policy.title": "Automatic resource policy",
+  "semantic.approval.resource_policy.summary":
+    "CPU scheduler and scientific compute backend are selected at runtime within the reviewed auto/auto policy; the actual choice is recorded in provenance.",
+  "semantic.approval.dicom_conversion.title": "Native DICOM conversion",
+  "semantic.approval.dicom_conversion.summary":
+    "Use the persisted release-approved mapping package; verify rawdata unchanged before preprocessing handoff.",
+  "semantic.approval.acpc_estimation.title": "Automatic ACPC estimation",
+  "semantic.approval.acpc_estimation.summary":
+    "Use registered T1w {artifact_id} with template {template_id}; write only ACPC derivatives. QC failure stops for human review.",
+  "semantic.limitation.acpc":
+    "AC/PC coordinates are template-back-projected estimates; independent manual-reference validation is pending.",
+  "semantic.memory.influence": "Suggested {decision_kind} requires confirmation in this task.",
+  "semantic.science.subject_scope": "Subject scope: {subject_ids}",
+  "semantic.warning.environment":
+    "Review the environment warning ({diagnostic_id}) before execution.",
+  "semantic.artifact.reviewed_plan": "Reviewed preprocessing plan",
+  "semantic.decision.memory.question":
+    "Use this previously confirmed project decision for the current task?",
+  "semantic.decision.memory.impact":
+    "Scientific memory is advisory and requires confirmation for every Agent Task.",
+  "semantic.option.memory_value.description":
+    "Confirm the remembered value for this Agent Task only.",
+  "semantic.artifact.registered": "Registered artifact ({diagnostic_id})",
+  "semantic.unknown": "Presentation unavailable; diagnostic ID: {code}",
+  "semantic.scope.all": "Project scope",
+  "semantic.source.bids": "BIDS",
+  "semantic.source.project": "project",
+  "semantic.source.dicom": "DICOM",
+  "semantic.value.true": "true",
+  "semantic.value.false": "false",
+  "semantic.value.include": "included",
+  "semantic.value.exclude": "excluded",
+  "semantic.status.available": "available",
+  "semantic.status.disabled": "disabled",
+  "semantic.status.unavailable": "unavailable",
+  "semantic.kind.atlas": "atlas",
+  "semantic.kind.template": "template",
+  "semantic.kind.global_signal_regression": "global signal regression",
+  "semantic.kind.repetition_time": "repetition time",
+  "semantic.kind.overwrite": "overwrite",
+  "semantic.kind.experimental_backend": "experimental backend",
+  "semantic.kind.subject_id": "subject id",
+  "semantic.kind.other": "other",
+  "semantic.evidence.task_details": "Task details",
+  "semantic.evidence.reviewed_plan": "Reviewed plan",
+  "semantic.evidence.execution_ticket": "Execution ticket",
+  "semantic.evidence.run": "Run",
+  "semantic.evidence.observation": "Observation",
+  "semantic.evidence.goal_evaluation": "Goal evaluation",
+  "semantic.evidence.diagnosis": "Diagnosis evidence",
+  "semantic.evidence.recovery": "Recovery",
+  "semantic.evidence.audit": "Audit",
+  "semantic.science.confirmed": "Confirmed {decision_kind}: {value}",
 } as const;
 
 export type MessageKey = keyof typeof messagesEn;

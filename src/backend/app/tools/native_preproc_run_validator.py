@@ -592,13 +592,20 @@ def _validate_report_chain(
     try:
         from src.backend.app.tools.report_exporter import export_rsfmri_report_package
 
-        with tempfile.TemporaryDirectory(prefix="native_report_export_probe_") as tmp:
+        work_root = (project_dir / "work").resolve()
+        if not work_root.is_relative_to(project_dir) or "rawdata" in {part.casefold() for part in work_root.parts}:
+            raise ValueError("REPORT_EXPORT_PROBE_WRITE_ROOT_INVALID")
+        if not run_dir.is_relative_to(project_dir):
+            raise ValueError("REPORT_EXPORT_PROBE_RUN_OUTSIDE_PROJECT")
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="xp-", dir=work_root) as tmp:
             result = export_rsfmri_report_package(
+                project_dir=str(project_dir),
                 derivatives_dir=str(project_dir / "derivatives"),
                 reports_dir=str(project_dir / "reports"),
                 work_dir=str(project_dir / "work"),
                 exports_dir=tmp,
-                export_id="native_report_export_probe",
+                export_id="p",
             )
         warnings = result.get("warnings") if isinstance(result, dict) else []
         _check(

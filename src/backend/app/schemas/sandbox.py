@@ -7,6 +7,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+SANDBOX_POLICY_VERSION = "windows-sandbox-v2"
+SANDBOX_ENVIRONMENT_KEYS = ("SystemRoot", "ComSpec", "PATH", "TEMP", "TMP", "LOCALAPPDATA")
+SandboxPolicyVersion = Literal["windows-sandbox-v2"]
+SandboxNetworkIsolation = Literal["unverified", "enforced"]
+
 
 class SandboxLimits(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -26,16 +31,17 @@ class SandboxPolicy(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal[1] = 1
-    policy_version: str = "windows-sandbox-v1"
+    policy_version: SandboxPolicyVersion = SANDBOX_POLICY_VERSION
     node_id: str
     backend_id: str
     provider: Literal["windows_restricted_process"]
     executable_id: str
     executable_path_hash: str
+    provider_runtime_hash: str
     readonly_root_hashes: tuple[str, ...]
     output_root_hashes: tuple[str, ...]
     allowed_environment_keys: tuple[str, ...]
-    network_isolation: Literal["not_enforced"] = "not_enforced"
+    network_isolation: Literal["appcontainer_no_network"] = "appcontainer_no_network"
     limits: SandboxLimits
     policy_hash: str
 
@@ -57,7 +63,7 @@ SandboxAttemptStatus = Literal[
 class SandboxAttemptRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     sandbox_id: str
     project_id: str
     run_id: str
@@ -76,7 +82,8 @@ class SandboxAttemptRecord(BaseModel):
     output_count: int = Field(default=0, ge=0)
     owner_pid: int | None = Field(default=None, ge=1)
     provider: str = "windows_restricted_process"
-    network_isolation: Literal["not_enforced"] = "not_enforced"
+    policy_version: SandboxPolicyVersion = SANDBOX_POLICY_VERSION
+    network_isolation: SandboxNetworkIsolation = "unverified"
 
 
 class SandboxProcessRequest(BaseModel):
@@ -107,3 +114,4 @@ class SandboxProcessResult(BaseModel):
     stdout_path: str
     stderr_path: str
     output_manifest_hash: str | None = None
+    network_isolation: Literal["enforced"]

@@ -1,0 +1,19 @@
+{
+  "command": [
+    "python",
+    "-m",
+    "pytest",
+    "tests/integration/test_agent_recovery_scan.py",
+    "tests/integration/test_technical_audit_startup_project_coverage.py",
+    "tests/unit/test_agent_task_scheduler.py",
+    "tests/unit/test_agent_execution_coordinator.py",
+    "tests/unit/test_agent_task_reconciler.py",
+    "tests/integration/test_technical_audit_persistent_waits.py",
+    "--tb=short",
+    "--basetemp=.pytest_tmp"
+  ],
+  "exit_code": 0,
+  "stdout": "============================= test session starts =============================\nplatform win32 -- Python 3.13.9, pytest-8.4.2, pluggy-1.5.0\nPySide6 6.9.2 -- Qt runtime 6.9.2 -- Qt compiled 6.9.2\nrootdir: <REPO_ROOT>\nconfigfile: pytest.ini\nplugins: anyio-4.10.0, qt-4.5.0\ncollected 29 items\n\ntests\\integration\\test_agent_recovery_scan.py ...........                [ 37%]\ntests\\integration\\test_technical_audit_startup_project_coverage.py .     [ 41%]\ntests\\unit\\test_agent_task_scheduler.py ......                           [ 62%]\ntests\\unit\\test_agent_execution_coordinator.py ..                        [ 68%]\ntests\\unit\\test_agent_task_reconciler.py .......                         [ 93%]\ntests\\integration\\test_technical_audit_persistent_waits.py ..            [100%]\n\n============================== warnings summary ===============================\n..\\..\\Anaconda3\\Lib\\site-packages\\fastapi\\testclient.py:1\n  <PYTHON_ENV>\\Lib\\site-packages\\fastapi\\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient as TestClient  # noqa\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n======================= 29 passed, 1 warning in 17.61s ========================\n",
+  "stderr": "",
+  "isolated": true
+}

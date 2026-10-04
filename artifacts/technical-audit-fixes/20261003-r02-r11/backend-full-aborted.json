@@ -1,0 +1,6 @@
+{
+  "completed": false,
+  "exit_code": null,
+  "reason": "First run interrupted after parallel frontend recorder incorrectly cleaned its pytest temporary root; no completed result. Recorder corrected before reruns.",
+  "replacement": "backend-current-fresh.json"
+}

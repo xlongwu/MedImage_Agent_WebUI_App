@@ -1,0 +1,17 @@
+{
+  "command": [
+    "python",
+    "-m",
+    "pytest",
+    "tests/unit/test_agent_template_input.py",
+    "tests/unit/test_project_agent_settings.py",
+    "tests/unit/test_agent_task_commands.py",
+    "tests/unit/test_llm_planner.py",
+    "--tb=short",
+    "--basetemp=.pytest_tmp"
+  ],
+  "exit_code": 0,
+  "stdout": "============================= test session starts =============================\nplatform win32 -- Python 3.13.9, pytest-8.4.2, pluggy-1.5.0\nPySide6 6.9.2 -- Qt runtime 6.9.2 -- Qt compiled 6.9.2\nrootdir: <REPO_ROOT>\nconfigfile: pytest.ini\nplugins: anyio-4.10.0, qt-4.5.0\ncollected 79 items\n\ntests\\unit\\test_agent_template_input.py ....                             [  5%]\ntests\\unit\\test_project_agent_settings.py ....                           [ 10%]\ntests\\unit\\test_agent_task_commands.py ................................. [ 51%]\n................                                                         [ 72%]\ntests\\unit\\test_llm_planner.py ......................                    [100%]\n\n============================= 79 passed in 4.71s ==============================\n",
+  "stderr": "",
+  "isolated": true
+}

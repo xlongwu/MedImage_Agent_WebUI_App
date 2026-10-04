@@ -8,7 +8,7 @@ import type { AgentTaskController } from "../useAgentTaskController";
 
 function task(projectId = "project-1"): AgentTaskResponse {
   return {
-    schema_version: 2,
+    schema_version: 3,
     task_id: "task-1",
     project_id: projectId,
     state: "waiting_for_user",
@@ -40,15 +40,24 @@ function task(projectId = "project-1"): AgentTaskResponse {
         {
           item_id: "atlas",
           kind: "atlas",
-          question: "Choose an atlas",
-          impact: "Changes the analysis.",
-          options: [{ id: "aal", label: "AAL", description: "Atlas A", recommended: true }],
+          question: { code: "resource.name", params: { resource_name: "Choose an atlas" } },
+          impact: { code: "resource.name", params: { resource_name: "Changes the analysis." } },
+          options: [
+            {
+              id: "aal",
+              label: { code: "resource.name", params: { resource_name: "AAL" } },
+              description: { code: "resource.name", params: { resource_name: "Atlas A" } },
+              recommended: true,
+            },
+          ],
           recommended_option: "aal",
           answer_type: "option",
           min_value: null,
           max_value: null,
           required: true,
           evidence_refs: [],
+          readiness: "ready",
+          allowed_actions: [],
         },
       ],
     },
@@ -64,6 +73,8 @@ function task(projectId = "project-1"): AgentTaskResponse {
 
 function controller(currentTask: AgentTaskResponse | null): AgentTaskController {
   return {
+    registerTemplate: vi.fn().mockResolvedValue(undefined),
+    readPlanEvidence: vi.fn(),
     answer: vi.fn().mockResolvedValue(undefined),
     approve: vi.fn().mockResolvedValue(undefined),
     approveRecovery: vi.fn().mockResolvedValue(undefined),
@@ -155,6 +166,7 @@ describe("AgentAttentionDialog", () => {
       },
       decision_batch: null,
       approval_summary: {
+        schema_version: 6,
         summary_hash: "summary-a",
         execution_environment_snapshot_id: "environment-a",
         execution_environment_hash: "environment-hash-a",

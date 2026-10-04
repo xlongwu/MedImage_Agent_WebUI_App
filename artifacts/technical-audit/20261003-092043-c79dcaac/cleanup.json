@@ -1,0 +1,23 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "checked_at": "2026-10-03T02:14:18.4881552Z",
+  "removed": [
+    ".audit_tmp",
+    "src/frontend/.audit-build"
+  ],
+  "pytest_residuals": 0,
+  "task_temporary_directories": 0,
+  "captured_manifest_code_runs_in_memory_only": true,
+  "tracked_file_delete_count": 0,
+  "production_files_changed": 0,
+  "owned_server_processes": 0,
+  "audit_port_listeners": 0,
+  "process_verification": "All six owned child Popen.wait calls completed; ordinary desktop read-only CIM and listener verification returned 0",
+  "preserved": [
+    "preexisting dirty implementation",
+    ".zcodeignore",
+    "tracked fixtures and rawdata",
+    "old packages",
+    "historical offline reports"
+  ]
+}

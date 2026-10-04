@@ -143,6 +143,7 @@ Route -> Request/Response Schema -> Service
 - 显式 node 输出目录不得意外覆盖或抹掉其他默认批准 write roots。
 - 禁止硬编码凭据、私有绝对路径和研究数据路径；`.env` 不得提交，配置示例维护在 `.env.example`。
 - 禁止绕过 Approval Gate、Execution Ticket、审计、safe-path 或 allowlist。
+- Windows 子进程必须在 suspended 状态完成无 capability 的 AppContainer token 实测与 Job Object 绑定后才能恢复；不得为处理启动失败而去掉隔离属性。隔离策略要求与实际施加状态必须分开，固定探针必须包含沙箱内阻断、沙箱外可达的对照，并回归文件、超时、内存与进程树边界（见 `docs/安全与审批/安全边界.md`）。
 - 禁止从 LLM 文本直接执行命令、引入无限自主循环或把历史审批当作当前权限。
 
 ### 3.6 科学计算真实性
@@ -255,6 +256,9 @@ Summary。忘记必须清除明文、保留最小 tombstone 并阻止旧来源�
 
 ### 5.4 生命周期命令与错误必须后端权威
 
+- 启动恢复必须在 SQL 读取前限定 eligible 状态和分页大小，并持久保存周期上界与 keyset 游标；页内 wake 与游标原子提交。批大小不能成为项目或 lifecycle 总上限。已消费的原 checkpoint 不得复活，执行恢复只能追踪原 run/ticket/dispatch；启动登记不等于同步执行协调。
+- 模型重复提问必须按当前项目/task、goal 内容、kind、确认值、证据与有效期判断；记忆建议不算确认。跨批 Replay 必须核对步骤之间的真实用户事件，不能忽略缺失的 answer 事件或自动重发结果未知的 provider 调用。
+
 - **触发条件**：修改 create、answer/update goal、approve、cancel、reconcile 或公共状态映射。
 - **必须执行**：命令按 command ID 幂等；同一 lifecycle 只能有一个未解决决策；只允许状态机明确支持的取消；重复取消幂等；运行中或终态取消返回结构化领域拒绝。执行命令返回前必须进行一次有界终态协调；仍在运行时再启动单 owner 的有界 monitor。前端只轮询后端投影并在终态停止，不得长期保留本地“运行中”。
 - **禁止事项**：不得伪造成功、用 UI 本地状态覆盖后端、把结构化拒绝渲染为通用“服务不可用”。GET 投影不得产生 reconcile 或其他副作用。
@@ -263,6 +267,8 @@ Summary。忘记必须清除明文、保留最小 tombstone 并阻止旧来源�
 
 ### 5.5 前后端结构化数据和 i18n 必须同步
 
+- 系统文案采用单一 semantic code 与 typed 参数；未知 code 只显示本地安全文案和诊断 ID。显示语言不能改变审批身份。保存方案详情必须通过 project/task/hash 绑定的只读接口，拒绝损坏身份、旧 hash 和任意资源 URI，任务切换不得呈现前任务的迟到结果。
+
 - **触发条件**：修改 Agent Task schema、状态、计数、证据链接、结果摘要或用户文案。
 - **必须执行**：优先增加结构化字段并同步 backend schema、client wrapper、TypeScript type、i18n catalog 和中英文测试。遗留稳定摘要若必须解析，只能使用一个集中 parser。Runs 工作区必须合并后台任务记录与项目级 `/runs` 记录；Agent Task 创建的 project run 以 `run_id` 为标识并覆盖同 ID 的陈旧后台记录，不得因为旧 `/api/tasks` 列表为空而显示总数 0。
 - **禁止事项**：不得在多个组件用正则解析任意英文来推断计数、路径、能力或安全状态；不得把后端英文摘要直接当作唯一 UI 状态。
@@ -270,6 +276,8 @@ Summary。忘记必须清除明文、保留最小 tombstone 并阻止旧来源�
 - **相关文件**：`src/backend/app/schemas/agent_task.py`、`src/frontend/src/lib/api/agentTasks.ts`、`src/frontend/src/lib/types/agentTask.ts`、`src/frontend/src/i18n/messages/`、`src/frontend/src/features/agent/`。
 
 ### 5.6 写入范围必须完整且 rawdata 只读
+
+- 导出必须显式绑定项目边界并检查最终组合路径；失败只清理本次独占创建的包/ZIP，保留已有或并发外部输出。调试浏览器必须同时隔离 desktop/memory SQLite 与 desktop_config 的文件路径，环境变量不能代替未使用环境变量的文件配置隔离。
 
 - **触发条件**：修改审批 scope、项目路径、显式 output_dir、artifact 注册或打包/测试工作区。
 - **必须执行**：resolve 每个路径并验证在项目边界；审批范围保留配置的 `work/logs/reports/derivatives` 等根；项目托管的 `data/` 可保存数据索引等运行证据并作为只读产物发现根，但源 BIDS/NIfTI 和 rawdata 只能作为输入。转换或衍生输出必须是项目内独立目标。
@@ -374,6 +382,7 @@ Release / Packaging 任务再按 `docs/桌面与前端/桌面应用打包.md` �
 ### 6.4 测试隔离和失败报告
 
 - 测试必须用 dependency override、`monkeypatch`、临时 `SQLiteDesktopStore` 或临时工作区；禁止写持久桌面数据库。
+- 用进程内 monkeypatch 替代计算函数的批处理单测必须显式串行调度，不能依赖宿主资源恰好让 auto 选择一个 worker；Windows spawn 不继承替代函数。测试进程池时须使用可由 spawn 导入的独立 worker。
 - CI 是持续验证权威；本地 Windows 结果不得外推到其他 OS、MATLAB/SPM、GPU 或真实数据。
 - 不得隐藏失败、删除/弱化测试或标记 xfail 只为获得通过。
 - 最终报告必须给出精确命令、结果、失败是否由本变更引起、环境限制和未验证区域。

@@ -1,3 +1,4 @@
+import { formatSystemMessage } from "../systemMessages";
 import { Badge, Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentTaskResponse } from "../../../lib/types/agentTask";
@@ -102,26 +103,42 @@ export function TaskActionPanel({
           {task.approval_summary.science_changes.length ? (
             <div>
               <span>{t("agent.scienceChanges")}</span>
-              <strong>{task.approval_summary.science_changes.join(" · ")}</strong>
+              <strong>
+                {task.approval_summary.science_changes
+                  .map((item) => formatSystemMessage(t, item))
+                  .join(" · ")}
+              </strong>
             </div>
           ) : null}
           {(task.approval_summary.memory_influence_summary ?? []).length ? (
             <div>
               <span>{t("agent.approvalMemory")}</span>
-              <strong>{task.approval_summary.memory_influence_summary?.join(" · ")}</strong>
+              <strong>
+                {task.approval_summary.memory_influence_summary
+                  ?.map((item) => formatSystemMessage(t, item))
+                  .join(" · ")}
+              </strong>
             </div>
           ) : null}
           {task.approval_summary.limitations.length ? (
             <div>
               <span>{t("agent.limitations")}</span>
-              <strong>{task.approval_summary.limitations.join(" · ")}</strong>
+              <strong>
+                {task.approval_summary.limitations
+                  .map((item) => formatSystemMessage(t, item))
+                  .join(" · ")}
+              </strong>
             </div>
           ) : null}
           {task.approval_summary.sections.map((section) => (
             <div key={section.id}>
-              <span>{section.title}</span>
-              <strong>{section.summary}</strong>
-              {section.warnings.length ? <small>{section.warnings.join(" · ")}</small> : null}
+              <span>{formatSystemMessage(t, section.title)}</span>
+              <strong>{formatSystemMessage(t, section.summary)}</strong>
+              {section.warnings.length ? (
+                <small>
+                  {section.warnings.map((item) => formatSystemMessage(t, item)).join(" · ")}
+                </small>
+              ) : null}
             </div>
           ))}
         </div>

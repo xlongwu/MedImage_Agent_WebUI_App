@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.backend.app.schemas.sandbox import SANDBOX_POLICY_VERSION
+
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,7 @@ from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.approval_summary import ApprovalSummary, ApprovalSummarySection
 from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
 from src.backend.app.services.sandbox_policy_service import SandboxPolicyService
+from src.backend.app.schemas.system_message import SystemMessage, message
 
 _OUTPUT_KEYS = frozenset({"output_dir", "output_root", "derivatives_dir", "work_dir"})
 
@@ -53,13 +56,6 @@ class ApprovalSummaryService:
         )
         selected_subjects = self._selected_subjects(plan)
         registered_subject_count = int(project.subjects_count or 0)
-        subject_scope_summary = (
-            f" for subject {selected_subjects[0]}"
-            if len(selected_subjects) == 1
-            else f" for subjects {', '.join(selected_subjects)}"
-            if selected_subjects
-            else ""
-        )
         backends = tuple(sorted({
             str(node.get("backend"))
             for node in plan.get("nodes", [])
@@ -101,7 +97,7 @@ class ApprovalSummaryService:
         )
         acpc_params = acpc_node.get("params", {}) if isinstance(acpc_node, dict) and isinstance(acpc_node.get("params"), dict) else {}
         acpc_limitations = (
-            "AC/PC coordinates are template-back-projected estimates, not manually detected anatomical landmarks; independent manual-reference validation is pending.",
+            message('limitation.acpc'),
         ) if acpc_node else ()
         native_node = next(
             (
@@ -136,20 +132,20 @@ class ApprovalSummaryService:
             if isinstance(item, dict)
         )
         influence_summary = tuple(
-            f"Suggested {item.get('decision_kind')} requires confirmation in this task."
+            message('memory.influence', decision_kind=str(item["decision_kind"]))
             for item in memory_context.get("decision_suggestions", [])
             if isinstance(item, dict) and item.get("decision_kind")
         )
         expires = issued + timedelta(minutes=max(1, ttl_minutes))
         base: dict[str, Any] = {
-            "schema_version": 5,
+            "schema_version": 6,
             "project_id": reviewed_plan.project_id,
             "reviewed_plan_id": reviewed_plan.reviewed_plan_id,
             "plan_hash": reviewed_plan.plan_hash,
             "execution_environment_snapshot_id": environment.snapshot_id,
             "execution_environment_hash": environment.environment_hash,
             "sandbox_policies_hash": sandbox_policy_set.policies_hash,
-            "sandbox_policy_version": "windows-sandbox-v1",
+            "sandbox_policy_version": SANDBOX_POLICY_VERSION,
             "sandbox_policies": tuple(
                 item.model_dump(mode="json") for item in sandbox_policy_set.policies
             ),
@@ -177,7 +173,7 @@ class ApprovalSummaryService:
             "memory_refs": memory_refs,
             "memory_influence_summary": influence_summary,
             "goal_contract_hash": goal_hash,
-            "goal": str(payload.get("goal") or "Reviewed scientific workflow"),
+            "goal": str(payload.get("goal") or ""),
             "registered_subject_count": registered_subject_count,
             "selected_subject_ids": selected_subjects,
             "write_roots": write_roots,
@@ -185,35 +181,40 @@ class ApprovalSummaryService:
             "node_ids": nodes,
             "backend_ids": backends,
             "external_tools": external,
-            "limitations": tuple(str(item) for item in payload.get("limitations", []) if str(item)) + acpc_limitations,
+            "limitations": tuple(SystemMessage.model_validate(item) for item in payload.get("limitations", [])) + acpc_limitations,
             "science_changes": (
-                (f"Subject scope: {', '.join(selected_subjects)}",)
+                (message('science.subject_scope', subject_ids=selected_subjects),)
                 if selected_subjects
                 else ()
+            ) + tuple(
+                message(
+                    "science.confirmed", decision_kind=kind,
+                    value=(Path(value).name if kind in {"atlas", "template"} and isinstance(value, str) else value),
+                )
+                for kind, value in sorted(science_answers.items())
+                if kind in {"atlas", "template", "global_signal_regression", "repetition_time", "overwrite", "experimental_backend", "subject_id"}
             ),
             "resource_policy": resource_policy,
             "sections": (
                 ApprovalSummarySection(
                     id="scope",
-                    title="Execution scope",
+                    title=message('approval.scope.title'),
                     summary=(
-                        f"Approve exactly {len(nodes)} reviewed node(s)"
-                        f"{subject_scope_summary}."
+                        message('approval.scope.summary', count=len(nodes), subject_ids=selected_subjects)
                     ),
                 ),
                 ApprovalSummarySection(
                     id="safety",
-                    title="Safety boundary",
-                    summary="Source rawdata remains read-only; writes are limited to the listed project roots.",
+                    title=message('approval.safety.title'),
+                    summary=message('approval.safety.summary'),
                 ),
                 *(
                     (
                         ApprovalSummarySection(
                             id="resource-policy",
-                            title="Automatic resource policy",
+                            title=message('approval.resource_policy.title'),
                             summary=(
-                                "CPU scheduler and scientific compute backend are selected at runtime "
-                                "within the reviewed auto/auto policy; the actual choice is recorded in provenance."
+                                message('approval.resource_policy.summary')
                             ),
                         ),
                     )
@@ -222,16 +223,12 @@ class ApprovalSummaryService:
                 ),
                 ApprovalSummarySection(
                     id="environment",
-                    title="Execution environment",
+                    title=message('approval.environment.title'),
                     summary=(
-                        "Approve the current local environment for the reviewed backends: "
-                        + ", ".join(
-                            f"{item.backend_id} ({item.status})"
-                            for item in environment.backend_capabilities
-                        )
+                        message('approval.environment.summary', backend_facts=tuple({"backend_id": item.backend_id, "status": item.status} for item in environment.backend_capabilities))
                     ),
                     warnings=tuple(
-                        warning
+                        message('warning.environment', diagnostic_id=stable_hash(warning))
                         for item in (*environment.tool_capabilities, *environment.backend_capabilities)
                         for warning in item.warnings
                     ),
@@ -240,8 +237,8 @@ class ApprovalSummaryService:
                     (
                         ApprovalSummarySection(
                             id="dicom-conversion",
-                            title="Native DICOM conversion",
-                            summary="Use the persisted release-approved mapping package; verify rawdata unchanged before preprocessing handoff.",
+                            title=message('approval.dicom_conversion.title'),
+                            summary=message('approval.dicom_conversion.summary'),
                         ),
                     )
                     if "native_dicom_conversion_execute" in nodes
@@ -251,12 +248,9 @@ class ApprovalSummaryService:
                     (
                         ApprovalSummarySection(
                             id="acpc-estimation",
-                            title="Automatic ACPC estimation",
+                            title=message('approval.acpc_estimation.title'),
                             summary=(
-                                "Use registered T1w artifact "
-                                f"{str(acpc_params.get('source_t1_artifact_id') or 'unknown')} with template "
-                                f"{str(acpc_params.get('template_id') or 'unknown')}; write only ACPC derivatives. "
-                                "QC failure stops and requires human review."
+                                message('approval.acpc_estimation.summary', artifact_id=str(acpc_params.get("source_t1_artifact_id") or ""), template_id=str(acpc_params.get("template_id") or ""))
                             ),
                             warnings=acpc_limitations,
                         ),
@@ -269,8 +263,9 @@ class ApprovalSummaryService:
             "issued_at": issued,
             "expires_at": expires,
         }
-        summary_hash = stable_hash(self._identity_payload(base))
-        return ApprovalSummary(summary_hash=summary_hash, **base)
+        summary = ApprovalSummary(summary_hash="pending", **base)
+        summary_hash = stable_hash(self._identity_payload(summary.model_dump(mode="json", exclude={"summary_hash"})))
+        return summary.model_copy(update={"summary_hash": summary_hash})
 
     @staticmethod
     def _selected_subjects(plan: dict[str, Any]) -> tuple[str, ...]:

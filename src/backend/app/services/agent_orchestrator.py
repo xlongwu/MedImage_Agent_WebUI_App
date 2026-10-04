@@ -254,6 +254,30 @@ class AgentOrchestrator:
             details=details or {},
         )
 
+    def resume_with_registered_template(self, *, current, resource, command_id: str, actor: str):
+        """Atomic input registration; it confirms no scientific decision."""
+        if current.state != "WAITING_FOR_SCIENCE_DECISION" or current.pending_decision_batch is None:
+            raise SafetyError("AGENT_DECISION_NOT_PENDING", code="AGENT_DECISION_NOT_PENDING")
+        context = dict(current.command_context)
+        for key in ("science_answers", "confirmed_decisions", "pending_plan_hash", "harness_evidence_purpose"):
+            context.pop(key, None)
+        context["revision_reason"] = "template_input_registered"
+        now = datetime.now(UTC)
+        updated = current.model_copy(update={
+            "state": "PLAN_DRAFTED", "pending_decision_batch": None,
+            "command_context": context, "evidence_snapshot_hash": None,
+            "updated_at": now, "last_command_id": command_id,
+        })
+        event = self._event(
+            record=updated, command_id=command_id, actor=actor,
+            source_command="register_template", from_state=current.state,
+            to_state="PLAN_DRAFTED", details={"resource_checksum": resource["checksum"], "space": resource["space"]},
+        )
+        return self.store.transition_agent_lifecycle_with_template(
+            updated, event, self._planning_wake(updated, "template_input_registered"),
+            resource=resource, expected_batch_id=current.pending_decision_batch.batch_id,
+        )
+
     def transition(
         self,
         *,

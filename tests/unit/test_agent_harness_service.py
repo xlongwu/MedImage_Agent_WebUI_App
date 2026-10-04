@@ -28,6 +28,7 @@ from src.backend.app.services.agent_evidence_service import AgentEvidenceService
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_planning_action_service import HarnessActionResult
 from src.backend.app.services.mock_store import SQLiteDesktopStore
+from src.backend.app.schemas.system_message import message
 
 
 def _store(tmp_path) -> SQLiteDesktopStore:
@@ -58,8 +59,8 @@ def _decision() -> RequestDecisionAction:
         kind="request_decision", reason="Choose an atlas", expected_state="CREATED",
         input_refs=("goal", "project_evidence"),
         decision=DecisionItem(
-            item_id="atlas", kind="atlas", question="Which atlas?", impact="Changes regions.",
-            options=(PendingDecisionOption(id="aal", label="AAL", description="AAL atlas"),),
+            item_id="atlas", kind="atlas", question=message("test.fixture"), impact=message("test.fixture"),
+            options=(PendingDecisionOption(id="aal", label=message("test.fixture"), description=message("test.fixture")),),
             recommended_option="aal",
         ),
     )

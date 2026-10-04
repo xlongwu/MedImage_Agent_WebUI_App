@@ -8,242 +8,125 @@
 
 [English](README.md) | **中文**
 
-MedImage Agent 是面向静息态 fMRI（rs-fMRI）研究的确定性
-Plan-then-Execute 桌面平台。LLM 只负责规划和建议；执行必须留在
-Pipeline Runtime 和注册节点 runner 内。
+MedImage Agent 是面向静息态 fMRI（rs-fMRI）研究工程的本地确定性 Plan-then-Execute 平台。语言模型可以帮助规划、解释和校验请求；实际计算必须经过项目任务生命周期，并由 Pipeline Runtime 和已注册的 node runner 执行。
 
-本项目是研究工程平台，不用于临床诊断或医疗决策。
+本项目用于研究工程，不用于临床诊断、治疗决策或其他临床用途。
 
-当前发布线：**v0.6.0-rc1**。详见
-[发布说明](docs/发布记录/v0.6.0-rc1.md)。
+## 当前项目状态
+
+应用与打包版本仍为 **0.6.0-rc1**。0.6.0-rc2 收敛工作已终止；本项目没有声明 0.6.0-rc2 或 0.7.0 已发布。当前源码仍包含开发中的工作区改动，因此本地 Windows 应用属于诊断包，不是发布候选。打包来源、人工复核和发布关卡见 [PROJECT_STATE.md](PROJECT_STATE.md)。
+
+## 项目能力
+
+- 面向 BIDS 和已转换影像数据的项目级工作流；源数据只读。
+- Agent Task 先生成 Reviewed Plan 并收集必要决策，再展示带哈希的 Approval Summary。获批执行复用既有 Approval Gate、Execution Ticket、唯一 Execution Gateway 和 Pipeline Runtime。
+- 在具备所需输入时，使用项目内 Python 实现执行预处理和 rs-fMRI 指标计算。各阶段的真实能力及验证等级见[能力矩阵](docs/项目概览/能力矩阵.md)。
+- 只读展示运行、产物、评估、审计和来源追溯信息。
+- 项目记忆和受控 Harness 为可选能力，默认关闭授权和功能门控；它们不会授予执行权限，也不能证明科学有效性。
+
+生成数值结果不代表通过独立参考验证。部分原生预处理阶段是简化实现，并非每项指标都有独立参考数据；具体限制见能力矩阵。
+
+## 架构与安全
+
+    React + TypeScript 前端（浏览器或 Electron）
+        -> 共享 HTTP API
+    FastAPI 路由与 schema
+        -> 领域 service 和 read model
+    受审 Agent 生命周期
+        -> Approval Gate -> Execution Ticket -> 唯一 Execution Gateway
+        -> Pipeline Runtime -> 已注册 node runner
+        -> 项目级状态、产物、审计和来源追溯
+
+Rawdata 和已登记源数据保持只读；写入只能进入获批的项目输出目录。前端通过共享 API client 和批准的 Electron bridge 访问后端，不直接访问文件系统。模型输出、聊天内容和记忆都不是执行授权。
+
+DICOM 转换默认阻断。执行需要当前 release-readiness 证据、显式确认、审计记录和安全输出路径。项目内置转换器支持经典单帧 MR 序列和 Siemens 单帧 mosaic MR 时间序列；不会调用 MATLAB、SPM 或 DPABI 可执行程序。
 
 ## 快速开始
 
 ### 环境要求
 
-- Python 3.11+
-- Node.js `^20.19.0` 或 `>=22.12.0`（Vite 8 engine 要求）
-- `nibabel` 与 `pydicom` 已包含在核心依赖中，用于项目内置 NIfTI 与
-  DICOM 路径
-- CuPy 可选，仅用于 GPU 路径
+- Python 3.11 或更新版本。
+- Node.js 20.x 系列需 20.19 或更新版本，或使用 22.12 及更新版本。
+- 构建和运行打包后的 Electron 桌面应用需要 Windows。
+- CuPy 为可选依赖，仅用于明确支持的 GPU 路径。
 
 ### 安装
 
-```bash
-pip install -r requirements.txt
-cd src/frontend && npm install
-```
+    python -m venv .venv
 
-### 启动开发服务
+激活环境后安装后端和前端依赖：
 
-```bash
-uvicorn src.backend.app.main:app --host 127.0.0.1 --port 8000
-cd src/frontend && npm run dev
+    # Windows PowerShell
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install -r requirements.txt
+    npm --prefix src/frontend install
 
-# 或一键启动：
-start.bat
-./start.sh
-```
+    # macOS 或 Linux
+    source .venv/bin/activate
+    python -m pip install -r requirements.txt
+    npm --prefix src/frontend install
 
-一键脚本在端口 `8000` 或 `5173` 已被占用时会直接停止，并且不会终止现有
-进程。请先明确停止端口所属服务，再重新运行脚本。
+### 启动开发应用
 
-### 运行测试
+在一个终端启动后端：
 
-使用当前项目 Python 环境。在 Windows 上可先激活 `.venv`，或显式传入项目解释器。
+    python -m uvicorn src.backend.app.main:app --host 127.0.0.1 --port 8000
 
-```bash
-python -m pytest --collect-only -q --basetemp=.pytest_tmp
-python -m pytest --tb=short --basetemp=.pytest_tmp
-```
+在另一个终端启动前端：
 
-前端验证：
+    npm --prefix src/frontend run dev
 
-```bash
-npm --prefix src/frontend run format:check
-npm --prefix src/frontend run typecheck
-npm --prefix src/frontend run test
-npm --prefix src/frontend run build
-```
+仓库也提供 Windows 的 start.bat 和 macOS/Linux 的 start.sh。所需端口已被占用时，脚本会停止并提示，不会终止现有进程。
 
-## 桌面应用
+### 验证修改
 
-Windows 桌面应用使用 Electron 壳和 PyInstaller 后端 sidecar。前端仍然只通过
-HTTP API 与后端通信，不直接访问本地文件系统。
+后端检查请使用当前项目 Python 环境：
 
-主要 Windows 打包入口会构建前端、PyInstaller 后端 sidecar、launcher 和 Electron
-桌面包：
+    python -m pytest --collect-only -q --basetemp=.pytest_tmp
+    python -m pytest --tb=short --basetemp=.pytest_tmp
 
-```powershell
-powershell -ExecutionPolicy Bypass -File desktop\packaging\build_all_windows.ps1 -DirOnly -PythonExe .\.venv\Scripts\python.exe
-```
+前端检查：
 
-未打包安装器形态的 Windows 可执行文件会生成在
-`desktop/electron/dist/win-unpacked/MedImage Agent.exe`。构建成功只证明制品已组装，
-不能替代交互式 GUI 工作流 smoke 验证。
+    npm --prefix src/frontend run format:check
+    npm --prefix src/frontend run typecheck
+    npm --prefix src/frontend run test
+    npm --prefix src/frontend run build
 
-详见[桌面应用打包](docs/桌面与前端/桌面应用打包.md)。
+pytest 退出后，请按 AGENTS.md 检查并清理本次测试产生的缓存和临时目录。
 
-## 架构
+## Windows 桌面包
 
-```text
-Frontend (React + TypeScript + Vite)
-    -> HTTP API
-API Layer (FastAPI + Pydantic)
-    -> Services and Schemas
-Agent Runtime (Plan-then-Execute + Approval Gate)
-    -> Pipeline Runtime (DAG Executor + Scheduler)
-    -> Plugin Node Registry + 权威 Node Contract
-    -> Tool Catalog（只读展示投影）
-```
+在仓库根目录构建 Electron 未打包应用：
 
-状态保存在本地并按项目隔离：SQLite 存储项目元数据，JSON 存储运行状态和
-artifact。运行时状态写入使用原子文件写入。Pipeline Runtime 是唯一 pipeline
-执行路径。
+    powershell -ExecutionPolicy Bypass -File desktop\packaging\build_all_windows.ps1 -DirOnly -PythonExe .\.venv\Scripts\python.exe
 
-项目记忆是默认关闭的可选功能。只有安装级门控和项目授权同时启用后，经过
-审核的偏好与项目经验才会写入独立的本地 Memory SQLite，并在规划前以有界、
-强类型上下文注入。科学记忆永远不是执行约束，必须在当前任务中重新确认，且
-实际使用的快照会绑定 Reviewed Plan 和 Approval Summary。显式关闭记忆时返回
-强类型 disabled context；记忆已启用但数据库或 outbox preflight 失败时，以结构化
-错误阻断规划，不会静默使用空 context 继续；运营积压则投影为 partial。详见
-[记忆系统设计方案](docs/架构与决策/记忆系统设计方案.md)。
+日常保留的打包目录为 desktop/electron/dist/win-unpacked/。可执行文件必须和旁边的 resources、Electron 运行文件一起保留，单独的 EXE 不能独立运行。日常构建应覆盖该目录；没有明确 Release 任务时，不保留带时间戳副本、安装器或 portable EXE。
 
-当前 router、service、schema、node registry、前端 API、存储和桌面边界见
-[架构文档](docs/架构与决策/系统架构.md)。
+重建后检查 Electron 契约并运行打包 smoke：
 
-可选受控 Harness 只接受 `request_decision` 与 `draft_plan` 两种动作，并且只打包
-一个 Product Skill：`planning_evidence_review.v1`。结果摘要与恢复判断仍由确定性
-服务负责。无研究数据的双语评估 v2 包含 24 个固定案例，通过 scripted provider
-运行真实隔离 lifecycle/Harness 栈；严格安全门槛只作为 CI 证据，绝不授予生产权限。
-可运行 `python scripts/run_agent_evaluation.py --manifest
-tests/fixtures/agent_eval/v2/manifest.json --provider rule_based --output
-artifacts/agent-eval/report.json`。
+    npm --prefix desktop/electron run check
+    powershell -ExecutionPolicy Bypass -File desktop\packaging\test_electron_packaged_smoke.ps1
+    powershell -ExecutionPolicy Bypass -File desktop\packaging\test_sandbox_packaged_smoke.ps1
 
-Agent 工作区还提供只读的七天运营投影，有界汇总 lifecycle、延迟、重试/
-dead-letter、不变量与 Memory 健康信号；这些指标不代表科学验证。Agent 结构化日志
-只保留标识符和错误码，不记录目标、Prompt、路径、凭据、Memory 正文或模型响应。
+构建成功、sidecar 健康、打包 renderer smoke、可见 GUI 工作流和科学验证属于不同的证据等级，不能相互替代。详见[桌面应用打包](docs/桌面与前端/桌面应用打包.md)。
 
-## 当前源码工作流
+## 仓库目录
 
-```text
-选择 BIDS/rawdata 或 converted BIDS
--> 创建项目
--> 生成 project_config.yaml 和 dataset_index.json
--> 在项目 Agent 工作区描述目标
--> 在一个有界表单中一次回答所有必要的数据或科学决策
--> 审查一份带哈希的 Approval Summary
--> 审批未发生变化的计划和执行范围
--> 查看有界进度和结果
--> 通过 Runs 或技术详情查看 validation、logs、artifacts 和 provenance
-```
+- src/backend/app：API、schema、领域 service、Pipeline Runtime、node registry 和科学计算 kernel。
+- src/frontend/src：共享 API client、类型、国际化和功能工作区。
+- desktop/electron：Electron 壳、preload bridge 和打包 renderer。
+- desktop/packaging：Windows 构建和隔离 smoke 脚本。
+- docs：当前架构、安全边界、能力等级、用户指南和版本发布记录。
+- specs：持久规范、阶段记录和人工审核关卡。
+- tests：后端单元、契约、集成测试和前端测试。
 
-当活跃 Agent Task 需要决策、计划审批或独立范围的恢复审批时，项目壳层会在
-Agent、Runs、Settings 与只读详情页展示同一份项目绑定确认弹窗。关闭弹窗不会发送
-请求，只留下本地可重新打开的提示。提交既有结构化命令后，持久化 scheduler、审批服务、
-ticket、Gateway、monitor、Observation 与评估链会自动推进到下一个真实阻塞点；这不表示
-自动批准，也不会建立第二条执行路径。旧的单阶段预处理与派生指标 mutation 面板不再属于
-普通 UI 路径。
-
-Agent Task API 和源码界面只是既有 lifecycle、Reviewed Plan、Approval Gate、
-Execution Ticket、唯一 Execution Gateway、Pipeline Runtime 和 artifact 证据之上的
-投影与命令入口，不建立第二条执行路径。该源码能力尚不代表已经打包或发布
-`v0.7.0`；当前各版本面仍为 `v0.6.0-rc1`。
-每次执行都会持久化不可变 dispatch 和有序 Gateway 事件；相同 command 重放只返回
-已持久化结果，不会再次运行 executor。已经进入 started 但缺少终态的崩溃窗口会
-报告 outcome-unknown 并要求检查证据，不会自动重复执行。
-
-所有当前规划均从项目级 Agent Task API 开始。旧的文件型 Agent 规划接口和
-`agent_runs/` 计划文件已经移除；任务详情和项目 Runs 是唯一受支持的规划与运行投影。
-
-DICOM/FunRaw/T1Raw 数据支持只读检测和转换 dry-run 预览。只有存在有效的 release
-readiness 证据时，原生转换才能进入受审网关路径；系统不会仅凭发现 rawdata 就自动转换。
-
-Reviewed preprocessing 工作流运行在 converted/sandboxed 输入上，仍然需要显式确认和
-环境变量门控。当前 stage catalog 会区分 metadata-only、planned、blocked、computed、
-partial 和 preview 状态，避免 UI 将占位或预览结果呈现为已完成的数值输出。
-
-## 项目结构
-
-```text
-src/backend/app/
-  api/                         领域 router 和 API middleware
-  core/                        配置、异常、日志
-  schemas/                     请求/响应与契约 schema
-  services/                    业务逻辑和 read model
-  runtime/                     pipeline executor、state store、node registry
-  runtime/node_registry_plugins/
-                               node runner 插件注册表
-  tools/                       处理模块、QC、wrapper、CLI helper
-
-src/frontend/src/
-  lib/api/                     统一 client 和领域 API module
-  components/                  可复用 UI 面板
-  features/                    feature 级 UI 组合
-  hooks/                       共享 React hooks
-  state/                       workflow state model
-  types/                       共享前端类型
-
-desktop/
-  electron/                    Electron shell 和 smoke checks
-  packaging/                   PyInstaller 与 Windows 构建脚本
-
-docs/
-  文档索引.md                   当前文档索引
-  架构与决策/                   当前架构与 ADR
-  项目概览/                     能力矩阵和兼容入口
-  安全与审批/                   安全边界与运行生命周期
-  预处理与科学计算/             科学计算与外部工具契约
-  桌面与前端/                   桌面打包和前端指南
-  发布记录/                     与版本绑定的历史发布说明
-
-specs/
-  规范/                         持久的工程与科学计算规范
-  阶段记录/                     保留的阶段级历史记录
-
-tests/
-  unit/                        单元测试和源码契约测试
-  integration/                 opt-in smoke / integration tests
-```
-
-## 安全架构
-
-| 规则 | 机制 |
-| --- | --- |
-| Rawdata 只读 | 路径策略、checksum、审批文案 |
-| 必须审批 | Tool Catalog + Approval Gate + 显式确认 |
-| 防目录穿越 | `path_safety.py` 和 project/run artifact ID |
-| 前端隔离 | HTTP API modules 和受控 Electron bridge |
-| 执行限定在项目内 | 注册 Python runner、approval/readiness、audit records；未来外部进程必须使用 Windows 受限进程 provider，且不得回退普通进程 |
-| 记忆仅作项目级建议 | 安装/项目授权、来源追溯、科学二次确认、计划哈希绑定、墓碑遗忘 |
-| 仅研究用途 | UI 和文档警示 |
-
-## 已知限制
-
-- 不用于临床诊断或医疗决策。
-- 预处理使用项目内置 Python 实现，不要求也不会调用 MATLAB、SPM 或 DPABI 可执行程序。
-- DICOM 转换执行默认阻断，需要 release approval evidence 和多重确认。
-- 内置 DICOM 转换当前支持经典单帧 MR 序列和 Siemens 单帧 mosaic MR
-  时间序列；混合序列或不支持的格式会安全拒绝。
-- ALFF/fALFF、ReHo 和 functional connectivity 在满足输入条件时已有 Python 后端路径；
-  metadata-only 和 preview 输出仍会明确标注为对应状态。
-- 当前发布线不包含 group statistics、classification、diagnosis model、report
-  editor 或 auto-update 工作流。
-- 桌面打包和 GUI smoke 需要兼容的本地 Windows 桌面环境。
-
-## 文档
+## 项目文档
 
 - [当前项目状态](PROJECT_STATE.md)
-- [架构文档](docs/架构与决策/系统架构.md)
-- [记忆系统设计方案](docs/架构与决策/记忆系统设计方案.md)
-- [发布说明 v0.6.0-rc1](docs/发布记录/v0.6.0-rc1.md)
-- [发布说明 v0.4.0-rc1](docs/发布记录/v0.4.0-rc1.md)
-- [发布说明 v0.3.0-rc1](docs/发布记录/v0.3.0-rc1.md)
-- [桌面应用打包](docs/桌面与前端/桌面应用打包.md)
-- [真实项目运行生命周期](docs/安全与审批/真实项目运行生命周期.md)
+- [文档索引](docs/文档索引.md)
+- [系统架构](docs/架构与决策/系统架构.md)
+- [能力矩阵](docs/项目概览/能力矩阵.md)
 - [安全边界](docs/安全与审批/安全边界.md)
-- [只读处理流程图](docs/规划与运行时/处理流程图.md)
-
-## 许可证
-
-本项目用于学术研究目的。
+- [真实项目运行生命周期](docs/安全与审批/真实项目运行生命周期.md)
+- [桌面应用打包](docs/桌面与前端/桌面应用打包.md)
+- [发布说明：0.6.0-rc1](docs/发布记录/v0.6.0-rc1.md)

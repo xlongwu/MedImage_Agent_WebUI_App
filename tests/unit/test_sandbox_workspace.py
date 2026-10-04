@@ -14,6 +14,7 @@ def _policy() -> SandboxPolicy:
     return SandboxPolicy(
         node_id="external_node", backend_id="external", provider="windows_restricted_process",
         executable_id="external", executable_path_hash="hash", readonly_root_hashes=(),
+        provider_runtime_hash="implementation-hash",
         output_root_hashes=(), allowed_environment_keys=("SystemRoot",),
         limits=SandboxLimits(timeout_seconds=10, memory_limit_bytes=16 * 1024 * 1024, max_processes=1),
         policy_hash="policy-hash",

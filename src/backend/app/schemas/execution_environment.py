@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from .sandbox import SANDBOX_POLICY_VERSION, SandboxPolicyVersion
 
 
 EnvironmentCapabilityStatus = Literal["available", "disabled", "unavailable"]
@@ -59,9 +60,8 @@ class ExecutionEnvironmentSnapshot(BaseModel):
     write_roots_hash: str = Field(min_length=1, max_length=128)
     readonly_roots_hash: str = Field(min_length=1, max_length=128)
     sandbox_provider: Literal["windows_restricted_process"] = "windows_restricted_process"
-    sandbox_provider_version: str = "windows-sandbox-v1"
+    sandbox_provider_version: SandboxPolicyVersion = SANDBOX_POLICY_VERSION
     sandbox_runtime_hash: str = Field(
-        default="windows-sandbox-runtime-v1",
         min_length=1,
         max_length=128,
     )

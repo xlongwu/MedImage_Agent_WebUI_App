@@ -28,7 +28,7 @@ vi.mock("../../../lib/api/sandboxes", () => ({ listSandboxAttempts: vi.fn() }));
 
 function agentTaskEvidence(): AgentTaskResponse {
   return {
-    schema_version: 2,
+    schema_version: 3,
     task_id: "lifecycle-1",
     project_id: "project-1",
     state: "running",
@@ -63,7 +63,7 @@ function agentTaskEvidence(): AgentTaskResponse {
       {
         id: "ticket",
         type: "execution_ticket",
-        label: "Execution ticket",
+        label: { code: "resource.name", params: { resource_name: "Execution ticket" } },
         uri: "project://tickets/ticket-1",
         available: true,
       },
@@ -106,7 +106,7 @@ function planOnlyAgentTaskEvidence(): AgentTaskResponse {
       {
         id: "reviewed-plan",
         type: "reviewed_plan",
-        label: "Reviewed plan",
+        label: { code: "evidence.reviewed_plan", params: {} },
         uri: "project://plans/plan-1",
         available: true,
       },
@@ -132,7 +132,7 @@ function planOnlyAgentTaskEvidence(): AgentTaskResponse {
         {
           artifact_id: "plan-1",
           artifact_type: "reviewed_plan",
-          label: "Reviewed plan",
+          label: { code: "evidence.reviewed_plan", params: {} },
           uri: "project://plans/plan-1",
           checksum: "sha256:plan",
           capability_level: "metadata_only",
@@ -405,6 +405,7 @@ describe("RunsWorkspace", () => {
         decision_batch_id: null,
       },
       approval_summary: {
+        schema_version: 6,
         summary_hash: "sha256:summary",
         execution_environment_snapshot_id: "environment-1",
         execution_environment_hash: "environment-hash-1",
@@ -415,7 +416,7 @@ describe("RunsWorkspace", () => {
         write_roots: ["derivatives"],
         rawdata_read_only: true,
         external_tools: [],
-        limitations: ["Research use only"],
+        limitations: [{ code: "resource.name", params: { resource_name: "Research use only" } }],
         science_changes: [],
         sections: [],
         expires_at: null,
@@ -461,6 +462,7 @@ describe("RunsWorkspace", () => {
         run_id: "task-1",
       },
       approval_summary: {
+        schema_version: 6,
         summary_hash: "sha256:summary",
         execution_environment_snapshot_id: "environment-1",
         execution_environment_hash: "environment-hash-1",
@@ -471,7 +473,9 @@ describe("RunsWorkspace", () => {
         write_roots: ["work"],
         rawdata_read_only: true,
         external_tools: [],
-        limitations: ["Pre-approval limitation"],
+        limitations: [
+          { code: "resource.name", params: { resource_name: "Pre-approval limitation" } },
+        ],
         science_changes: [],
         sections: [],
         expires_at: null,

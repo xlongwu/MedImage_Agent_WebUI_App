@@ -1,0 +1,21 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "name": "agent",
+  "started_at": "2026-10-03T01:27:34.290844+00:00",
+  "ended_at": "2026-10-03T01:27:34.806034+00:00",
+  "seconds": 0.52,
+  "command": "python -m pytest tests/unit/test_agent_task_commands.py tests/unit/test_agent_task_read_model.py tests/unit/test_agent_task_reconciler.py tests/unit/test_agent_task_result_summary.py tests/unit/test_agent_task_api.py tests/unit/test_agent_trace.py tests/unit/test_agent_invariant_checker.py --tb=short --basetemp=.pytest_tmp -q -ra",
+  "exit_code": 4,
+  "process_id": 28896,
+  "process_exited": true,
+  "baseline_manifest_sha256": "740395baf22d5e754489cde2471af70f215e0ed86c6516a44f4890c1b514e97e",
+  "result_lines": [
+    "ERROR: file or directory not found: tests/unit/test_agent_trace.py",
+    "",
+    "",
+    "no tests ran in 0.01s"
+  ],
+  "retention_reason": "Minimal redacted command, assertions/summary, exit status and skip/failure evidence; raw temporary logs and databases deleted.",
+  "pre_retention_output_sha256": "6bc12614377bb075a90ce782cba6efd68c0ad8b475b52d46d4e3e667db85ff21",
+  "input_identity_ref": "baseline.json#/input_fingerprints; scientific-inputs.json"
+}

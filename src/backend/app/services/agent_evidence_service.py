@@ -46,6 +46,7 @@ class AgentEvidenceService:
         lifecycle_id: str,
         requested_types: Iterable[EvidenceType] | None = None,
         memory_context: MemoryContext | None = None,
+        persist: bool = True,
     ) -> EvidenceSnapshot:
         lifecycle = self.store.get_agent_lifecycle(lifecycle_id)
         project = self.store.get_project(project_id)
@@ -60,9 +61,18 @@ class AgentEvidenceService:
         warnings: list[EvidenceWarning] = []
         refs: list[EvidenceSourceRef] = []
         metadata = project.metadata if isinstance(project.metadata, dict) else {}
+        defaults = metadata.get("agent_defaults")
+        defaults = defaults if isinstance(defaults, dict) else {}
+        from src.backend.app.services.project_agent_settings_service import ProjectAgentSettingsService
+        registered_template = defaults.get("default_template")
+        project_dir = metadata.get("project_dir")
+        verified_templates = ProjectAgentSettingsService.verified_template_candidates(
+            project_dir=Path(project_dir).resolve(), candidates=[registered_template],
+        ) if registered_template and isinstance(project_dir, str) and project_dir else ()
         project_ref = EvidenceSourceRef(
             source_type="project", source_id=project_id,
-            source_hash=stable_hash({"project_id": project_id, "modality": project.modality, "subjects": project.subjects_count}),
+            source_hash=stable_hash({"project_id": project_id, "modality": project.modality, "subjects": project.subjects_count,
+                                     "agent_defaults": defaults, "verified_templates": verified_templates}),
         )
 
         if "project" in requested:
@@ -160,7 +170,7 @@ class AgentEvidenceService:
             requested_types=requested, facts=tuple(facts), missing=tuple(sorted(set(missing))),
             warnings=tuple(warnings), source_refs=tuple(refs),
         )
-        if hasattr(self.store, "add_agent_evidence_snapshot"):
+        if persist and hasattr(self.store, "add_agent_evidence_snapshot"):
             self.store.add_agent_evidence_snapshot(snapshot)
         return snapshot
 

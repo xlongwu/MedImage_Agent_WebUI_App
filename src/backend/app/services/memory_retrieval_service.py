@@ -245,7 +245,6 @@ class MemoryRetrievalService:
                         source_refs=source_refs,
                     )
                 )
-                continue
             if item.kind in {"user_preference", "presentation_preference", "error_lesson"}:
                 advisory_content = self._advisory_content(
                     kind=item.kind,

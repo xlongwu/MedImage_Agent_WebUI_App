@@ -13,7 +13,7 @@ from typing import Protocol
 from src.backend.app.core.exceptions import SafetyError, StateStoreError
 from src.backend.app.core.agent_logging import agent_log_context
 from src.backend.app.runtime.atomic_file import atomic_write_json
-from src.backend.app.schemas.sandbox import SandboxAttemptRecord, SandboxPolicy
+from src.backend.app.schemas.sandbox import SandboxAttemptRecord, SandboxPolicy, SandboxNetworkIsolation
 
 
 logger = logging.getLogger(__name__)
@@ -161,10 +161,11 @@ class SandboxWorkspaceService:
         )
         return updated
 
-    def finalize(self, attempt: SandboxAttemptRecord, *, status: str, result_code: str | None = None, output_manifest_hash: str | None = None, output_count: int = 0) -> SandboxAttemptRecord:
+    def finalize(self, attempt: SandboxAttemptRecord, *, status: str, network_isolation: SandboxNetworkIsolation, result_code: str | None = None, output_manifest_hash: str | None = None, output_count: int = 0) -> SandboxAttemptRecord:
         updated = self.store.update_sandbox_attempt(
             attempt.sandbox_id, status=status, result_code=result_code, output_manifest_hash=output_manifest_hash,
             output_count=output_count, ended_at=datetime.now(UTC),
+            network_isolation=network_isolation,
         )
         if updated is None:
             raise StateStoreError("SANDBOX_ATTEMPT_WRITE_FAILED")

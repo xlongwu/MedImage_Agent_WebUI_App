@@ -7,6 +7,7 @@ import numpy as np
 
 from src.backend.app.runtime.atomic_file import atomic_write_json
 from src.backend.app.schemas.native_preproc_api import (
+    NativeCpuExecutionPolicy,
     NativeFullPreprocConfirmations,
     NativeFullPreprocRequest,
     NativeFullPreprocResponse,
@@ -163,6 +164,8 @@ def test_registered_conversion_inputs_run_all_subjects(monkeypatch, tmp_path) ->
         NativeFullPreprocRequest(
             run_id="native-batch",
             conversion_run_id="conv-001",
+            # Windows spawned workers cannot inherit the in-process test double.
+            cpu_policy=NativeCpuExecutionPolicy(mode="serial"),
             confirmations=_confirmations(),
         ),
         project_dir=str(project_dir),
@@ -198,7 +201,7 @@ def test_registered_conversion_inputs_run_all_subjects(monkeypatch, tmp_path) ->
         Path(result.resource_provenance_path).read_text(encoding="utf-8")
     )
     assert resource_provenance["_schema_version"] == 1
-    assert resource_provenance["requested_policy"]["cpu"]["mode"] == "auto"
+    assert resource_provenance["requested_policy"]["cpu"]["mode"] == "serial"
     assert resource_provenance["selected_resources"]["worker_count_used"] >= 1
     assert resource_provenance["reproducibility"]["seed"] is None
     reloaded = service.load_native_full_run_manifest(
@@ -438,6 +441,7 @@ def test_registered_bids_directory_runs_all_subjects_without_writing_source(monk
         NativeFullPreprocRequest(
             run_id="native-bids-reho",
             input_bids_dir=str(bids_dir),
+            cpu_policy=NativeCpuExecutionPolicy(mode="serial"),
             stage_overrides={"reho": True, "alff": False, "falff": False},
             confirmations=_confirmations(),
         ),

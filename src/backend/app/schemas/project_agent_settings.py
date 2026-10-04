@@ -12,6 +12,7 @@ class RegisteredScientificResource(BaseModel):
     path: str
     license: str
     checksum: str
+    space: Literal["MNI152", "native"]
 
 
 class ScientificResourceInput(BaseModel):
@@ -20,6 +21,7 @@ class ScientificResourceInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     path: str = Field(min_length=1)
     license: str = Field(min_length=1, max_length=120)
+    space: Literal["MNI152", "native"]
 
 
 class ProjectAgentSettings(BaseModel):

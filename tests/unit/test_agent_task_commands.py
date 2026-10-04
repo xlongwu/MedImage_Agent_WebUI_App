@@ -35,6 +35,7 @@ from src.backend.app.services.mock_store import SQLiteDesktopStore
 from src.backend.app.services.reviewed_execution_service import ReviewedExecutionService
 from tests.helpers_phase8 import build_recovery_fixture
 from tests.unit.test_agent_task_read_model import ReadOnlyStore
+from src.backend.app.schemas.system_message import message
 
 NOW = datetime(2026, 7, 16, tzinfo=UTC)
 
@@ -207,8 +208,8 @@ def test_raw_dicom_requires_explicit_conversion_preparation_decision() -> None:
 
     assert decision.kind == "dicom_conversion"
     assert decision.recommended_option == "approve_conversion"
-    assert "42 detected DICOM files" in decision.impact
-    assert "Execution Ticket" in decision.impact
+    assert decision.impact.code == "decision.dicom_conversion.impact"
+    assert decision.impact.params.count == 42
 
     prepared_plan = {
         **plan,
@@ -292,7 +293,7 @@ def test_reho_approval_preflight_rejects_incomplete_native_preprocessing_chain()
 def test_current_lifecycle_payload_uses_batch_decision_defaults() -> None:
     record = AgentLifecycleRecord.model_validate(
         {
-            "schema_version": 5,
+            "schema_version": 6,
             "lifecycle_id": "current-5",
             "project_id": "project-1",
             "state": "CREATED",
@@ -327,8 +328,8 @@ def test_waiting_input_and_science_decision_are_resumable_and_cancelable() -> No
         items=(DecisionItem(
             item_id="missing_input",
             kind="missing_input",
-            question="Select a registered dataset.",
-            impact="Planning cannot continue without project data.",
+            question=message("test.fixture"),
+            impact=message("test.fixture"),
             answer_type="text",
         ),),
     )
@@ -370,17 +371,17 @@ def test_waiting_input_and_science_decision_are_resumable_and_cancelable() -> No
         items=(DecisionItem(
             item_id="atlas",
             kind="atlas",
-            question="Which atlas should define FC regions?",
+            question=message("test.fixture"),
             options=(
             PendingDecisionOption(
                 id="schaefer-200",
-                label="Schaefer 200",
-                description="A 200-region cortical parcellation.",
+                label=message("test.fixture"),
+                description=message("test.fixture"),
                 recommended=True,
             ),
             ),
             recommended_option="schaefer-200",
-            impact="Changing the atlas changes matrix dimensions and comparability.",
+            impact=message("test.fixture"),
         ),),
     )
     waiting_science = orchestrator.transition(
@@ -595,6 +596,7 @@ def test_memory_scientific_suggestion_requires_current_task_confirmation(
         "project_id": "project-1",
         "planner_constraints": {},
         "decision_suggestions": [suggestion.model_dump(mode="json")],
+        "advisories": [],
         "evidence_refs": [],
         "omitted_count": 0,
         "used_bytes": 0,
@@ -852,9 +854,9 @@ def test_subject_decision_rebuilds_reviewed_plan_and_approval_scope(tmp_path) ->
     summary = reviewed.payload["approval_summary"]
     assert node["params"]["subject_id"] == "sub-001"
     assert summary["selected_subject_ids"] == ["sub-001"]
-    assert summary["sections"][0]["summary"] == (
-        "Approve exactly 1 reviewed node(s) for subject sub-001."
-    )
+    assert summary["sections"][0]["summary"]["code"] == "approval.scope.summary"
+    assert summary["sections"][0]["summary"]["params"]["count"] == 1
+    assert summary["sections"][0]["summary"]["params"]["subject_ids"] == ["sub-001"]
 
 
 @pytest.mark.parametrize(
@@ -942,6 +944,19 @@ def test_science_decision_matrix_requires_explicit_answer_and_rebuilds_plan(
     expected_key,
     expected_value,
 ) -> None:
+    if kind == "template":
+        import nibabel as nib
+        import numpy as np
+        from src.backend.app.services.project_agent_settings_service import ProjectAgentSettingsService
+        from src.backend.app.schemas.project_agent_settings import ScientificResourceInput
+        resource_path = tmp_path / "resources/templates/mni.nii.gz"
+        resource_path.parent.mkdir(parents=True)
+        nib.save(nib.Nifti1Image(np.ones((3, 3, 3), dtype=np.float32), np.eye(4)), resource_path)
+        registered = ProjectAgentSettingsService._verify_resource(
+            project_dir=tmp_path, value=ScientificResourceInput(name="fixture", path=str(resource_path), license="CC0", space="MNI152"), kind="template",
+        )
+        signals = {**signals, "template_candidates": [registered]}
+        answer = expected_value = str(resource_path.resolve())
     def planner(**kwargs):
         result = _planner(**kwargs)
         result["plan"]["nodes"][0]["id"] = node_id
@@ -1331,7 +1346,8 @@ def test_conversion_readiness_failure_stops_before_reviewed_plan(tmp_path) -> No
 
     assert waiting.state == "WAITING_FOR_INPUT"
     assert waiting.pending_decision_batch.items[0].kind == "missing_input"
-    assert "CONVERSION_RELEASE_APPROVAL_REQUIRED" in waiting.pending_decision_batch.items[0].impact
+    assert "CONVERSION_RELEASE_APPROVAL_REQUIRED" in store.list_agent_lifecycle_events(waiting.lifecycle_id)[-1].reason
+    assert waiting.pending_decision_batch.items[0].impact.params.diagnostic_id
     assert store.plans == {}
     assert calls[0]["conversion_run_id"] == "conv-1"
 
@@ -1393,7 +1409,8 @@ def test_supported_fc_goal_with_missing_input_requests_input_not_goal_revision(t
 
     assert waiting.state == "WAITING_FOR_INPUT"
     assert waiting.pending_decision_batch.items[0].kind == "missing_input"
-    assert "REGISTERED_FUNCTIONAL_INPUT_REQUIRED" in waiting.pending_decision_batch.items[0].impact
+    assert "REGISTERED_FUNCTIONAL_INPUT_REQUIRED" in _store.list_agent_lifecycle_events(waiting.lifecycle_id)[-1].reason
+    assert waiting.pending_decision_batch.items[0].impact.params.diagnostic_id
 
 
 def test_plan_only_task_stores_reviewed_plan_and_finishes_without_dry_run_or_approval(
@@ -1592,8 +1609,8 @@ MIXED_ITEMS = (
     DecisionItem(
         item_id="repetition_time",
         kind="repetition_time",
-        question="Repetition time in seconds?",
-        impact="Changes the temporal sampling of the series.",
+        question=message("test.fixture"),
+        impact=message("test.fixture"),
         answer_type="number",
         min_value=0.5,
         max_value=5.0,
@@ -1601,19 +1618,19 @@ MIXED_ITEMS = (
     DecisionItem(
         item_id="global_signal_regression",
         kind="global_signal_regression",
-        question="Apply global signal regression?",
-        impact="Changes the nuisance strategy.",
+        question=message("test.fixture"),
+        impact=message("test.fixture"),
         answer_type="boolean",
     ),
     DecisionItem(
         item_id="atlas",
         kind="atlas",
-        question="Which parcellation atlas?",
-        impact="Changes the connectivity matrix.",
+        question=message("test.fixture"),
+        impact=message("test.fixture"),
         answer_type="option",
         options=(
             PendingDecisionOption(
-                id="schaefer", label="Schaefer 200", description="200 parcels, Yeo networks"
+                id="schaefer", label=message("test.fixture"), description=message("test.fixture")
             ),
         ),
     ),

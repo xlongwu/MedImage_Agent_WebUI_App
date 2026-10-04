@@ -2,7 +2,7 @@ param(
     [string]$AppExe = "",
     [int]$TimeoutSeconds = 180,
     [switch]$Visible,
-    [ValidateSet("shell", "bids", "dicom", "recovery")]
+    [ValidateSet("shell", "bids", "dicom", "recovery", "restart")]
     [string]$Workflow = "shell",
     [string]$ExpectedGitSha = "",
     [string]$EvidenceDir = ""
@@ -22,6 +22,46 @@ if ($TimeoutSeconds -le 0) {
 }
 if ($ExpectedGitSha -and -not $EvidenceDir) {
     throw "EvidenceDir is required when ExpectedGitSha is provided."
+}
+if ($Workflow -eq "restart" -and (-not $ExpectedGitSha -or -not $EvidenceDir)) {
+    throw "Restart evidence requires an approved clean candidate ExpectedGitSha and EvidenceDir."
+}
+if ($Workflow -eq "restart") {
+    $ProvenancePath = Join-Path (Split-Path -Parent $AppExe) "resources\release\build-provenance.json"
+    $Candidate = Get-Content -LiteralPath $ProvenancePath -Raw | ConvertFrom-Json
+    if (-not $Candidate.git.clean -or $Candidate.git.sha -ne $ExpectedGitSha.ToLowerInvariant()) { throw "Restart candidate provenance mismatch." }
+    # Verify the actual packaged inputs before creating a workspace or owner.
+    # SHA attribution alone cannot detect an altered/old ASAR or sidecar.
+    $ResourcesRoot = Join-Path (Split-Path -Parent $AppExe) "resources"
+    $AsarModule = Join-Path $RepoRoot "desktop\electron\node_modules\@electron\asar"
+    $AsarScript = @'
+const fs = require("node:fs"), crypto = require("node:crypto");
+const [modulePath, archive, entry] = process.argv.slice(1);
+const bytes = require(modulePath).extractFile(archive, entry);
+process.stdout.write(crypto.createHash("sha256").update(bytes).digest("hex"));
+'@
+    $VerifiedInputs = @()
+    foreach ($InputRecord in @($Candidate.packaged_inputs)) {
+        $RelativeInput = [string]$InputRecord.path
+        if ($RelativeInput -in @("desktop/electron/main.cjs", "desktop/electron/preload.cjs")) {
+            $ActualHash = & node -e $AsarScript $AsarModule (Join-Path $ResourcesRoot "app.asar") (Split-Path -Leaf $RelativeInput)
+            if ($LASTEXITCODE -ne 0) { throw "Restart ASAR input verification failed: $RelativeInput" }
+        }
+        elseif ($RelativeInput.StartsWith("src/frontend/dist/")) {
+            $PayloadPath = [System.IO.Path]::GetFullPath((Join-Path $ResourcesRoot ("frontend/" + $RelativeInput.Substring(18))))
+            if (-not $PayloadPath.StartsWith($ResourcesRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Invalid candidate payload path." }
+            $ActualHash = (Get-FileHash -LiteralPath $PayloadPath -Algorithm SHA256).Hash
+        }
+        elseif ($RelativeInput.StartsWith("desktop/packaging/dist/backend_payload/")) {
+            $PayloadPath = [System.IO.Path]::GetFullPath((Join-Path $ResourcesRoot ("backend/" + $RelativeInput.Substring(39))))
+            if (-not $PayloadPath.StartsWith($ResourcesRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Invalid candidate payload path." }
+            $ActualHash = (Get-FileHash -LiteralPath $PayloadPath -Algorithm SHA256).Hash
+        }
+        else { continue }
+        if ($InputRecord.sha256 -notmatch '^[0-9a-f]{64}$' -or $ActualHash.ToLowerInvariant() -ne $InputRecord.sha256) { throw "Restart packaged input hash mismatch: $RelativeInput" }
+        $VerifiedInputs += $RelativeInput
+    }
+    if ("desktop/electron/main.cjs" -notin $VerifiedInputs -or "desktop/electron/preload.cjs" -notin $VerifiedInputs -or -not @($VerifiedInputs | Where-Object { $_.StartsWith("src/frontend/dist/") }).Count -or -not @($VerifiedInputs | Where-Object { $_.StartsWith("desktop/packaging/dist/backend_payload/") }).Count) { throw "Restart candidate packaged input manifest incomplete." }
 }
 $EvidenceOutput = $null
 if ($EvidenceDir) {
@@ -63,6 +103,7 @@ else {
 $SubjectFunc = Join-Path $Rawdata "sub-01\func"
 $ProjectDir = Join-Path $Workspace "p"
 $ResultPath = Join-Path $SmokeRoot "smoke-result.json"
+$RestartCheckpointPath = Join-Path $SmokeRoot "restart-checkpoint.json"
 $ElectronStdoutPath = Join-Path $SmokeRoot "electron.stdout.log"
 $ElectronStderrPath = Join-Path $SmokeRoot "electron.stderr.log"
 $ScreenshotPath = Join-Path $SmokeRoot "final-screenshot.png"
@@ -75,6 +116,8 @@ $EnvironmentNames = @(
     "MEDIMAGE_DESKTOP_SMOKE_RAWDATA",
     "MEDIMAGE_DESKTOP_SMOKE_PROJECT_DIR",
     "MEDIMAGE_DESKTOP_SMOKE_WORKFLOW",
+    "MEDIMAGE_DESKTOP_SMOKE_RESTART_PHASE",
+    "MEDIMAGE_DESKTOP_SMOKE_RESTART_CHECKPOINT",
     "MEDIMAGE_DESKTOP_SMOKE_ATLAS_SOURCE",
     "MEDIMAGE_DESKTOP_SMOKE_TEMPLATE_SOURCE",
     "MEDIMAGE_DESKTOP_SMOKE_SCREENSHOT",
@@ -89,6 +132,52 @@ $PreviousEnvironment = @{}
 $ElectronProcess = $null
 $Result = $null
 $SmokeFailure = $null
+$OwnedProcesses = @()
+$ElectronOwnerRecord = $null
+$RestartEvidence = $null
+$RawdataManifestBefore = "[]"
+
+function Assert-OwnedProcess($Record) {
+    $Current = Get-CimInstance Win32_Process -Filter "ProcessId=$($Record.ProcessId)" -ErrorAction Stop
+    # A reused PID is a different, unowned process; never stop it.
+    if ($Current -and ($Current.ExecutablePath -ne $Record.ExecutablePath -or $Current.CreationDate -ne $Record.CreationDate)) { return $null }
+    return $Current
+}
+
+function Get-OwnedTree($OwnerPid, [switch]$AllowExited, $ExpectedOwner) {
+    $All = @(Get-CimInstance Win32_Process -ErrorAction Stop)
+    $Owner = $All | Where-Object { $_.ProcessId -eq $OwnerPid }
+    if (-not $Owner) {
+        if ($AllowExited) { return @() }
+        throw "Unverified smoke owner: $OwnerPid"
+    }
+    if ($ExpectedOwner -and ($Owner.ExecutablePath -ne $ExpectedOwner.ExecutablePath -or $Owner.CreationDate -ne $ExpectedOwner.CreationDate)) {
+        if ($AllowExited) { return @() }
+        throw "Smoke process identity changed: $OwnerPid"
+    }
+    if ($Owner.ExecutablePath -ne $AppExe) {
+        if ($AllowExited) { return @() }
+        throw "Unverified smoke owner: $OwnerPid"
+    }
+    $Tree = @($Owner)
+    $Known = @($OwnerPid)
+    do {
+        $Added = @($All | Where-Object { $_.ParentProcessId -in $Known -and $_.ProcessId -notin $Known })
+        $Tree += $Added
+        $Known += @($Added | ForEach-Object { $_.ProcessId })
+    } while ($Added.Count -gt 0)
+    return $Tree
+}
+
+function Wait-OwnedTreeExit($Tree, [int]$Seconds = 15) {
+    $Deadline = [datetime]::UtcNow.AddSeconds($Seconds)
+    do {
+        $Alive = @($Tree | Where-Object { Assert-OwnedProcess $_ })
+        if ($Alive.Count -eq 0) { return }
+        Start-Sleep -Milliseconds 100
+    } while ([datetime]::UtcNow -lt $Deadline)
+    throw "Owned smoke tree remained alive: $($Alive.ProcessId -join ',')"
+}
 
 function Save-GateEvidence {
     if (-not $EvidenceOutput) { return }
@@ -100,6 +189,7 @@ function Save-GateEvidence {
     )
     $TextSources = @(
         @($ResultPath, "smoke-result.json"),
+        @($RestartCheckpointPath, "restart-checkpoint.json"),
         @($ElectronStdoutPath, "electron.stdout.log"),
         @($ElectronStderrPath, "electron.stderr.log"),
         @((Join-Path $Workspace "logs\desktop\backend-sidecar.log"), "backend-sidecar.log")
@@ -132,7 +222,7 @@ function Save-GateEvidence {
         $RawdataManifestBefore,
         [System.Text.UTF8Encoding]::new($false)
     )
-    $CurrentRawdataManifest = if ($Workflow -in @("bids", "dicom", "recovery") -and (Test-Path -LiteralPath $Rawdata)) {
+    $CurrentRawdataManifest = if ($Workflow -in @("bids", "dicom", "recovery", "restart") -and (Test-Path -LiteralPath $Rawdata)) {
         @(
             Get-ChildItem -LiteralPath $Rawdata -Recurse -File |
                 Sort-Object FullName |
@@ -159,15 +249,20 @@ function Save-GateEvidence {
         clean_source = if ($Result) { $Result.buildProvenance.git.clean } else { $null }
         visible = [bool]$Visible
         workflow = $Workflow
+        restart = $RestartEvidence
         rawdata_unchanged = ($RawdataManifestBefore -eq $CurrentRawdataManifest)
         renderer_console_error_count = if ($Result) { @($Result.rendererConsoleErrors).Count } else { $null }
-        explicit_operations = if (-not $Result) { $null } elseif ($Workflow -in @("bids", "dicom")) { $Result.bidsToFc.explicitOperations } elseif ($Workflow -eq "recovery") { $Result.recovery.explicitOperations } else { 0 }
-        outcome = if (-not $Result) { $null } elseif ($Workflow -in @("bids", "dicom")) { $Result.bidsToFc.task.outcome } elseif ($Workflow -eq "recovery") { $Result.recovery.task.outcome } else { "shell_verified" }
+        explicit_operations = if (-not $Result) { $null } elseif ($Workflow -in @("bids", "dicom")) { $Result.bidsToFc.explicitOperations } elseif ($Workflow -eq "recovery") { $Result.recovery.explicitOperations } elseif ($Workflow -eq "restart") { $Checkpoint.explicitOperations } else { 0 }
+        outcome = if (-not $Result) { $null } elseif ($Workflow -in @("bids", "dicom")) { $Result.bidsToFc.task.outcome } elseif ($Workflow -eq "recovery") { $Result.recovery.task.outcome } elseif ($Workflow -eq "restart") { $Result.restart.outcome } else { "shell_verified" }
         failure = $SmokeFailure
     }
     $GateSummary | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $EvidenceOutput "gate-summary.json") -Encoding utf8
 }
 
+foreach ($Name in $EnvironmentNames) {
+    $PreviousEnvironment[$Name] = [Environment]::GetEnvironmentVariable($Name, "Process")
+}
+try {
 New-Item -ItemType Directory -Path $UserData, $Workspace | Out-Null
 if ($Workflow -eq "shell") {
     New-Item -ItemType Directory -Path $SubjectFunc | Out-Null
@@ -199,7 +294,12 @@ else {
     }
     $FixturePython = Join-Path $RepoRoot ".venv\Scripts\python.exe"
     $FixtureScript = Join-Path $RepoRoot "desktop\packaging\create_agent_first_e2e_fixture.py"
-    if ($Workflow -in @("bids", "recovery")) {
+    if ($Workflow -eq "restart") {
+        $RestartSource = (Resolve-Path -LiteralPath (Join-Path $RepoRoot "examples\synthetic_bids\rawdata")).Path
+        New-Item -ItemType Directory -Path $Rawdata | Out-Null
+        Copy-Item -Path (Join-Path $RestartSource "*") -Destination $Rawdata -Recurse
+    }
+    if ($Workflow -in @("bids", "recovery", "restart")) {
         $FixtureBold = Join-Path $Rawdata "sub-001\func\sub-001_task-rest_bold.nii.gz"
         & $FixturePython $FixtureScript --bold $FixtureBold --atlas $AtlasSource --template $TemplateSource
     }
@@ -215,7 +315,7 @@ else {
         throw "Failed to create the isolated $Workflow E2E scientific resource fixtures."
     }
 }
-$RawdataManifestBefore = if ($Workflow -in @("bids", "dicom", "recovery")) {
+$RawdataManifestBefore = if ($Workflow -in @("bids", "dicom", "recovery", "restart")) {
     @(
         Get-ChildItem -LiteralPath $Rawdata -Recurse -File |
             Sort-Object FullName |
@@ -229,23 +329,21 @@ $RawdataManifestBefore = if ($Workflow -in @("bids", "dicom", "recovery")) {
     ) | ConvertTo-Json -Compress
 }
 else { "[]" }
-try {
-    foreach ($Name in $EnvironmentNames) {
-        $PreviousEnvironment[$Name] = [Environment]::GetEnvironmentVariable($Name, "Process")
-    }
     $env:MEDIMAGE_DESKTOP_SMOKE = "1"
     $env:MEDIMAGE_DESKTOP_SMOKE_RESULT = $ResultPath
     $env:MEDIMAGE_DESKTOP_VISIBLE_SMOKE = if ($Visible) { "1" } else { "0" }
     $env:MEDIMAGE_DESKTOP_SMOKE_RAWDATA = $Rawdata
     $env:MEDIMAGE_DESKTOP_SMOKE_PROJECT_DIR = $ProjectDir
     $env:MEDIMAGE_DESKTOP_SMOKE_WORKFLOW = $Workflow
-    $env:MEDIMAGE_DESKTOP_SMOKE_ATLAS_SOURCE = if ($Workflow -in @("bids", "dicom", "recovery")) { $AtlasSource } else { "" }
-    $env:MEDIMAGE_DESKTOP_SMOKE_TEMPLATE_SOURCE = if ($Workflow -in @("bids", "dicom", "recovery")) { $TemplateSource } else { "" }
+    $env:MEDIMAGE_DESKTOP_SMOKE_RESTART_PHASE = if ($Workflow -eq "restart") { "prepare" } else { "" }
+    $env:MEDIMAGE_DESKTOP_SMOKE_RESTART_CHECKPOINT = if ($Workflow -eq "restart") { $RestartCheckpointPath } else { "" }
+    $env:MEDIMAGE_DESKTOP_SMOKE_ATLAS_SOURCE = if ($Workflow -in @("bids", "dicom", "recovery", "restart")) { $AtlasSource } else { "" }
+    $env:MEDIMAGE_DESKTOP_SMOKE_TEMPLATE_SOURCE = if ($Workflow -in @("bids", "dicom", "recovery", "restart")) { $TemplateSource } else { "" }
     $env:MEDIMAGE_DESKTOP_SMOKE_SCREENSHOT = if ($Visible) { $ScreenshotPath } else { "" }
     $env:MEDIMAGE_DESKTOP_USER_DATA = $UserData
     $env:MEDIMAGE_DESKTOP_WORKSPACE = $Workspace
-    $env:MEDIMAGE_ENABLE_REVIEWED_EXECUTION = if ($Workflow -in @("bids", "dicom", "recovery")) { "1" } else { "" }
-    $env:MEDIMAGE_ALLOW_SANDBOXED_FC = if ($Workflow -in @("bids", "dicom", "recovery")) { "1" } else { "" }
+    $env:MEDIMAGE_ENABLE_REVIEWED_EXECUTION = if ($Workflow -in @("bids", "dicom", "recovery", "restart")) { "1" } else { "" }
+    $env:MEDIMAGE_ALLOW_SANDBOXED_FC = if ($Workflow -in @("bids", "dicom", "recovery", "restart")) { "1" } else { "" }
     $env:MEDIMAGE_ENABLE_DICOM_CONVERSION = if ($Workflow -eq "dicom") { "1" } else { "" }
     $env:MEDIMAGE_ALLOW_USER_DATA_CONVERSION = if ($Workflow -eq "dicom") { "1" } else { "" }
 
@@ -260,10 +358,68 @@ try {
         $StartArguments.WindowStyle = "Hidden"
     }
     $ElectronProcess = Start-Process @StartArguments
-    if (-not $ElectronProcess.WaitForExit($TimeoutSeconds * 1000)) {
+    $OwnedProcesses = @(Get-OwnedTree $ElectronProcess.Id)
+    $ElectronOwnerRecord = $OwnedProcesses[0]
+    if ($Workflow -eq "restart") {
+        $Deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+        while (-not (Test-Path -LiteralPath $RestartCheckpointPath -PathType Leaf)) {
+            if ($ElectronProcess.HasExited -or [datetime]::UtcNow -ge $Deadline) { throw "Restart preparation did not reach an approved running checkpoint." }
+            $OwnedProcesses = @(Get-OwnedTree $ElectronProcess.Id -ExpectedOwner $ElectronOwnerRecord)
+            Start-Sleep -Milliseconds 100
+        }
+        $Checkpoint = Get-Content -LiteralPath $RestartCheckpointPath -Raw | ConvertFrom-Json
+        $OwnedProcesses = @(Get-OwnedTree $ElectronProcess.Id -ExpectedOwner $ElectronOwnerRecord)
+        if ($Checkpoint._schema_version -ne 1 -or $Checkpoint.owner.pid -ne $ElectronProcess.Id -or $Checkpoint.owner.executable -ne $AppExe -or $Checkpoint.identity.state -notin @("RUNNING", "RETRYING")) { throw "Invalid restart owner/checkpoint." }
+        $OwnedSidecar = $OwnedProcesses | Where-Object { $_.ProcessId -eq $Checkpoint.sidecar.pid }
+        if (-not $OwnedSidecar -or $OwnedSidecar.ExecutablePath -ne $Checkpoint.sidecar.executable) { throw "Sidecar is not owned by this smoke instance." }
+        $Duplicate = Start-Process -FilePath $AppExe -WorkingDirectory (Split-Path -Parent $AppExe) -PassThru -WindowStyle Hidden
+        if (-not $Duplicate.WaitForExit(10000)) {
+            $DuplicateTree = @(Get-OwnedTree $Duplicate.Id)
+            foreach ($Owned in $DuplicateTree) { if (Assert-OwnedProcess $Owned) { Stop-Process -Id $Owned.ProcessId -Force } }
+            Wait-OwnedTreeExit $DuplicateTree
+            throw "Duplicate restart launch did not release singleton ownership."
+        }
+        if (-not (Assert-OwnedProcess $OwnedProcesses[0])) { throw "First restart owner exited during the singleton check." }
+        # Do not kill /T: the backend watchdog must independently observe the
+        # verified main-owner loss and stop the captured sidecar/worker tree.
+        Stop-Process -Id $ElectronProcess.Id -Force
+        Wait-OwnedTreeExit $OwnedProcesses
+        $RestartEvidence = [ordered]@{
+            _schema_version = 1
+            first_owner = $Checkpoint.owner.pid
+            first_owner_executable_hash = (Get-FileHash -LiteralPath $AppExe -Algorithm SHA256).Hash
+            original_run_id = $Checkpoint.identity.run_id
+            original_ticket_id = $Checkpoint.identity.ticket_id
+            original_dispatch_id = $Checkpoint.identity.dispatch_id
+            first_tree_stopped = $true
+            duplicate_owner_rejected = $true
+            same_workspace_and_user_data = $true
+        }
+        $env:MEDIMAGE_DESKTOP_SMOKE_RESTART_PHASE = "resume"
+        $ElectronProcess = Start-Process @StartArguments
+        $OwnedProcesses = @(Get-OwnedTree $ElectronProcess.Id)
+        $ElectronOwnerRecord = $OwnedProcesses[0]
+        $RestartEvidence.second_owner = $ElectronProcess.Id
+    }
+    $Deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while (-not $ElectronProcess.WaitForExit(100)) {
+        $Observed = @(Get-OwnedTree $ElectronProcess.Id -AllowExited -ExpectedOwner $ElectronOwnerRecord)
+        foreach ($Owned in $Observed) {
+            if ($Owned.ProcessId -notin $OwnedProcesses.ProcessId) { $OwnedProcesses += $Owned }
+        }
+        if ([datetime]::UtcNow -ge $Deadline) { break }
+    }
+    if (-not $ElectronProcess.HasExited) {
         $CurrentProcess = Get-Process -Id $ElectronProcess.Id -ErrorAction SilentlyContinue
         if ($CurrentProcess -and $CurrentProcess.Path -eq $AppExe) {
-            & taskkill.exe /PID $ElectronProcess.Id /T /F | Out-Null
+            $Observed = @(Get-OwnedTree $ElectronProcess.Id -AllowExited -ExpectedOwner $ElectronOwnerRecord)
+            foreach ($Owned in $Observed) {
+                if ($Owned.ProcessId -notin $OwnedProcesses.ProcessId) { $OwnedProcesses += $Owned }
+            }
+            foreach ($Owned in $OwnedProcesses) {
+                if (Assert-OwnedProcess $Owned) { Stop-Process -Id $Owned.ProcessId -Force }
+            }
+            Wait-OwnedTreeExit $OwnedProcesses
         }
         throw "Packaged Electron smoke timed out after $TimeoutSeconds seconds."
     }
@@ -291,6 +447,14 @@ try {
 
     $Result = Get-Content -LiteralPath $ResultPath -Raw | ConvertFrom-Json
     $Failures = @()
+    if ($Workflow -eq "restart") {
+        if ($Result.restart._schema_version -ne 1 -or -not $Result.restart.original_bindings_preserved -or $Result.restart.duplicate_execution_count -ne 0 -or $Result.restart.execution_resubmitted) { $Failures += "restart.identity" }
+        foreach ($Field in @("original_run_id", "original_ticket_id", "original_dispatch_id")) {
+            if ($Result.restart.$Field -ne $RestartEvidence.$Field) { $Failures += "restart.$Field" }
+        }
+        if ($Result.restart.first_owner.pid -ne $RestartEvidence.first_owner -or $Result.restart.second_owner.pid -ne $RestartEvidence.second_owner) { $Failures += "restart.owners" }
+        $RestartEvidence.result = $Result.restart
+    }
     if (-not $Result.frontendLoaded) { $Failures += "frontendLoaded" }
     if (-not $Result.rendererVerified) { $Failures += "rendererVerified" }
     if (-not $Result.backend.ready) { $Failures += "backend.ready" }
@@ -381,7 +545,7 @@ try {
         throw "Packaged Electron smoke evidence failed: $($Failures -join ', '). Full evidence will be saved to '$EvidenceOutput'."
     }
 
-    $RawdataManifestAfter = if ($Workflow -in @("bids", "dicom", "recovery")) {
+    $RawdataManifestAfter = if ($Workflow -in @("bids", "dicom", "recovery", "restart")) {
         @(
             Get-ChildItem -LiteralPath $Rawdata -Recurse -File |
                 Sort-Object FullName |
@@ -399,14 +563,7 @@ try {
         throw "The $Workflow rawdata manifest changed during the packaged workflow."
     }
 
-    Start-Sleep -Milliseconds 750
-    $BackendProcesses = @(
-        Get-Process -Name "medimage-backend" -ErrorAction SilentlyContinue |
-            Where-Object { $_.Path -eq $Result.backend.executablePath }
-    )
-    if ($BackendProcesses.Count -ne 0) {
-        throw "Managed packaged backend remained alive after Electron exited: $($BackendProcesses.Id -join ',')"
-    }
+    Wait-OwnedTreeExit $OwnedProcesses
 
     [pscustomobject]@{
         ok = $true
@@ -421,8 +578,9 @@ try {
         agent_first_routes_visited = @($Result.agentFirstNavigation.visited).Count
         visible = [bool]$Visible
         workflow = $Workflow
-        explicit_operations = if ($Workflow -in @("bids", "dicom")) { $Result.bidsToFc.explicitOperations } elseif ($Workflow -eq "recovery") { $Result.recovery.explicitOperations } else { 0 }
-        workflow_outcome = if ($Workflow -in @("bids", "dicom")) { $Result.bidsToFc.task.outcome } elseif ($Workflow -eq "recovery") { $Result.recovery.task.outcome } else { "shell_verified" }
+        restart = $RestartEvidence
+        explicit_operations = if ($Workflow -in @("bids", "dicom")) { $Result.bidsToFc.explicitOperations } elseif ($Workflow -eq "recovery") { $Result.recovery.explicitOperations } elseif ($Workflow -eq "restart") { $Checkpoint.explicitOperations } else { 0 }
+        workflow_outcome = if ($Workflow -in @("bids", "dicom")) { $Result.bidsToFc.task.outcome } elseif ($Workflow -eq "recovery") { $Result.recovery.task.outcome } elseif ($Workflow -eq "restart") { $Result.restart.outcome } else { "shell_verified" }
         rawdata_unchanged = ($RawdataManifestBefore -eq $RawdataManifestAfter)
         sidecar_stopped = $true
     } | ConvertTo-Json
@@ -432,8 +590,28 @@ catch {
     throw
 }
 finally {
-    Save-GateEvidence
-    foreach ($Name in $EnvironmentNames) {
+    $CleanupFailure = $null
+    try {
+        if ($ElectronProcess -and -not $ElectronProcess.HasExited) {
+            $Observed = @(Get-OwnedTree $ElectronProcess.Id -AllowExited -ExpectedOwner $ElectronOwnerRecord)
+            foreach ($Owned in $Observed) {
+                if ($Owned.ProcessId -notin $OwnedProcesses.ProcessId) { $OwnedProcesses += $Owned }
+            }
+        }
+        foreach ($Owned in $OwnedProcesses) {
+            if (Assert-OwnedProcess $Owned) { Stop-Process -Id $Owned.ProcessId -Force }
+        }
+        Wait-OwnedTreeExit $OwnedProcesses
+    }
+    catch {
+        $CleanupFailure = $_.Exception.Message
+        $SmokeFailure = "$SmokeFailure; cleanup=$CleanupFailure; root=$SmokeRoot"
+    }
+    $EvidenceFailure = $null
+    try { Save-GateEvidence }
+    catch { $EvidenceFailure = $_.Exception.Message }
+    finally {
+      foreach ($Name in $EnvironmentNames) {
         $PreviousValue = $PreviousEnvironment[$Name]
         if ($null -eq $PreviousValue) {
             [Environment]::SetEnvironmentVariable($Name, $null, "Process")
@@ -441,9 +619,10 @@ finally {
         else {
             [Environment]::SetEnvironmentVariable($Name, $PreviousValue, "Process")
         }
+      }
     }
 
-    if (Test-Path -LiteralPath $SmokeRoot) {
+    if (-not $CleanupFailure -and (Test-Path -LiteralPath $SmokeRoot)) {
         $ResolvedSmokeRoot = (Resolve-Path -LiteralPath $SmokeRoot).Path
         $ExpectedParent = Split-Path -Parent $ResolvedSmokeRoot
         $ExpectedLeaf = Split-Path -Leaf $ResolvedSmokeRoot
@@ -452,4 +631,6 @@ finally {
         }
         Remove-Item -LiteralPath $ResolvedSmokeRoot -Recurse -Force
     }
+    if ($CleanupFailure) { throw "Smoke cleanup failed; retained '$SmokeRoot': $CleanupFailure" }
+    if ($EvidenceFailure) { throw "Smoke evidence write failed after owned process cleanup: $EvidenceFailure" }
 }

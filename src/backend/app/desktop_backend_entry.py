@@ -4,6 +4,7 @@ import argparse
 import ctypes
 import json
 import os
+import socket
 import sys
 import threading
 import time
@@ -31,6 +32,7 @@ _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _SANDBOX_SELF_TEST_CASES = {
     "write_allowed_output", "write_rawdata_denied", "write_outside_project_denied",
     "spawn_child_tree", "memory_limit", "timeout", "print_environment_keys",
+    "network_loopback_ipv4", "network_loopback_ipv6", "network_host_ipv4",
 }
 _SANDBOX_SELF_TEST_COMMANDS = {
     "write_allowed_output": "echo ok>output\\proof.txt",
@@ -246,7 +248,7 @@ def _sandbox_self_test_argv(
         return str(Path(executable).resolve()) if os.name == "nt" else str(executable)
 
     if case_id == "timeout":
-        return (helper_path("ping.exe"), "127.0.0.1", "-n", "11")
+        return (helper_path("cmd.exe"), "/d", "/q", "/c", "for /l %i in (1,1,2147483647) do @rem")
     if case_id == "memory_limit":
         return (helper_path("sort.exe"), str(memory_input_path))
     executable = helper_path("cmd.exe")
@@ -271,6 +273,69 @@ def _run_sandbox_self_test_process(request, *, timeout_seconds: int):
     from src.backend.app.runtime.sandbox_process_runner import SandboxProcessRunner
 
     return SandboxProcessRunner().run(request, timeout_seconds=timeout_seconds)
+
+
+def _sandbox_network_self_test(case_id: str, request):
+    """Compare the fixed Windows curl probe with a reachable host-owned server.
+
+    No Internet, credentials, arbitrary endpoint or production API is involved.
+    Windows Filtering Platform can reject or silently drop the connection,
+    producing curl 7 or 28 respectively. A live control before AND after,
+    no accepted sandbox connection, and the verified child token are all
+    required; process timeouts and loader failures are never accepted.
+    """
+    from src.backend.app.core.exceptions import SafetyError
+
+    ipv6 = case_id == "network_loopback_ipv6"
+    address = "::1" if ipv6 else "127.0.0.1"
+    if case_id == "network_host_ipv4":
+        address = socket.gethostbyname(socket.gethostname())
+        if address.startswith("127.") or address == "0.0.0.0":
+            raise SafetyError("SANDBOX_NETWORK_CONTROL_UNAVAILABLE", code="SANDBOX_NETWORK_CONTROL_UNAVAILABLE")
+    stop = threading.Event()
+    received = threading.Event()
+    control_received = threading.Event()
+    response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+    with socket.socket(socket.AF_INET6 if ipv6 else socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.bind((address, 0))
+        server.listen(4)
+        server.settimeout(0.1)
+        port = server.getsockname()[1]
+
+        def serve():
+            while not stop.is_set():
+                try:
+                    connection, _ = server.accept()
+                except socket.timeout:
+                    continue
+                with connection:
+                    if control_received.is_set():
+                        received.set()
+                    connection.sendall(response)
+
+        worker = threading.Thread(target=serve, daemon=True)
+        worker.start()
+        try:
+            with socket.create_connection((address, port), timeout=2) as control:
+                host_allowed = control.recv(4096) == response
+            control_received.set()
+            executable = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "curl.exe")
+            url = f"http://[{address}]:{port}/" if ipv6 else f"http://{address}:{port}/"
+            probe = request.model_copy(update={
+                "executable_path": executable,
+                "argv": (executable, "--noproxy", "*", "--silent", "--show-error", "--connect-timeout", "2", "--max-time", "3", url),
+            })
+            result = _run_sandbox_self_test_process(probe, timeout_seconds=request.timeout_seconds)
+            sandbox_denied = result.status == "FAILED" and result.return_code in {7, 28} and not received.is_set()
+            control_received.clear()
+            with socket.create_connection((address, port), timeout=2) as control:
+                host_allowed = host_allowed and control.recv(4096) == response
+            return result, {"host_allowed": host_allowed, "sandbox_denied": sandbox_denied}
+        finally:
+            stop.set()
+            worker.join(timeout=3)
+            if worker.is_alive():
+                raise SafetyError("SANDBOX_NETWORK_CONTROL_CLEANUP_FAILED", code="SANDBOX_NETWORK_CONTROL_CLEANUP_FAILED")
 
 
 def run_sandbox_self_test(case_id: str) -> int:
@@ -301,17 +366,18 @@ def run_sandbox_self_test(case_id: str) -> int:
                 for _ in range(32 * 1024):
                     stream.write(chunk)
         timeout = 1 if case_id == "timeout" else 15
-        argv = _sandbox_self_test_argv(case_id, memory_input_path)
+        argv = _sandbox_self_test_argv("write_allowed_output" if case_id.startswith("network_") else case_id, memory_input_path)
         request = SandboxProcessRequest(
             sandbox_id=f"selftest-{case_id}", executable_path=argv[0],
             argv=argv,
-            cwd=str(work), environment={"TEMP": str(work / "tmp"), "TMP": str(work / "tmp")},
+            cwd=str(work), environment={"TEMP": str(work / "tmp"), "TMP": str(work / "tmp"), "LOCALAPPDATA": str(work / "tmp"), "SystemRoot": os.environ.get("SystemRoot", r"C:\Windows")},
             policy_hash="sandbox-self-test-v1", timeout_seconds=timeout,
             memory_limit_bytes=(16 if case_id == "memory_limit" else 64) * 1024 * 1024,
             max_processes=1,
         )
         try:
             control_result = None
+            network_probe = None
             if case_id == "memory_limit":
                 control_request = request.model_copy(update={
                     "sandbox_id": "selftest-memory-limit-control",
@@ -320,7 +386,10 @@ def run_sandbox_self_test(case_id: str) -> int:
                 control_result = _run_sandbox_self_test_process(
                     control_request, timeout_seconds=timeout
                 )
-            result = _run_sandbox_self_test_process(request, timeout_seconds=timeout)
+            if case_id.startswith("network_"):
+                result, network_probe = _sandbox_network_self_test(case_id, request)
+            else:
+                result = _run_sandbox_self_test_process(request, timeout_seconds=timeout)
         except Exception as exc:
             details = getattr(exc, "details", {})
             payload: dict[str, object] = {
@@ -342,6 +411,8 @@ def run_sandbox_self_test(case_id: str) -> int:
             else "SUCCEEDED"
         )
         ok = result.status == expected_status
+        if network_probe is not None:
+            ok = all(network_probe.values()) and result.network_isolation == "enforced"
         if case_id == "memory_limit":
             ok = (
                 control_result is not None
@@ -357,7 +428,8 @@ def run_sandbox_self_test(case_id: str) -> int:
             "ok": ok,
             "code": result.status,
             "return_code": result.return_code,
-            "network_isolation": "not_enforced",
+            "network_isolation": result.network_isolation if ok else "unverified",
+            "network_probe": network_probe,
         }))
         return 0 if ok else 1
 

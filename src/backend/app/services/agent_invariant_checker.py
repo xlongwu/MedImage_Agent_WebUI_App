@@ -167,10 +167,20 @@ class AgentInvariantChecker:
             if action.status == "applied" and not self._action_matches_lifecycle(action, lifecycle):
                 self._finding(findings, code="AGENT_INV_APPLIED_ACTION_STATE_MISMATCH", severity="blocking", lifecycle_id=lifecycle.lifecycle_id, related_ids=(action.action_id,))
 
-    @staticmethod
-    def _action_matches_lifecycle(action, lifecycle) -> bool:
+    def _action_matches_lifecycle(self, action, lifecycle) -> bool:
         if action.kind == "request_decision":
-            return lifecycle.pending_decision_batch is not None and lifecycle.state in {"WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"}
+            pending = lifecycle.pending_decision_batch
+            if pending is not None and pending.batch_id == action.decision_batch_id:
+                return stable_hash(pending.model_dump(mode="json")) == action.decision_batch_hash
+            # A completed user answer closes that historical action. Subsequent
+            # planning is valid only with an authoritative event for its batch.
+            return any(
+                event.project_id == lifecycle.project_id and event.lifecycle_id == lifecycle.lifecycle_id
+                and event.source_command == "answer" and event.details.get("batch_id") == action.decision_batch_id
+                and event.from_state in {"WAITING_FOR_INPUT", "WAITING_FOR_SCIENCE_DECISION"}
+                and event.to_state in {"CONTEXT_READY", "PLAN_DRAFTED"}
+                for event in self.store.list_agent_lifecycle_events(lifecycle.lifecycle_id)
+            ) if action.decision_batch_id else False
         # A recovered accepted action can be replayed after a process loss
         # before the deterministic planner has committed its plan transition.
         # The current schema has no separate action-result reference, so an

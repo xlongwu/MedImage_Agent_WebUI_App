@@ -1,3 +1,4 @@
+import { formatSystemMessage } from "../systemMessages";
 import { Button } from "../../../components/ui";
 import { useI18n } from "../../../i18n/useI18n";
 import type { AgentTaskResponse } from "../../../lib/types/agentTask";
@@ -65,26 +66,38 @@ export function ExecutionApprovalReview({
         {summary.science_changes.length ? (
           <div>
             <span>{t("agent.scienceChanges")}</span>
-            <strong>{summary.science_changes.join(" · ")}</strong>
+            <strong>
+              {summary.science_changes.map((item) => formatSystemMessage(t, item)).join(" · ")}
+            </strong>
           </div>
         ) : null}
         {(summary.memory_influence_summary ?? []).length ? (
           <div>
             <span>{t("agent.approvalMemory")}</span>
-            <strong>{summary.memory_influence_summary?.join(" · ")}</strong>
+            <strong>
+              {summary.memory_influence_summary
+                ?.map((item) => formatSystemMessage(t, item))
+                .join(" · ")}
+            </strong>
           </div>
         ) : null}
         {summary.limitations.length ? (
           <div>
             <span>{t("agent.limitations")}</span>
-            <strong>{summary.limitations.join(" · ")}</strong>
+            <strong>
+              {summary.limitations.map((item) => formatSystemMessage(t, item)).join(" · ")}
+            </strong>
           </div>
         ) : null}
         {summary.sections.map((section) => (
           <div key={section.id}>
-            <span>{section.title}</span>
-            <strong>{section.summary}</strong>
-            {section.warnings.length ? <small>{section.warnings.join(" · ")}</small> : null}
+            <span>{formatSystemMessage(t, section.title)}</span>
+            <strong>{formatSystemMessage(t, section.summary)}</strong>
+            {section.warnings.length ? (
+              <small>
+                {section.warnings.map((item) => formatSystemMessage(t, item)).join(" · ")}
+              </small>
+            ) : null}
           </div>
         ))}
       </div>

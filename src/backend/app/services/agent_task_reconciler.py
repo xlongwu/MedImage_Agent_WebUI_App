@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from threading import Event, Lock, Thread
 from time import monotonic
+from datetime import UTC, datetime
 
 from src.backend.app.core.exceptions import SafetyError, StateStoreError
 from src.backend.app.planner.audit_record import stable_hash
@@ -42,6 +43,16 @@ class AgentTaskReconciler:
         lock = self._lock(lifecycle_id)
         with lock:
             current = self.orchestrator.get(project_id=project_id, lifecycle_id=lifecycle_id)
+            if current.state in {"OBSERVING", "EVALUATING", "DIAGNOSING"}:
+                return self._recover_intermediate(project_id=project_id, lifecycle_id=lifecycle_id)
+            if current.state in {"APPROVED", "EXECUTION_READY"}:
+                return self.orchestrator.transition(
+                    project_id=project_id, lifecycle_id=lifecycle_id,
+                    to_state="HUMAN_HANDOFF",
+                    command_id=f"startup:{lifecycle_id}:execution-uncertain",
+                    actor=actor, source_command="execution_recovery_uncertain",
+                    reason="Approved execution has no recoverable run evidence.",
+                )
             if current.state not in {"RUNNING", "RETRYING", "RECOVERING"}:
                 return current
             evidence = self._terminal_evidence(current)
@@ -90,28 +101,10 @@ class AgentTaskReconciler:
                 raise
 
     def reconcile_incomplete_on_startup(self) -> tuple[str, ...]:
-        processed: list[str] = []
-        for project in self.store.list_projects():
-            for lifecycle in self.store.list_agent_lifecycles(project.id):
-                if lifecycle.state in {"RUNNING", "RETRYING", "RECOVERING"}:
-                    self.reconcile_once(project_id=project.id, lifecycle_id=lifecycle.lifecycle_id)
-                    processed.append(lifecycle.lifecycle_id)
-                elif lifecycle.state in {"OBSERVING", "EVALUATING", "DIAGNOSING"}:
-                    self._recover_intermediate(project_id=project.id, lifecycle_id=lifecycle.lifecycle_id)
-                    processed.append(lifecycle.lifecycle_id)
-                elif lifecycle.state in {"APPROVED", "EXECUTION_READY"}:
-                    # Dispatch is never reconstructed from a startup scan.  A
-                    # consumed/missing result is ambiguous and requires an
-                    # operator to inspect the approval, ticket and gateway.
-                    self.orchestrator.transition(
-                        project_id=project.id, lifecycle_id=lifecycle.lifecycle_id,
-                        to_state="HUMAN_HANDOFF",
-                        command_id=f"startup:{lifecycle.lifecycle_id}:execution-uncertain",
-                        actor="system-reconciler", source_command="execution_recovery_uncertain",
-                        reason="Approved execution has no recoverable run evidence.",
-                    )
-                    processed.append(lifecycle.lifecycle_id)
-        return tuple(processed)
+        """Register bounded durable work; the application's coordinator owns it."""
+        return self.store.scan_agent_recovery_page(
+            consumer="execution", now=datetime.now(UTC), limit=self.STARTUP_BATCH_LIMIT,
+        ).lifecycle_ids
 
     def _recover_intermediate(self, *, project_id: str, lifecycle_id: str):
         """Resume only deterministic persisted evidence transitions."""

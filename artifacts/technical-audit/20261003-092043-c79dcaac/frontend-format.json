@@ -1,0 +1,18 @@
+{
+  "audit_id": "20261003-092043-c79dcaac",
+  "name": "frontend-format",
+  "started_at": "2026-10-03T01:31:58.516410+00:00",
+  "ended_at": "2026-10-03T01:32:01.889767+00:00",
+  "seconds": 3.37,
+  "command": "npm --prefix src/frontend run format:check",
+  "exit_code": 0,
+  "process_id": 7768,
+  "process_exited": true,
+  "baseline_manifest_sha256": "740395baf22d5e754489cde2471af70f215e0ed86c6516a44f4890c1b514e97e",
+  "result_lines": [
+    "All matched files use Prettier code style!"
+  ],
+  "retention_reason": "Minimal redacted command, assertions/summary, exit status and skip/failure evidence; raw temporary logs and databases deleted.",
+  "pre_retention_output_sha256": "802023420d6736bc2f53668a0f292b47a57f347c26b0ba74f0182d279768fbbc",
+  "input_identity_ref": "baseline.json#/input_fingerprints; scientific-inputs.json"
+}

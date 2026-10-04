@@ -1,0 +1,14 @@
+{
+  "command": [
+    "python",
+    "-m",
+    "pytest",
+    "tests/unit/test_motion_goal_routing.py",
+    "--tb=short",
+    "--basetemp=.pytest_tmp"
+  ],
+  "exit_code": 0,
+  "stdout": "============================= test session starts =============================\nplatform win32 -- Python 3.13.9, pytest-8.4.2, pluggy-1.5.0\nPySide6 6.9.2 -- Qt runtime 6.9.2 -- Qt compiled 6.9.2\nrootdir: <REPO_ROOT>\nconfigfile: pytest.ini\nplugins: anyio-4.10.0, qt-4.5.0\ncollected 17 items\n\ntests\\unit\\test_motion_goal_routing.py .................                 [100%]\n\n============================= 17 passed in 3.00s ==============================\n",
+  "stderr": "",
+  "isolated": true
+}
