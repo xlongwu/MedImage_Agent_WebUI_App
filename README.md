@@ -72,9 +72,10 @@ Start the backend in one terminal:
 
     python -m uvicorn src.backend.app.main:app --host 127.0.0.1 --port 8000
 
-Start the frontend in another terminal:
+Start the frontend from its package directory in another terminal:
 
-    npm --prefix src/frontend run dev
+    cd src/frontend
+    npm run dev
 
 The repository also provides start.bat on Windows and start.sh on macOS/Linux. These scripts stop when their required ports are already occupied and do not terminate existing processes.
 

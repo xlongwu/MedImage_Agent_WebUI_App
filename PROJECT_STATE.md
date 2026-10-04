@@ -5,8 +5,8 @@ Current as of 2026-10-04 (Asia/Shanghai).
 ## Version and source status
 
 - The application version remains 0.6.0-rc1. The v0.6.0-rc2 convergence was formally terminated on 2026-10-01. No v0.6.0-rc2 or v0.7.0 release is claimed.
-- The next possible release line is v0.7.0-rc1. It requires a scoped capability review of the Memory Domain and current API/persistence contracts, followed by a separately authorized Release task.
-- The repository is on main at HEAD c79dcaacb773ad29757a8a82f2e938dfbc161fbd. The working tree contains substantial uncommitted development changes, including the Phase 16 work. It is not a clean release candidate. No commit, push, tag, or publication is claimed.
+- The repository is maintained on `main`. The CI repair in this task is based on commit `8e7726afad9d1c1ab3bdc6fa0a72d4bd77f6019c`, which was the verified common tip of local `main` and `webui-app/main` before the repair. After the repair is pushed, the exact SHA is the tip of those refs; verify it with Git before relying on remote CI status.
+- The current working tree may contain the user's local `.zcodeignore`; it is unrelated to the repair and must not be included in the commit.
 - Historical version notes remain tied to their original release states.
 
 ## Current product
@@ -23,35 +23,37 @@ Project Memory and the controlled Harness are optional and default-disabled. Mem
 - A computed numerical output does not by itself establish independent reference validation. Simplified preprocessing, preview/partial results, and backend-specific limits remain explicit.
 - The in-project DICOM converter supports classic single-frame MR series and Siemens single-frame mosaic MR time series. Conversion remains default-blocked behind release-readiness evidence, explicit confirmation, audit, and safe-path checks.
 - MATLAB, SPM, DPABI, arbitrary external commands, clinical diagnosis, and treatment recommendations are outside the enabled product boundary.
-- The project is for research engineering, not clinical use. The human review and release schedule is tracked in [specs/待人工审核校验清单.md](specs/待人工审核校验清单.md).
+- The project is for research engineering, not clinical use. Human review and release gates are tracked in [specs/待人工审核校验清单.md](specs/待人工审核校验清单.md).
+
+## CI repair and current verification
+
+The CI report on the pre-repair base identified three failures: the Windows `spawn_child_tree` self-test returned nonzero, a clean checkout was marked release-readiness FAIL, and the README frontend-command check failed. The repair:
+
+- documents `cd src/frontend` in both READMEs;
+- lets release-readiness tests write into isolated pytest output directories instead of overwriting existing project reports;
+- makes the Windows process-tree self-test verify both a successful child-spawn control at `max_processes=2` and a blocked child at `max_processes=1`, while preserving the AppContainer and Job Object restrictions.
+
+The local Windows focused regression suite passed: 105 passed, 1 warning, exit 0. This was not a full backend-suite run. The post-fix GitHub Actions result has not yet been recorded; a passing local focused suite is not evidence that the full remote workflow passed.
 
 ## Windows package state
 
-The only retained Electron output is the unpacked application at desktop/electron/dist/win-unpacked/. Keep its executable together with its resources and Electron runtime files.
+The only retained Electron output is the unpacked application at `desktop/electron/dist/win-unpacked/`. Keep its executable together with its resources and Electron runtime files.
 
-- The package was built at 2026-10-04 02:54 UTC from HEAD c79dcaacb773ad29757a8a82f2e938dfbc161fbd. Its embedded provenance records application version 0.6.0-rc1 and clean=false.
-- The prior package backup from 2026-09-12 was removed on 2026-10-04 after confirming it was not Git-tracked and no process was using it. No installer or portable executable is retained.
-- The previously recorded packaged hidden-shell smoke and restricted-process smoke passed on this diagnostic build. These confirm only the exercised packaging and process-boundary checks; they do not prove a visible business workflow, scientific validation, or release readiness.
-- The latest packaging task also recorded a passing Electron contract check and focused packaging/API tests. Exact command results are in TASK_HANDOFF.md; this documentation update did not rebuild the application or rerun those checks.
-- The old extraction directory desktop/packaging/build/production-launch/workspace/_MEI242642 remains inaccessible to cleanup even though no owning process was found. Removal was attempted at its resolved in-repository path and denied by Windows. Do not change ACLs or take ownership to remove it.
-
-The local package is diagnostic, not a release candidate. A clean exact-SHA candidate and current release evidence are still required. Build, sidecar health, packaged launch, renderer smoke, visible GUI workflows, and scientific execution are separate evidence levels.
-
-## Validation and evidence
-
-- The most recent remote CI result recorded in the repository is run 36957573288 on main commit 07716210e1894605751fa311fc57548377ce5922 (2026-10-02). It predates the current HEAD and does not cover the current working-tree changes.
-- Current task-specific test counts and commands are kept in TASK_HANDOFF.md and the linked audit report instead of being copied into this stable state page.
-- Earlier source, frontend, and packaging evidence is scoped to the exact state described in its report. A source test, historical package, or older CI run is not current release evidence.
+- The last recorded package provenance is 2026-10-04 02:54 UTC, application version 0.6.0-rc1, source HEAD `c79dcaacb773ad29757a8a82f2e938dfbc161fbd`, and `clean=false`.
+- That package predates the current backend runtime self-test change. Its previous packaged smoke evidence is stale for this source state. This task did not rebuild the package, produce an installer/portable package, or verify a new packaged launch.
+- No installer or portable executable is retained. The package is diagnostic, not a release candidate.
+- The previously recorded extraction directory `desktop/packaging/build/production-launch/workspace/_MEI242642` was inaccessible to cleanup after no owning process was found. This task did not retry removal, change ACLs, take ownership, or delete its parent.
+- A clean exact-SHA candidate and current release evidence are still required. Build, sidecar health, packaged launch, renderer smoke, visible GUI workflows, and scientific execution are separate evidence levels.
 
 ## Open work and limitations
 
-1. Complete the human interpretation and SDK review of the Windows AppContainer network hardening (D-03).
+1. Complete the human interpretation and SDK review of Windows AppContainer network hardening (D-03).
 2. Complete the scoped capability review required before opening the v0.7.0-rc1 release line (D-09).
-3. After approval, build a clean exact-SHA candidate and capture current provenance, sidecar, packaged-launch, and visible workflow evidence.
-4. Run the packaged restart workflow against that approved candidate; P-01/P-04 have not been closed for the current dirty-tree package.
-5. Current source UI evidence is still blocked by the computer-use initialization failure recorded in TASK_HANDOFF.md. Visible GUI and human review items remain in the manual checklist.
-6. Independent scientific references, real-data visible-UI validation, and other human-owned evidence remain open where listed in the capability matrix and manual checklist.
-7. The inaccessible PyInstaller extraction directory above needs an environment-owner cleanup decision. The old root .pytest_tmp path is currently absent.
+3. Check the GitHub Actions run for the pushed CI repair; investigate any remaining failure from its current logs.
+4. After applicable approval, build a clean exact-SHA candidate and capture current provenance, sidecar, packaged-launch, and visible-workflow evidence.
+5. Run the packaged restart workflow against that approved candidate; P-01/P-04 have not been closed for the existing diagnostic package.
+6. Visible Electron GUI workflows, independent scientific references, real-data visible-UI validation, and other human-owned evidence remain open where listed in the capability matrix and manual checklist.
+7. The old PyInstaller extraction directory above needs an environment-owner cleanup decision. Do not modify ACLs or ownership to force removal.
 
 Production multi-Agent execution is not implemented. Phase 14 was deferred before its G0 gate and is not queued work. Resume requires its recorded data, authorization, and implementation prerequisites to be met first.
 

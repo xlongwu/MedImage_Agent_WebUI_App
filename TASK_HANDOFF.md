@@ -2,36 +2,36 @@
 
 更新：2026-10-04（上海时区）
 
-## 当前状态
+## 当前任务
 
-- 仓库位于 main，HEAD 为 c79dcaacb773ad29757a8a82f2e938dfbc161fbd；工作区包含此前已有的大量未提交修改。保留这些改动，不 reset、不提交、不推送、不打 tag、不发布，也不为获得 clean tree 删除用户文件。
-- 应用版本仍为 0.6.0-rc1。0.6.0-rc2 已终止；v0.7.0-rc1 仍需 D-09 能力评审和显式 Release 任务。
-- 当前任务已完成：保留唯一最新 Electron 包，重写中英文 README，精简并更新本文件及 PROJECT_STATE.md。
-- 旧的 2026-09-12 包备份 desktop/electron/.original-dist-before-rebuild-20261004/ 已按用户最新要求删除。删除前确认它未被 Git 跟踪、路径位于仓库内且无进程使用。
-- 唯一保留的 Electron 应用输出是 desktop/electron/dist/win-unpacked/。包 provenance 记录时间 2026-10-04T02:54:42Z、版本 0.6.0-rc1、HEAD c79dcaacb773ad29757a8a82f2e938dfbc161fbd、clean=false。
-- desktop/packaging/build/production-launch/workspace/_MEI242642 是剩余的旧 PyInstaller 临时解包目录。当前没有发现其所属进程，但精确路径的删除被 Windows 拒绝访问。不要扩大 ACL、接管所有权或删除父目录；等待环境所有者处理。
+修复 `webui-app/main` 上报告的 Windows sandbox process-tree 自检失败，以及 backend release-readiness 的两项测试失败。修复基于 `main` / `webui-app/main` 的共同基线 `8e7726afad9d1c1ab3bdc6fa0a72d4bd77f6019c`。
 
-## 最近一次已记录验证
+## 已完成
 
-以下来自 2026-10-04 的重打包任务，不是本次文档更新中重新运行的结果：
+- README 中前端启动说明统一为先进入 `src/frontend` 再执行 `npm run dev`，满足就绪检查并保持中英文一致。
+- `build_release_readiness()` 支持可选输出目录；release-readiness 单测通过 pytest 隔离目录写报告，避免覆盖仓库中既有的 `outputs/reports/release_readiness/`。
+- 修正 `spawn_child_tree` 探针：固定使用 System32-only `PATH`，切换到已授权的 `staged_input` 目录后再启动固定 `cmd.exe` 子进程，避免 `cmd.exe /c` 的 C 运行时引号转义与当前目录权限问题。正对照使用 `max_processes=2` 并确认子进程标记可见，限制探针使用 `max_processes=1` 并确认标记不可见；没有放宽 Job Object、AppContainer 或进程数限制。
+- 更新 Windows 进程树回归断言和安全边界说明。
 
-- 后端完整 pytest：3189 passed、31 skipped、3 warnings，exit 0；collect-only：3216 collected，exit 0。
-- 前端：52 个测试文件、266 个测试通过；format、typecheck、lint、build 和 project-runs 检查通过。CI lint 为非阻塞。
-- Electron：npm --prefix desktop/electron run check 通过。
-- 打包聚焦回归：151 passed、1 warning，exit 0。
-- 当前 canonical 包的隐藏 renderer/shell smoke 与 restricted-process packaged smoke 通过；sidecar 停止、renderer health 为 200、React root 非空、无 console errors。没有对当前包运行 restart workflow、可见 BIDS/DICOM/recovery 流程或 installer。
-- 结果与逐字证据位于 artifacts/technical-audit-fixes/20261003-r02-r11/ 及 specs/阶段记录/审核计划/。上一阶段 source/evidence manifest 是历史快照，不代表当前整份 dirty tree。
+## 验证
 
-本次文档与清理任务未运行 pytest、前端测试或重新构建。检查发现仓库根 .pytest_tmp 当前已不存在。
+Windows 本机 focused 回归命令：
 
-## 未完成事项
+```powershell
+python -m pytest tests/unit/test_desktop_backend_entry.py tests/unit/test_runtime_subprocess_boundary.py tests/unit/test_sandbox_process_request.py tests/unit/test_windows_process_sandbox.py tests/unit/test_sandbox_policy.py tests/unit/test_execution_environment_service.py tests/unit/test_execution_ticket.py tests/api/test_sandbox_attempt_api.py tests/integration/test_windows_process_sandbox.py tests/integration/test_windows_sandbox_process_tree.py tests/unit/test_release_readiness.py --tb=short --basetemp=.pytest_tmp_ci_repair -q
+```
 
-1. 普通 shell 权限可用，但此前 CUA/browser 初始化报告 node_repl kernel exited unexpectedly 和 helper_unknown_error: apply deny-read ACLs。待环境修复后，重新获取当前源码 UI 证据；不得复用旧截图或绕开批准工具。
-2. D-03 仍需人工解释与 SDK 复核 Windows AppContainer 网络硬化；D-09 仍需评审 Memory Domain 及当前 API/持久化契约扩展。状态与关卡以 specs/待人工审核校验清单.md 和 PROJECT_STATE.md 为准。
-3. P-01/P-04 的 packaged restart 尚未在获批的 clean exact-SHA 候选上验证。获得适用批准后，隔离 workspace、userData、数据库和 evidence directory，核对原 run/ticket/dispatch、singleton、sidecar 终止及候选输入 hash。
-4. 可见 Electron GUI 工作流、独立科学参考、真实数据人工判读及 Release/installer/tag/publication 仍按人工清单处理。不得用 dirty-tree 包、源码测试或历史候选关闭这些关卡。
-5. 清理 _MEI242642 仍受文件访问拒绝阻挡。仅在权限/环境可访问后重新确认路径、Git 跟踪、进程所有权和清理范围；不尝试 ACL 或 owner 变更。
+结果：`105 passed, 1 warning, exit 0`。单独的 `spawn_child_tree` 实际 Job Object 探针为 `1 passed`。完成后确认 pytest 已退出并清理 `.pytest_tmp*` 与 `.pytest_cache`；仓库根目录没有遗留 pytest 测试目录。警告是 FastAPI TestClient 对 httpx/Starlette 的弃用提示，与本修复无关。
 
-## 续做约束
+完整 backend suite 和此次修复后的远端 GitHub Actions 结果尚未取得；不能据 focused suite 声称全量 CI 通过。
 
-先读 AGENTS.md、PROJECT_STATE.md 和人工审核清单，再从上述未完成事项继续。所有修改继续在 main 上进行并保留现有 dirty diff。Pipeline Runtime、Approval Gate、Execution Gateway、node runner、科学算法和状态迁移属于受保护范围；任何 release/GUI/外部执行证据都必须绑定当前获批候选，且 rawdata 始终只读。
+## 提交、打包与未完成事项
+
+- 修改仍在 `main`；上一提交 `8e7726a` 已与 `webui-app/main` 同步。完成本次提交推送后，检查远端 main SHA 与本地 HEAD 一致，再查看新 Actions 结果。
+- 本次没有重新构建 Electron 包或 installer。`desktop/electron/dist/win-unpacked/` 的既有包 provenance 来自 `c79dcaacb773ad29757a8a82f2e938dfbc161fbd`，早于本次 backend runtime 自检修改；不得把旧包的 smoke 证据当作当前候选证据。没有生成新 installer/portable。
+- D-03 Windows AppContainer 网络加固人工/SDK 复核、D-09 Memory Domain/API 持久化能力评审、获批 exact-SHA packaged restart、可见 GUI 工作流和独立科学验证仍未完成，以 `PROJECT_STATE.md` 和人工审核清单为准。
+- `_MEI242642` 的旧 PyInstaller 解包目录此前因 Windows 拒绝访问而无法清理；本次没有更改其 ACL/owner，也没有删除父目录。
+
+## 续做
+
+先确认本修复已推送，再读取对应 GitHub Actions 结果；若失败，从新日志继续定位。不要复用旧 package evidence。所有更改继续在 `main`，保留用户本地 `.zcodeignore`；rawdata 始终只读。

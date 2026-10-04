@@ -30,3 +30,8 @@ def test_job_object_blocks_or_terminates_the_process_tree(
     assert payload["ok"] is True
     assert payload["code"] == expected_code
     assert not list(tmp_path.glob(".sandbox-self-test-*"))
+    if case_id == "spawn_child_tree":
+        assert payload["process_tree_probe"] == {
+            "control_child_started": True,
+            "limit_one_blocked_child": True,
+        }

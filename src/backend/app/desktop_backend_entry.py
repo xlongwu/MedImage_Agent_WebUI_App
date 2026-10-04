@@ -29,6 +29,7 @@ APP_IMPORT_STRING = "src.backend.app.main:app"
 DESKTOP_PARENT_PID_ENV = "MEDIMAGE_DESKTOP_PARENT_PID"
 _STILL_ACTIVE = 259
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_SANDBOX_CHILD_STARTED_MARKER = "MEDIMAGE_SANDBOX_CHILD_STARTED"
 _SANDBOX_SELF_TEST_CASES = {
     "write_allowed_output", "write_rawdata_denied", "write_outside_project_denied",
     "spawn_child_tree", "memory_limit", "timeout", "print_environment_keys",
@@ -254,9 +255,12 @@ def _sandbox_self_test_argv(
     executable = helper_path("cmd.exe")
     command = _SANDBOX_SELF_TEST_COMMANDS.get(case_id)
     if case_id == "spawn_child_tree":
+        # cmd.exe parses /c text itself, not with the C runtime quoting rules
+        # used by list2cmdline. Keep this fixed command free of embedded quotes
+        # and resolve the nested helper from the request's System32-only PATH.
         command = (
-            f'"{executable}" /d /c exit 0 >nul 2>&1 & '
-            "if errorlevel 1 (exit /b 0) else (exit /b 1)"
+            "cd /d staged_input & cmd.exe /d /q /c echo "
+            f"{_SANDBOX_CHILD_STARTED_MARKER} & exit /b 0"
         )
     if command is None:
         raise ValueError("Unknown sandbox self-test case")
@@ -273,6 +277,13 @@ def _run_sandbox_self_test_process(request, *, timeout_seconds: int):
     from src.backend.app.runtime.sandbox_process_runner import SandboxProcessRunner
 
     return SandboxProcessRunner().run(request, timeout_seconds=timeout_seconds)
+
+
+def _sandbox_self_test_output_contains(path: str, marker: str) -> bool:
+    try:
+        return marker.encode("ascii") in Path(path).read_bytes()
+    except OSError:
+        return False
 
 
 def _sandbox_network_self_test(case_id: str, request):
@@ -367,17 +378,38 @@ def run_sandbox_self_test(case_id: str) -> int:
                     stream.write(chunk)
         timeout = 1 if case_id == "timeout" else 15
         argv = _sandbox_self_test_argv("write_allowed_output" if case_id.startswith("network_") else case_id, memory_input_path)
+        environment = {
+            "TEMP": str(work / "tmp"),
+            "TMP": str(work / "tmp"),
+            "LOCALAPPDATA": str(work / "tmp"),
+            "SystemRoot": os.environ.get("SystemRoot", r"C:\Windows"),
+        }
+        if case_id == "spawn_child_tree":
+            environment["PATH"] = str(
+                PureWindowsPath(environment["SystemRoot"]) / "System32"
+            )
         request = SandboxProcessRequest(
             sandbox_id=f"selftest-{case_id}", executable_path=argv[0],
-            argv=argv,
-            cwd=str(work), environment={"TEMP": str(work / "tmp"), "TMP": str(work / "tmp"), "LOCALAPPDATA": str(work / "tmp"), "SystemRoot": os.environ.get("SystemRoot", r"C:\Windows")},
+            argv=argv, cwd=str(work), environment=environment,
             policy_hash="sandbox-self-test-v1", timeout_seconds=timeout,
             memory_limit_bytes=(16 if case_id == "memory_limit" else 64) * 1024 * 1024,
             max_processes=1,
         )
         try:
             control_result = None
+            control_child_started = None
             network_probe = None
+            if case_id == "spawn_child_tree":
+                control_request = request.model_copy(update={
+                    "sandbox_id": "selftest-spawn-child-control",
+                    "max_processes": 2,
+                })
+                control_result = _run_sandbox_self_test_process(
+                    control_request, timeout_seconds=timeout
+                )
+                control_child_started = _sandbox_self_test_output_contains(
+                    control_result.stdout_path, _SANDBOX_CHILD_STARTED_MARKER
+                )
             if case_id == "memory_limit":
                 control_request = request.model_copy(update={
                     "sandbox_id": "selftest-memory-limit-control",
@@ -411,6 +443,25 @@ def run_sandbox_self_test(case_id: str) -> int:
             else "SUCCEEDED"
         )
         ok = result.status == expected_status
+        process_tree_probe = None
+        if case_id == "spawn_child_tree":
+            limited_child_started = _sandbox_self_test_output_contains(
+                result.stdout_path, _SANDBOX_CHILD_STARTED_MARKER
+            )
+            process_tree_probe = {
+                "control_child_started": control_child_started is True,
+                "limit_one_blocked_child": not limited_child_started,
+            }
+            ok = (
+                control_result is not None
+                and control_result.status == "SUCCEEDED"
+                and control_result.network_isolation == "enforced"
+                and control_child_started is True
+                and result.status == "SUCCEEDED"
+                and result.return_code == 0
+                and result.network_isolation == "enforced"
+                and not limited_child_started
+            )
         if network_probe is not None:
             ok = all(network_probe.values()) and result.network_isolation == "enforced"
         if case_id == "memory_limit":
@@ -424,13 +475,16 @@ def run_sandbox_self_test(case_id: str) -> int:
             ok = ok and proof_path.is_file() and proof_path.read_text(
                 encoding="ascii"
             ).strip() == "ok"
-        print(json.dumps({
+        payload = {
             "ok": ok,
             "code": result.status,
             "return_code": result.return_code,
             "network_isolation": result.network_isolation if ok else "unverified",
             "network_probe": network_probe,
-        }))
+        }
+        if process_tree_probe is not None:
+            payload["process_tree_probe"] = process_tree_probe
+        print(json.dumps(payload))
         return 0 if ok else 1
 
 

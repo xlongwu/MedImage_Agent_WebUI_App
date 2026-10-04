@@ -9,9 +9,14 @@ from src.backend.app.tools.release_readiness import build_release_readiness
 
 
 @pytest.fixture(scope="module")
-def result():
+def output_dir(tmp_path_factory):
+    return tmp_path_factory.mktemp("release-readiness")
+
+
+@pytest.fixture(scope="module")
+def result(output_dir):
     """Run release readiness once and reuse across tests."""
-    return build_release_readiness()
+    return build_release_readiness(output_dir=output_dir)
 
 
 @pytest.fixture(scope="module")
@@ -187,20 +192,19 @@ def test_current_agent_first_workspaces_are_present(checks):
 # ── Output files ──
 
 
-def test_output_files_written(result):
-    out_dir = Path("outputs/reports/release_readiness")
+def test_output_files_written(result, output_dir):
     for fname in [
         "release_readiness_result.json",
         "release_readiness_report.md",
         "release_readiness_checklist.csv",
         "release_readiness_dashboard.json",
     ]:
-        fpath = out_dir / fname
+        fpath = output_dir / fname
         assert fpath.is_file(), f"Missing output: {fpath}"
 
 
-def test_output_result_json_is_valid(result):
-    json_path = Path("outputs/reports/release_readiness/release_readiness_result.json")
+def test_output_result_json_is_valid(result, output_dir):
+    json_path = output_dir / "release_readiness_result.json"
     data = json.loads(json_path.read_text(encoding="utf-8"))
     assert data["release_readiness_status"] == result["release_readiness_status"]
 

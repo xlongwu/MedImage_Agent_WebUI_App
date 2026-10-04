@@ -13,6 +13,7 @@ from src.backend.app.desktop_backend_entry import (
     APP_IMPORT_STRING,
     DEFAULT_DESKTOP_HOST,
     DESKTOP_PARENT_PID_ENV,
+    _SANDBOX_CHILD_STARTED_MARKER,
     DesktopBackendConfig,
     _desktop_parent_pid,
     _sandbox_self_test_argv,
@@ -86,6 +87,56 @@ def test_sandbox_self_test_uses_fixed_windows_helper_argv(tmp_path: Path) -> Non
     memory_argv = _sandbox_self_test_argv("memory_limit", memory_input)
     assert memory_argv[0].lower().endswith("system32\\sort.exe")
     assert memory_argv[-1] == str(memory_input)
+
+    process_tree_argv = _sandbox_self_test_argv("spawn_child_tree", memory_input)
+    assert process_tree_argv[-1] == (
+        "cd /d staged_input & cmd.exe /d /q /c echo "
+        f"{_SANDBOX_CHILD_STARTED_MARKER} & exit /b 0"
+    )
+    assert "exit /b 0" in process_tree_argv[-1]
+
+
+def test_spawn_child_tree_self_test_uses_a_positive_control(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    now = datetime.now(UTC)
+    requests = []
+
+    def fake_run(request, *, timeout_seconds: int):
+        requests.append(request)
+        stdout_path = Path(request.cwd) / "logs" / "stdout.log"
+        stdout_path.parent.mkdir(parents=True, exist_ok=True)
+        if request.max_processes == 2:
+            stdout_path.write_bytes(_SANDBOX_CHILD_STARTED_MARKER.encode("ascii"))
+        else:
+            stdout_path.write_bytes(b"")
+        return SandboxProcessResult(
+            sandbox_id=request.sandbox_id,
+            status="SUCCEEDED",
+            return_code=0,
+            started_at=now,
+            ended_at=now,
+            stdout_path=str(stdout_path),
+            stderr_path="redacted",
+            network_isolation="enforced",
+        )
+
+    monkeypatch.setattr("src.backend.app.desktop_backend_entry._is_windows_runtime", lambda: True)
+    monkeypatch.setattr("src.backend.app.desktop_backend_entry._run_sandbox_self_test_process", fake_run)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--sandbox-self-test", "spawn_child_tree"]) == 0
+    assert [request.max_processes for request in requests] == [2, 1]
+    assert requests[0].environment["PATH"].lower().endswith("\\system32")
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["process_tree_probe"] == {
+        "control_child_started": True,
+        "limit_one_blocked_child": True,
+    }
+    assert not list(tmp_path.glob(".sandbox-self-test-*"))
 
 
 def test_sandbox_self_test_cleans_its_fixed_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]) -> None:

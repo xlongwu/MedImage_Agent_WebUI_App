@@ -72,9 +72,10 @@ DICOM 转换默认阻断。执行需要当前 release-readiness 证据、显式�
 
     python -m uvicorn src.backend.app.main:app --host 127.0.0.1 --port 8000
 
-在另一个终端启动前端：
+在另一个终端进入前端目录并启动开发服务：
 
-    npm --prefix src/frontend run dev
+    cd src/frontend
+    npm run dev
 
 仓库也提供 Windows 的 start.bat 和 macOS/Linux 的 start.sh。所需端口已被占用时，脚本会停止并提示，不会终止现有进程。
 

@@ -15,7 +15,7 @@ def _read_json(path: Path) -> dict[str, Any] | None:
         return None
 
 
-def build_release_readiness():
+def build_release_readiness(*, output_dir: str | Path | None = None):
     c = []
     w: list[str] = []
     e: list[str] = []
@@ -307,7 +307,11 @@ def build_release_readiness():
         "warnings": w,
         "errors": e,
     }
-    out = Path("outputs/reports/release_readiness")
+    out = (
+        Path(output_dir)
+        if output_dir is not None
+        else Path("outputs/reports/release_readiness")
+    )
     out.mkdir(parents=True, exist_ok=True)
     (out / "release_readiness_result.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
