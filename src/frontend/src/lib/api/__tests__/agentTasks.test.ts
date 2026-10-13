@@ -6,11 +6,14 @@ import {
   approveAgentTaskRecovery,
   cancelAgentTask,
   createAgentTask,
+  getAgentTaskTeam,
   getAgentTask,
   getAgentTaskHarness,
   getAgentPlanEvidence,
   registerAgentTemplate,
   listAgentTaskEvents,
+  listAgentTaskTeamEvents,
+  listAgentTaskTeamFindings,
   listAgentTasks,
 } from "../agentTasks";
 
@@ -72,6 +75,17 @@ describe("Agent Task API", () => {
       limit: 25,
       signal,
     });
+    await getAgentTaskTeam("http://api", "project / 1", "task / 1", { signal });
+    await listAgentTaskTeamFindings("http://api", "project / 1", "task / 1", {
+      after: "finding-1",
+      limit: 10,
+      signal,
+    });
+    await listAgentTaskTeamEvents("http://api", "project / 1", "task / 1", {
+      after: "event-1",
+      limit: 10,
+      signal,
+    });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -93,6 +107,21 @@ describe("Agent Task API", () => {
       "http://api/api/projects/project%20%2F%201/agent/tasks/task%20%2F%201/events?after=cursor%2B%2F%3D&limit=25",
       expect.objectContaining({ signal }),
     );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "http://api/api/projects/project%20%2F%201/agent/tasks/task%20%2F%201/team",
+      expect.objectContaining({ signal }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "http://api/api/projects/project%20%2F%201/agent/tasks/task%20%2F%201/team/findings?after=finding-1&limit=10",
+      expect.objectContaining({ signal }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "http://api/api/projects/project%20%2F%201/agent/tasks/task%20%2F%201/team/events?after=event-1&limit=10",
+      expect.objectContaining({ signal }),
+    );
   });
 
   it("sends bounded command payloads without granular approval booleans", async () => {
@@ -105,6 +134,7 @@ describe("Agent Task API", () => {
       actor: "researcher",
       command_id: "command-create",
       goal: "Run preprocessing and FC",
+      team_mode: "single",
     });
     await answerAgentTask("http://api", "project-1", "task-1", {
       answers: [{ item_id: "atlas", value: "schaefer-200" }],
@@ -131,6 +161,7 @@ describe("Agent Task API", () => {
           actor: "researcher",
           command_id: "command-create",
           goal: "Run preprocessing and FC",
+          team_mode: "single",
         }),
       }),
     );

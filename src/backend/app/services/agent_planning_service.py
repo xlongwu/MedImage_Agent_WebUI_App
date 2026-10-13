@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
 import logging
 import math
 import re
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from src.backend.app.core.exceptions import SafetyError
+from src.backend.app.agent_skills.registry import BUILTIN_SKILL_IDS, AgentSkillRegistry
 from src.backend.app.core.agent_logging import agent_log_context
-from src.backend.app.core.config_schema import AgentModelRuntimeConfig
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig, AgentMultiAgentConfig
+from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.agent_model_adapter import REQUEST_BUILDER_VERSION, action_schema
-from src.backend.app.schemas.agent_model import build_agent_model_profile
-from src.backend.app.agent_skills.registry import AgentSkillRegistry, BUILTIN_SKILL_IDS
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.planner.goal_contract_builder import build_goal_contract_semantics
 from src.backend.app.planner.memory_influence_guard import (
@@ -24,22 +23,43 @@ from src.backend.app.planner.memory_influence_guard import (
     MemoryInfluenceGuard,
 )
 from src.backend.app.planner.project_context import ProjectContextError, load_project_context
-from src.backend.app.schemas.agent_lifecycle import DecisionItem, PendingDecisionBatch, PendingDecisionOption
+from src.backend.app.schemas.agent_decision_confirmation import (
+    AgentDecisionConfirmation,
+    normalize_decision_value,
+)
+from src.backend.app.schemas.agent_lifecycle import (
+    DecisionItem,
+    PendingDecisionBatch,
+    PendingDecisionOption,
+)
+from src.backend.app.schemas.agent_model import build_agent_model_profile
 from src.backend.app.schemas.goal_contract import GoalContractCandidate
-from src.backend.app.schemas.agent_decision_confirmation import AgentDecisionConfirmation, normalize_decision_value
 from src.backend.app.schemas.memory import MemoryContext
-from src.backend.app.services.agent_harness_service import AgentHarnessService
+from src.backend.app.schemas.planning import PlanningRequest
+from src.backend.app.schemas.project_agent_settings import ScientificResourceInput
+from src.backend.app.schemas.system_message import message
 from src.backend.app.services.agent_evidence_service import AgentEvidenceService
+from src.backend.app.services.agent_harness_context_service import (
+    HarnessContextBuilder,
+    HarnessContextSources,
+)
+from src.backend.app.services.agent_harness_service import AgentHarnessService
+from src.backend.app.services.agent_multi_agent_policy_service import (
+    AgentMultiAgentPolicyService,
+    multi_agent_policy_hash,
+)
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
+from src.backend.app.services.agent_team_coordinator_service import (
+    AgentTeamCoordinatorError,
+    AgentTeamCoordinatorService,
+    AgentTeamIneligibleError,
+)
+from src.backend.app.services.agent_team_eligibility_policy import AgentTeamEligibilityInput
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.goal_planning_service import GoalPlanningService
-from src.backend.app.schemas.planning import PlanningRequest
 from src.backend.app.services.memory_repository import MemoryRepositoryError
 from src.backend.app.services.memory_retrieval_service import MemoryRetrievalService
-from src.backend.app.schemas.project_agent_settings import ScientificResourceInput
 from src.backend.app.services.project_agent_settings_service import ProjectAgentSettingsService
-from src.backend.app.schemas.system_message import message
-
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +104,10 @@ class AgentPlanningService:
         self.model_config = model_config or AgentModelRuntimeConfig()
         self.memory_initialization_error = memory_initialization_error
         self.scheduler = scheduler
+        self.team_coordinator: AgentTeamCoordinatorService | None = None
+        self.team_scheduler = None
+        self.multi_agent_policy: AgentMultiAgentPolicyService | None = None
+        self.multi_agent_config: AgentMultiAgentConfig | None = None
 
     def bind_scheduler(self, scheduler) -> None:
         """Finish the intentional scheduler/planner cycle in application assembly."""
@@ -93,10 +117,29 @@ class AgentPlanningService:
         """Bind the preassembled advice-only coordinator."""
         self.harness_service = harness_service
 
-    def create(self, *, project_id: str, goal: str, command_id: str, actor: str):
+    def bind_team_runtime(
+        self,
+        *,
+        coordinator: AgentTeamCoordinatorService,
+        scheduler,
+        policy_service: AgentMultiAgentPolicyService,
+        config: AgentMultiAgentConfig,
+    ) -> None:
+        """Bind the durable Team runtime after the existing task scheduler."""
+        self.team_coordinator = coordinator
+        self.team_scheduler = scheduler
+        self.multi_agent_policy = policy_service
+        self.multi_agent_config = config
+
+    def create(
+        self, *, project_id: str, goal: str, command_id: str, actor: str,
+        team_mode: str = "single",
+    ):
         replay = self._command_replay(project_id, command_id)
         if replay is not None:
             return replay
+        if team_mode not in {"single", "team"}:
+            raise SafetyError("AGENT_TEAM_MODE_INVALID", code="AGENT_TEAM_MODE_INVALID")
         goal = goal.strip()
         lifecycle = self.orchestrator.create(
             project_id=project_id,
@@ -104,6 +147,9 @@ class AgentPlanningService:
             actor=actor,
             goal_text=goal,
             goal_hash=stable_hash({"goal": goal}),
+            command_context=(
+                {"requested_team_mode": "team"} if team_mode == "team" else None
+            ),
             planning_wake_reason="create",
         )
         self._notify_scheduler()
@@ -355,6 +401,9 @@ class AgentPlanningService:
             )},
         )
         try:
+            if self._start_requested_team(lifecycle=lifecycle, wake_reason=wake_reason):
+                return self.store.get_agent_lifecycle(lifecycle_id) or lifecycle
+            lifecycle = self.store.get_agent_lifecycle(lifecycle_id) or lifecycle
             recovered = self._resume_persisted_plan(
                 lifecycle=lifecycle, actor="system-agent-task-scheduler"
             )
@@ -391,6 +440,228 @@ class AgentPlanningService:
         """Typed deterministic callback used by the planning-action service."""
         return self._plan(lifecycle=lifecycle, command_id=command_id, actor=actor, resume=True)
 
+    def enqueue_team_resume(self, project_id: str, lifecycle_id: str):
+        """Resume only by enqueuing the ordinary AgentTask planning wake."""
+        lifecycle = self.orchestrator.get(
+            project_id=project_id, lifecycle_id=lifecycle_id
+        )
+        if lifecycle.planning_mode != "multi_agent" or not lifecycle.planning_team_id:
+            raise SafetyError(
+                "AGENT_TEAM_CONTEXT_BINDING_INVALID",
+                code="AGENT_TEAM_CONTEXT_BINDING_INVALID",
+            )
+        advisory = self.store.get_agent_team_advisory(
+            project_id, lifecycle.planning_team_id
+        )
+        if advisory is None:
+            raise SafetyError(
+                "AGENT_TEAM_ADVISORY_MISSING", code="AGENT_TEAM_ADVISORY_MISSING"
+            )
+        if advisory.decision != "accepted" or advisory.blocking_codes or advisory.conflict_codes:
+            return self.orchestrator.transition(
+                project_id=project_id,
+                lifecycle_id=lifecycle_id,
+                to_state="HUMAN_HANDOFF",
+                command_id=f"team-advisory-blocked:{advisory.advisory_hash}",
+                actor="system-agent-team-scheduler",
+                source_command="team_advisory_blocked",
+                reason="AGENT_TEAM_ADVISORY_BLOCKED",
+                details={
+                    "advisory_hash": advisory.advisory_hash,
+                    "blocking_codes": list(advisory.blocking_codes),
+                    "conflict_codes": list(advisory.conflict_codes),
+                },
+            )
+        self.enqueue_resume(lifecycle=lifecycle, reason="team_completed")
+        return lifecycle
+
+    def _start_requested_team(self, *, lifecycle, wake_reason: str) -> bool:
+        command_context = dict(lifecycle.command_context or {})
+        if command_context.get("requested_team_mode") != "team":
+            return False
+        starts_new_round = lifecycle.planning_mode == "single_agent" or wake_reason in {
+            "answer", "template_input_registered"
+        }
+        if not starts_new_round:
+            return False
+        if (
+            self.multi_agent_config is None
+            or not self.multi_agent_config.enabled
+            or self.team_coordinator is None
+            or self.multi_agent_policy is None
+            or self.team_scheduler is None
+        ):
+            self._record_team_fallback(lifecycle, "MULTI_AGENT_DISABLED")
+            return False
+        project = self.store.get_project(lifecycle.project_id)
+        metadata = project.metadata if project is not None and isinstance(project.metadata, dict) else {}
+        if not isinstance(metadata.get("project_config_path"), str):
+            return False
+
+        try:
+            command_context, memory_context = self._current_memory_context(lifecycle)
+            full_evidence = self.evidence_service.build_snapshot(
+                project_id=lifecycle.project_id,
+                lifecycle_id=lifecycle.lifecycle_id,
+                memory_context=memory_context,
+            )
+            command_context["evidence_snapshot_hash"] = full_evidence.snapshot_hash
+            if lifecycle.state in {"CREATED", "WAITING_FOR_INPUT"}:
+                lifecycle = self.orchestrator.transition(
+                    project_id=lifecycle.project_id,
+                    lifecycle_id=lifecycle.lifecycle_id,
+                    to_state="CONTEXT_READY",
+                    command_id=(
+                        f"team-context-ready:{lifecycle.lifecycle_id}:"
+                        f"{stable_hash(command_context)}"
+                    ),
+                    actor="system-agent-task-scheduler",
+                    source_command="context_ready",
+                    updates={
+                        "command_context": command_context,
+                        "evidence_snapshot_hash": full_evidence.snapshot_hash,
+                    },
+                )
+            elif (
+                command_context != lifecycle.command_context
+                or lifecycle.evidence_snapshot_hash != full_evidence.snapshot_hash
+            ):
+                lifecycle = self.orchestrator.transition(
+                    project_id=lifecycle.project_id,
+                    lifecycle_id=lifecycle.lifecycle_id,
+                    to_state=lifecycle.state,
+                    command_id=(
+                        f"team-context:{lifecycle.lifecycle_id}:"
+                        f"{stable_hash(command_context)}"
+                    ),
+                    actor="system-agent-task-scheduler",
+                    source_command="team_context_prepared",
+                    updates={
+                        "command_context": command_context,
+                        "evidence_snapshot_hash": full_evidence.snapshot_hash,
+                    },
+                    allow_same_state=True,
+                )
+            evidence = self.evidence_service.read_for_context(
+                snapshot_hash=full_evidence.snapshot_hash,
+                project_id=lifecycle.project_id,
+                lifecycle_id=lifecycle.lifecycle_id,
+                purpose="plan_draft",
+            )
+            attempt = None
+            if self.harness_service is not None:
+                attempt = self.harness_service.ensure_attempt(
+                    lifecycle=lifecycle, provider_ref=self.model_config.provider
+                )
+                if attempt.status == "WAITING_FOR_USER":
+                    attempt = self.harness_service.prepare_resume(
+                        lifecycle=lifecycle, provider_ref=self.model_config.provider
+                    )
+            expected_epoch = lifecycle.planning_team_epoch + 1
+            if self.harness_service is not None:
+                base_context, _ = self.harness_service.build_context_with_base(
+                    lifecycle=lifecycle,
+                    evidence_snapshot=evidence,
+                    attempt=attempt,
+                    planning_epoch=expected_epoch,
+                )
+            else:
+                builder = HarnessContextBuilder()
+                base_context, _ = builder.build_with_base(sources=HarnessContextSources(
+                    lifecycle=lifecycle,
+                    project=project,
+                    evidence_snapshot=evidence,
+                    reviewed_plan=(
+                        self.store.get_reviewed_plan(lifecycle.reviewed_plan_id)
+                        if lifecycle.reviewed_plan_id else None
+                    ),
+                    purpose="plan_draft",
+                    planning_epoch=expected_epoch,
+                ))
+            if not base_context.complete:
+                self._record_team_fallback(
+                    lifecycle,
+                    base_context.incomplete_reason or "AGENT_CONTEXT_INCOMPLETE",
+                )
+                return False
+            consent = ProjectAgentSettingsService(self.store).get(
+                project_id=lifecycle.project_id
+            ).multi_agent_consent
+            evidence_domains = tuple(sorted({
+                str(ref.get("type") or "")
+                for ref in base_context.evidence_refs
+                if ref.get("type")
+                and ref.get("type") not in {"memory", "capability", "planner_provider"}
+            }))
+            eligibility = AgentTeamEligibilityInput(
+                project_id=lifecycle.project_id,
+                task_kind="planning",
+                independent_evidence_domains=evidence_domains,
+                has_science_decision=bool(command_context.get("science_answers")),
+                context_is_role_splittable=base_context.complete,
+                provider_allowed=(
+                    self.model_config.provider == "openai_compatible"
+                    and self.model_config.incomplete_reason() is None
+                ),
+                project_consent_enabled=consent.enabled,
+                project_consent_epoch=consent.consent_epoch,
+                project_consent_hash=consent.consent_hash,
+            )
+            decision = self.team_coordinator.eligibility_policy.evaluate(eligibility)
+            if not decision.eligible:
+                self._record_team_fallback(lifecycle, decision.reason_code)
+                return False
+            self.store.add_agent_planning_base_context(base_context)
+            created = self.team_coordinator.create_team(
+                lifecycle=lifecycle,
+                base_context=base_context,
+                eligibility_input=eligibility,
+                command_id=(
+                    f"team-create:{lifecycle.lifecycle_id}:{expected_epoch}:"
+                    f"{base_context.base_context_hash[:16]}"
+                ),
+                actor="system-agent-task-scheduler",
+            )
+            self.team_scheduler.notify()
+            return created.team.status in {"READY", "RUNNING"}
+        except AgentTeamIneligibleError as exc:
+            self._record_team_fallback(lifecycle, exc.decision.reason_code)
+            return False
+        except (AgentTeamCoordinatorError, SafetyError) as exc:
+            code = getattr(exc, "code", None) or str(exc)
+            if code in {
+                "MULTI_AGENT_DISABLED",
+                "MULTI_AGENT_PROJECT_CONSENT_REQUIRED",
+                "MULTI_AGENT_CONSENT_INVALIDATED",
+                "MULTI_AGENT_BUDGET_EXCEEDED",
+                "AGENT_TEAM_PROVIDER_UNAVAILABLE",
+                "AGENT_MODEL_CONFIG_INCOMPLETE",
+            }:
+                self._record_team_fallback(lifecycle, code)
+                return False
+            raise
+
+    def _record_team_fallback(self, lifecycle, code: str) -> None:
+        context = dict(lifecycle.command_context or {})
+        if context.get("multi_agent_fallback_warning") == code:
+            return
+        context["multi_agent_fallback_warning"] = code
+        self.orchestrator.transition(
+            project_id=lifecycle.project_id,
+            lifecycle_id=lifecycle.lifecycle_id,
+            to_state=lifecycle.state,
+            command_id=(
+                f"team-fallback:{lifecycle.lifecycle_id}:"
+                f"{lifecycle.planning_team_epoch + 1}:{stable_hash(code)[:12]}"
+            ),
+            actor="system-agent-task-scheduler",
+            source_command="team_fallback_to_single_agent",
+            reason=code,
+            updates={"command_context": context},
+            details={"warning_code": code},
+            allow_same_state=True,
+        )
+
     def _enqueue_planning(self, *, lifecycle, reason: str) -> None:
         if self.scheduler is None:
             raise RuntimeError("AGENT_TASK_SCHEDULER_NOT_BOUND")
@@ -416,8 +687,6 @@ class AgentPlanningService:
         wake_reason: str = "planning",
     ):
         """Select the controlled or deterministic planning path for one wake."""
-        project = self.store.get_project(lifecycle.project_id)
-        metadata = project.metadata if project is not None and isinstance(project.metadata, dict) else {}
         provider = self.model_config.provider
         if not self.harness_config.enabled and self.harness_service is None:
             return self._plan(lifecycle=lifecycle, command_id=command_id, actor=actor, resume=resume)
@@ -695,11 +964,21 @@ class AgentPlanningService:
             lifecycle_id=lifecycle.lifecycle_id,
             memory_context=memory_context,
         )
+        if lifecycle.planning_mode == "multi_agent" and (
+            evidence.snapshot_hash
+            != (lifecycle.command_context or {}).get("evidence_snapshot_hash")
+        ):
+            raise SafetyError(
+                "AGENT_TEAM_EVIDENCE_STALE", code="AGENT_TEAM_EVIDENCE_STALE"
+            )
         command_context["evidence_snapshot_hash"] = evidence.snapshot_hash
         lifecycle = lifecycle.model_copy(
             update={"command_context": command_context, "evidence_snapshot_hash": evidence.snapshot_hash}
         )
         parent = self.store.get_reviewed_plan(lifecycle.reviewed_plan_id) if lifecycle.reviewed_plan_id else None
+        team_binding = self._planning_team_binding(
+            lifecycle=lifecycle, full_evidence_snapshot=evidence
+        )
         request = PlanningRequest(
             project_id=lifecycle.project_id,
             lifecycle_id=lifecycle.lifecycle_id,
@@ -725,8 +1004,153 @@ class AgentPlanningService:
             provider_ref=self.model_config.provider,
             prompt_version="agent-harness-prompt-v3",
             model_profile_hash=self._model_profile_hash(),
+            **team_binding,
         )
         return lifecycle, request, memory_context, metadata, project
+
+    def _planning_team_binding(self, *, lifecycle, full_evidence_snapshot):
+        if lifecycle.planning_mode == "single_agent":
+            return {}
+        if self.multi_agent_config is None:
+            raise SafetyError(
+                "MULTI_AGENT_DISABLED", code="MULTI_AGENT_DISABLED"
+            )
+        team_id = lifecycle.planning_team_id
+        if not team_id or lifecycle.planning_team_epoch < 1:
+            raise SafetyError(
+                "AGENT_TEAM_CONTEXT_BINDING_INVALID",
+                code="AGENT_TEAM_CONTEXT_BINDING_INVALID",
+            )
+        team = self.store.get_agent_team(lifecycle.project_id, team_id)
+        advisory = self.store.get_agent_team_advisory(lifecycle.project_id, team_id)
+        if (
+            team is None
+            or advisory is None
+            or not self.multi_agent_config.enabled
+            or team.status != "COMPLETED"
+            or team.team_epoch != lifecycle.planning_team_epoch
+            or team.global_policy_hash
+            != multi_agent_policy_hash(self.multi_agent_config)
+            or advisory.decision != "accepted"
+            or advisory.blocking_codes
+            or advisory.conflict_codes
+            or advisory.project_id != lifecycle.project_id
+            or advisory.lifecycle_id != lifecycle.lifecycle_id
+            or advisory.team_id != team_id
+            or advisory.team_epoch != lifecycle.planning_team_epoch
+        ):
+            raise SafetyError(
+                "AGENT_TEAM_ADVISORY_BLOCKED", code="AGENT_TEAM_ADVISORY_BLOCKED"
+            )
+        consent = ProjectAgentSettingsService(self.store).get(
+            project_id=lifecycle.project_id
+        ).multi_agent_consent
+        if (
+            not consent.enabled
+            or consent.consent_epoch != advisory.consent_epoch
+            or consent.consent_hash != advisory.consent_hash
+        ):
+            raise SafetyError(
+                "MULTI_AGENT_CONSENT_INVALIDATED",
+                code="MULTI_AGENT_CONSENT_INVALIDATED",
+            )
+        findings_by_id = {
+            item.finding_id: item
+            for item in self.store.list_agent_team_findings(
+                lifecycle.project_id, team_id
+            )
+        }
+        try:
+            team_findings = tuple(
+                findings_by_id[item_id]
+                for item_id in advisory.accepted_finding_ids
+            )
+        except KeyError as exc:
+            raise SafetyError(
+                "AGENT_TEAM_FINDING_MISSING", code="AGENT_TEAM_FINDING_MISSING"
+            ) from exc
+
+        context = None
+        attempt = self.store.get_agent_harness_attempt(lifecycle.lifecycle_id)
+        if attempt is not None and attempt.context_hash:
+            context = self.store.get_agent_harness_context(attempt.context_hash)
+            if context is not None and (
+                context.planning_mode != "multi_agent"
+                or context.team_id != team_id
+                or context.team_epoch != lifecycle.planning_team_epoch
+                or context.base_context_hash != advisory.base_context_hash
+                or context.team_advisory is None
+                or context.team_advisory.advisory_hash != advisory.advisory_hash
+            ):
+                context = None
+        if context is None:
+            base = self.store.get_agent_planning_base_context(
+                lifecycle.project_id, advisory.base_context_hash
+            )
+            if base is None:
+                raise SafetyError(
+                    "AGENT_TEAM_CONTEXT_BINDING_INVALID",
+                    code="AGENT_TEAM_CONTEXT_BINDING_INVALID",
+                )
+            evidence = self.evidence_service.read_for_context(
+                snapshot_hash=full_evidence_snapshot.snapshot_hash,
+                project_id=lifecycle.project_id,
+                lifecycle_id=lifecycle.lifecycle_id,
+                purpose="plan_draft",
+            )
+            if self.harness_service is not None:
+                built_base, context = self.harness_service.build_context_with_base(
+                    lifecycle=lifecycle,
+                    evidence_snapshot=evidence,
+                    attempt=attempt,
+                    planning_epoch=lifecycle.planning_team_epoch,
+                    team_advisory=advisory,
+                )
+            else:
+                builder = HarnessContextBuilder()
+                built_base, context = builder.build_with_base(sources=HarnessContextSources(
+                    lifecycle=lifecycle,
+                    project=self.store.get_project(lifecycle.project_id),
+                    evidence_snapshot=evidence,
+                    reviewed_plan=(
+                        self.store.get_reviewed_plan(lifecycle.reviewed_plan_id)
+                        if lifecycle.reviewed_plan_id else None
+                    ),
+                    attempt=attempt,
+                    purpose="plan_draft",
+                    planning_epoch=lifecycle.planning_team_epoch,
+                    team_advisory=advisory,
+                ))
+            if (
+                built_base.base_context_hash != advisory.base_context_hash
+                or not context.complete
+                or context.context_hash == ""
+            ):
+                raise SafetyError(
+                    "AGENT_TEAM_CONTEXT_BINDING_INVALID",
+                    code="AGENT_TEAM_CONTEXT_BINDING_INVALID",
+                )
+            self.store.add_agent_planning_base_context(built_base)
+            self.store.add_agent_harness_context(context)
+        return {
+            "planning_mode": "multi_agent",
+            "team_id": advisory.team_id,
+            "team_epoch": advisory.team_epoch,
+            "base_context_hash": advisory.base_context_hash,
+            "harness_context_hash": context.context_hash,
+            "advisory_ref": advisory.advisory_id,
+            "advisory_hash": advisory.advisory_hash,
+            "context_snapshot_hash": advisory.context_snapshot_hash,
+            "context_projector_hash": advisory.context_projector_hash,
+            "role_registry_hash": advisory.role_registry_hash,
+            "aggregation_policy_hash": advisory.aggregation_policy_hash,
+            "team_model_profile_hash": advisory.model_profile_hash,
+            "global_policy_hash": team.global_policy_hash,
+            "consent_epoch": advisory.consent_epoch,
+            "consent_hash": advisory.consent_hash,
+            "team_advisory": advisory,
+            "team_findings": team_findings,
+        }
 
     def _current_memory_context(self, lifecycle):
         """Refresh consent, revisions and forget state before each consumer."""
@@ -877,7 +1301,14 @@ class AgentPlanningService:
             goal=lifecycle.goal_text,
             provider=request.provider_ref,
             status="REVIEWED",
-            warnings=list(result.get("warnings", [])),
+            warnings=[
+                *list(result.get("warnings", [])),
+                *(
+                    [f"MULTI_AGENT_FALLBACK:{command_context['multi_agent_fallback_warning']}"]
+                    if command_context.get("multi_agent_fallback_warning")
+                    else []
+                ),
+            ],
             goal_contract_candidate=candidate,
             reviewed_actor=actor,
             memory_context=memory_context,

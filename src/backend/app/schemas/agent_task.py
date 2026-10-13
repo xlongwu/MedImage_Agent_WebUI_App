@@ -9,14 +9,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from src.backend.app.schemas.system_message import SystemMessage
-
 from pydantic import BaseModel, ConfigDict, Field
-from src.backend.app.schemas.project_agent_settings import ScientificResourceInput
 
+from src.backend.app.schemas.agent_eval import AgentReviewerKind, AgentReviewSeverity
 from src.backend.app.schemas.agent_harness import AgentHarnessSummary
-
+from src.backend.app.schemas.agent_team import (
+    AgentTeamRoleId,
+    AgentTeamStatus,
+    AgentTeamWorkItemStatus,
+)
 from src.backend.app.schemas.node_contract import CapabilityLevel
+from src.backend.app.schemas.project_agent_settings import ScientificResourceInput
+from src.backend.app.schemas.system_message import SystemMessage
 
 AgentTaskPublicState = Literal[
     "preparing",
@@ -337,10 +341,84 @@ class AgentTaskTechnicalDetails(BaseModel):
     memory_use_enabled: bool | None = None
 
 
+class AgentTaskTeamRole(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reviewer_kind: AgentReviewerKind
+    role_id: AgentTeamRoleId
+    status: AgentTeamWorkItemStatus
+    error_code: str | None = None
+
+
+class AgentTaskTeamSummary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    team_id: str
+    team_epoch: int = Field(ge=1)
+    status: AgentTeamStatus
+    roles: tuple[AgentTaskTeamRole, ...]
+    required_roles: tuple[AgentReviewerKind, ...]
+    completed_roles: tuple[AgentReviewerKind, ...]
+    failed_roles: tuple[AgentReviewerKind, ...]
+    blocking_finding_count: int = Field(ge=0)
+    warning_finding_count: int = Field(ge=0)
+    conflict_count: int = Field(ge=0)
+    model_call_count: int = Field(ge=0)
+    budget_used: int = Field(ge=0)
+    budget_limit: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    latency_ms: int = Field(ge=0)
+    started_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+    advisory_hash: str | None = None
+    attention_code: str | None = None
+
+
+class AgentTaskTeamFinding(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    finding_id: str
+    reviewer_kind: AgentReviewerKind
+    severity: AgentReviewSeverity
+    code: str
+    message_key: str
+    input_refs: tuple[str, ...]
+
+
+class AgentTaskTeamFindingPage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    items: tuple[AgentTaskTeamFinding, ...]
+    next_cursor: str | None = None
+
+
+class AgentTaskTeamEvent(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    event_id: str
+    team_id: str
+    event_type: str
+    occurred_at: datetime
+    source: Literal["user", "coordinator", "scheduler", "worker", "system"]
+    message: SystemMessage
+
+
+class AgentTaskTeamEventPage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    items: tuple[AgentTaskTeamEvent, ...]
+    next_cursor: str | None = None
+
+
 class AgentTaskResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[3] = 3
+    schema_version: Literal[4] = 4
     task_id: str
     project_id: str
     state: AgentTaskPublicState
@@ -360,6 +438,8 @@ class AgentTaskResponse(BaseModel):
     evidence_links: tuple[AgentTaskEvidenceLink, ...] = ()
     technical_details: AgentTaskTechnicalDetails | None = None
     harness_summary: AgentHarnessSummary | None = None
+    team: AgentTaskTeamSummary | None = None
+    team_fallback_code: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -367,7 +447,7 @@ class AgentTaskResponse(BaseModel):
 class AgentTaskListResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[3] = 3
+    schema_version: Literal[4] = 4
     items: tuple[AgentTaskResponse, ...]
     total: int = Field(ge=0)
 
@@ -400,6 +480,7 @@ class CreateAgentTaskRequest(BaseModel):
     goal: str = Field(min_length=1)
     command_id: str = Field(min_length=1)
     actor: str = Field(min_length=1)
+    team_mode: Literal["single", "team"] = "single"
 
 
 class DecisionAnswer(BaseModel):

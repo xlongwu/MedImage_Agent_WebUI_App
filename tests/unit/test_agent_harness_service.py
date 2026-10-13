@@ -4,14 +4,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from src.backend.app.core.config_schema import AgentHarnessConfig
+from src.backend.app.core.config_schema import AgentHarnessConfig, AgentModelRuntimeConfig
 from src.backend.app.planner.agent_model_adapter import (
     ActionCallMetadata,
     ActionProposal,
     build_canonical_model_request,
     canonical_request_bytes,
 )
-from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_harness import (
     AgentActionRecord,
@@ -23,12 +22,12 @@ from src.backend.app.schemas.agent_harness import (
 )
 from src.backend.app.schemas.agent_lifecycle import DecisionItem, PendingDecisionOption
 from src.backend.app.schemas.desktop import ProjectDetail
-from src.backend.app.services.agent_harness_service import AgentHarnessService
+from src.backend.app.schemas.system_message import message
 from src.backend.app.services.agent_evidence_service import AgentEvidenceService
+from src.backend.app.services.agent_harness_service import AgentHarnessService
 from src.backend.app.services.agent_orchestrator import AgentOrchestrator
 from src.backend.app.services.agent_planning_action_service import HarnessActionResult
 from src.backend.app.services.mock_store import SQLiteDesktopStore
-from src.backend.app.schemas.system_message import message
 
 
 def _store(tmp_path) -> SQLiteDesktopStore:
@@ -132,7 +131,7 @@ def test_decision_item_keeps_the_formal_schema_constraints() -> None:
 def test_canonical_request_hash_covers_every_actual_request_field() -> None:
     base = build_canonical_model_request(
         snapshot={
-            "schema_version": 3, "purpose": "plan_draft", "complete": True,
+            "schema_version": 4, "purpose": "plan_draft", "complete": True,
             "required_sections": ["goal", "policy"], "included_sections": ["goal", "policy"],
             "omitted_sections": [], "evidence_refs": [], "evidence_snapshot_hash": "evidence",
             "projection_policy_version": "projection",
@@ -336,6 +335,6 @@ def test_persisted_ledgers_contain_hashes_and_no_prompt_response_or_credentials(
     call = step.model_calls[0]
     rendered = str({"step": step.model_dump(mode="json"), "action": store.list_agent_harness_actions(attempt.attempt_id)[0].model_dump(mode="json")})
     assert call.request_hash and call.action_schema_hash and call.model_parameters_hash
-    assert call.request_bytes > 0 and call.request_builder_version == "agent-harness-request-v1"
+    assert call.request_bytes > 0 and call.request_builder_version == "agent-harness-request-v2"
     assert "system_prompt" not in rendered and "context_payload" not in rendered
     assert "response-hash" in rendered and "credential" not in rendered

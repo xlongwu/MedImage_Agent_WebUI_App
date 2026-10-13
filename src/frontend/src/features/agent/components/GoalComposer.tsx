@@ -12,11 +12,12 @@ export function GoalComposer({
 }: {
   dataStateLabel: string;
   disabled: boolean;
-  onSubmit: (goal: string) => Promise<void>;
+  onSubmit: (goal: string, teamMode: "single" | "team") => Promise<void>;
   projectName: string;
 }) {
   const { t } = useI18n();
   const [goal, setGoal] = useState("");
+  const [teamMode, setTeamMode] = useState<"single" | "team">("single");
   const [validationError, setValidationError] = useState("");
 
   const handleSubmit = async (event: FormEvent) => {
@@ -28,7 +29,7 @@ export function GoalComposer({
     }
     setValidationError("");
     try {
-      await onSubmit(normalized);
+      await onSubmit(normalized, teamMode);
     } catch {
       // The controller exposes the backend error in the workspace alert.
     }
@@ -54,6 +55,37 @@ export function GoalComposer({
             value={goal}
           />
         </label>
+        <fieldset className={styles.planningMode}>
+          <legend>{t("agent.planningMode.title")}</legend>
+          <label>
+            <input
+              checked={teamMode === "single"}
+              disabled={disabled}
+              name="agent-planning-mode"
+              onChange={() => setTeamMode("single")}
+              type="radio"
+              value="single"
+            />
+            <span>
+              <strong>{t("agent.planningMode.single")}</strong>
+              <small>{t("agent.planningMode.singleDescription")}</small>
+            </span>
+          </label>
+          <label>
+            <input
+              checked={teamMode === "team"}
+              disabled={disabled}
+              name="agent-planning-mode"
+              onChange={() => setTeamMode("team")}
+              type="radio"
+              value="team"
+            />
+            <span>
+              <strong>{t("agent.planningMode.team")}</strong>
+              <small>{t("agent.planningMode.teamDescription")}</small>
+            </span>
+          </label>
+        </fieldset>
         {validationError ? <p className={styles.inlineError}>{validationError}</p> : null}
         <div className={styles.composerFooter}>
           <small>{t("agent.goalSafety")}</small>

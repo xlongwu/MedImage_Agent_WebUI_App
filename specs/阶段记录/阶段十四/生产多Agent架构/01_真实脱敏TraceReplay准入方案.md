@@ -1,6 +1,6 @@
 # 真实脱敏 Trace/Replay 准入方案
 
-> **方案状态：已批准（设计）/ 随阶段十四整体延期（Deferred）**
+> **方案状态：真实评测/外部启用阶段文档；不构成离线源码实现的准入条件**
 >
 > **源码实现状态：PARTIAL —— 本方案的合同与工具层已大量落地，但 G0 准入本身零证据**
 >
@@ -28,11 +28,12 @@
 > `MEDIMAGE_AGENT_MODEL_ENABLED=false` 与 `MEDIMAGE_AGENT_MODEL_PROVIDER=rule_based` 意味着
 > 即使强行运行，得到的也只是规则引擎伪结果，**不得**当作模型评估证据。
 >
-> 本轮经维护者决定**不**补齐上述缺口（理由与重启条件见 `00` §11.2/§11.3）。
+> 2026-10-13 复核：上述缺口只阻止真实 G0 评测及 provider/项目 opt-in。默认关闭的本地
+> implementation 和 fake-provider focused checks 可先行；不得因此生成或访问真实研究语料。
 
 ## 1. 目标
 
-用真实但不可逆脱敏、可人工标注、可重复回放的单 Agent 任务样本，验证三只读评审者相较当前单 Agent 是否带来稳定、可解释且成本可接受的净收益。synthetic fixture 只用于合同预检，不得作为生产准入证据。
+在获批后，用真实且不可逆脱敏的单 Agent 任务样本，验证三只读评审者相较当前单 Agent 是否带来可解释且成本可接受的净收益。此评估决定真实 provider/项目 opt-in，不作为本地源码开发准入。synthetic fixture 只用于合同预检，不得作为生产准入证据。
 
 ## 2. 数据边界
 
@@ -54,7 +55,7 @@
 
 ## 3. 样本规模与覆盖
 
-先用至少 30 个真实脱敏 case 完成 runner/policy pilot；生产准入使用独立、冻结、从未参与 prompt 或 policy 调优的至少 150 个 held-out case，且训练/调试集与最终验收集严格分离：
+真实效果评估使用独立、冻结、从未参与 prompt 或 policy 调优的至少 150 个 held-out case，且训练/调试集与最终验收集严格分离。runner/policy pilot 可按需在开发 split 中进行，不另设 30 例准入门，也不计入 held-out acceptance：
 
 | 分组 | 最低数量 | 必须覆盖 |
 |---|---:|---|
@@ -106,7 +107,7 @@ Manifest 只保存输入和人工 reference labels，不得保存或允许人工
 3. 校验双语、场景、eligible/ineligible/adversarial 和三角色覆盖。
 4. 校验人工 reference code 属于冻结 allowlist，且其 evidence refs 全部属于 frozen inputs；模型是否发现这些 code 只在实际 run report Gate 中比较。
 5. canonical JSON 序列化并生成 SHA-256 `manifest_hash`。
-6. 人工 capability reviewer 记录 hash、数据清单和批准结论。
+6. 自动计算并记录 manifest hash；维护者只确认数据/隐私范围与评估授权，不人工重算哈希或逐字段复核自动校验结果。
 7. 评估脚本只接受该 hash，不允许运行时修改 case。
 
 同时冻结 `role_registry_hash`、三个 role/prompt/schema 版本、aggregation policy hash、model profile hash、provider/model 版本、redaction policy、source revision 和 runner version；其中任一变化都必须生成新评估 run，不得沿用旧报告。
@@ -123,7 +124,7 @@ Manifest 只保存输入和人工 reference labels，不得保存或允许人工
 - Baseline：通过隔离的真实 Agent lifecycle/Harness evaluation runner 执行当前单 Agent，从 create 到稳定 Reviewed Plan 或安全停点；不读取人工填写的运行结果。
 - Candidate：通过同一隔离 runner 执行相同 lifecycle/Harness，先使用将被生产直接复用的 canonical role registry、pure context projector、structured model adapter 和 pure aggregator，再进入同一个主 planner。
 - 两组使用相同 provider 版本和温度/seed 策略；不允许只为 candidate 使用更强模型。
-- 每个 case 至少重复两次，用结构化结论 hash 测一致性。
+- 主评估每个 case 对 baseline/candidate 各运行一次并配对比较；只有观察到会影响结论的随机波动时，才对预先选定的分层子集追加重复运行并报告，不为每个 case 固定重复两次。
 - candidate findings 必须使用生产直接复用的 `agent_review_finding_aggregator.py` 和 `agent_review_role_registry.py`；禁止评估与生产各维护一套聚合语义。
 - 评估过程不得创建 production lifecycle、approval、ticket、run 或项目写入。
 
@@ -194,34 +195,29 @@ started_at, completed_at?
 | CREATE | `tests/fixtures/agent_eval/multi_agent/redacted/manifest.json` | 经批准的真实脱敏冻结集；未批准前不得创建占位数据冒充真实样本 |
 | MODIFY | `tests/unit/test_multi_agent_evaluation.py` | schema、来源、指标和 Gate 回归 |
 | CREATE | `tests/integration/test_multi_agent_gate_runner.py` | 真实 adapter、隔离 lifecycle、run provenance 和无 production 写入 |
-| CREATE | `tests/integration/test_multi_agent_redacted_replay.py` | 真实脱敏 Trace/Replay 纯回放验证 |
+| 后续新增（如实现该路径） | 对真实脱敏 Trace/Replay 的隔离回放验证 | 仅在启动获批的 G0 真实评测时补充，不是离线实现的预设测试路径 |
 
-推荐验证命令：
+真实评测阶段的 focused 验证入口（实现后按实际变更更新测试路径；不存在的测试不得预先作为准入条件）：
 
-```powershell
-python -m pytest tests/unit/test_multi_agent_evaluation.py tests/integration/test_multi_agent_gate_runner.py tests/integration/test_multi_agent_redacted_replay.py --tb=short --basetemp=.pytest_tmp
-python scripts/run_multi_agent_evaluation.py --manifest tests/fixtures/agent_eval/multi_agent/redacted/manifest.json --bundle <append-only run bundle .jsonl> --expected-manifest-hash <approved_sha256> --allow-network --output <approved_evidence_root> --summary
-```
-
-> 2026-10-02 校正：本节原命令**缺少 `--bundle`**，而 `scripts/run_multi_agent_evaluation.py`
-> 中该参数为 `required=True`，照抄必然以退出码 2 失败。已补为上面的形式。另需注意该脚本
-> 只**校验**已存在的 run bundle，不会生成 bundle；生成必须由 `MultiAgentGateRunner` 加一个
-> 具体 `IsolatedGateArmExecutor` 完成，而后者目前不存在（见 `00` §11.1 B4）。
+实现相关代码后，按修改内容选择实际存在的 focused tests。获批 G0 阶段再用已冻结的 manifest/hash、真实生成的 append-only bundle 和授权输出根执行评测脚本；本方案不固定尚不存在的测试路径或命令参数清单。
 
 ## 10. G0 退出条件
 
-- [ ] 至少 30 个 pilot 和 150 个独立 held-out acceptance case，来源和 split 合法。
+- [ ] 至少 150 个独立 held-out acceptance case，来源和 split 合法；开发 pilot 不是额外准入集。
 - [ ] 每个 case 完成双人标注和必要裁决。
 - [ ] 数据审查确认无 PHI、rawdata、credential、完整 prompt 和绝对研究路径。
-- [ ] manifest hash 冻结并由人工 capability reviewer 批准。
+- [ ] manifest hash 由工具冻结；维护者确认数据/隐私范围及本次评估授权。
 - [ ] baseline/candidate 均由隔离 runner 真实执行；run bundle 绑定 source revision/tree、provider/model、role/prompt/schema/policy/context/request/response hash。
 - [ ] manifest 不含自报运行指标，报告只读取 append-only run records 和分离的人工 labels。
 - [ ] 所有质量、成本、延迟和安全 Gate 同时通过。
 - [ ] 报告明确列出 false positives、conflicts、fallback/handoff 和失败样例。
-- [ ] 结论为 `production_implementation_gate_passed`，且 capability approval 引用精确 manifest/report/source/role-registry/aggregation-policy hash。
+- [ ] 真实评测结论为 `production_implementation_gate_passed`；启用决定引用精确 manifest/report/source/role-registry/aggregation-policy hash。
 
-G0 未通过时，阶段十四到此结束；不得创建生产 Team 表、路由、开关或 scheduler。
+该 verdict 名称沿用现有 schema，只表示真实 G0 的评测结果是否足以进入生产启用判断，不限制默认关闭的离线源码实现。
 
-> 2026-10-02：本轮的实际结论正是走到这里——阶段十四在 G0 之前延期，上述生产表面零存在。
+G0 未通过或未获授权时，不运行真实评估、不启用真实 provider 或研究项目 opt-in，并继续保持 `single_agent` 默认。本地 contract、store、fake-provider worker 和 focused tests 可以存在，但必须保持默认关闭、无真实数据写入和无外部网络调用。
+
+> 2026-10-02：当时阶段十四在 G0 之前延期，上述生产表面零存在。
 > 该结论是**主动延期**，不是 G0 评估后判定 `continue_single_agent`；两者证据强度不同，
-> 重启时不得把本轮延期引用为“多 Agent 已被实证否决”。
+> 不得把当时延期引用为“多 Agent 已被实证否决”。2026-10-13 起，G0 只约束真实评测和启用，
+> 离线默认关闭实现按 `00` §7、`07` 的顺序推进。

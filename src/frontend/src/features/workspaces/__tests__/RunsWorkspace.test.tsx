@@ -28,7 +28,7 @@ vi.mock("../../../lib/api/sandboxes", () => ({ listSandboxAttempts: vi.fn() }));
 
 function agentTaskEvidence(): AgentTaskResponse {
   return {
-    schema_version: 3,
+    schema_version: 4,
     task_id: "lifecycle-1",
     project_id: "project-1",
     state: "running",

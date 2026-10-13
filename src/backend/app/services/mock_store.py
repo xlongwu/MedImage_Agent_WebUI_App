@@ -10,21 +10,40 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.core.exceptions import SafetyError
+from src.backend.app.planner.audit_record import stable_hash
+from src.backend.app.schemas.agent_evidence import EvidenceSnapshot
+from src.backend.app.schemas.agent_execution_wake import AgentExecutionWakeRecord
 from src.backend.app.schemas.agent_harness import (
     AgentActionRecord,
     AgentHarnessAttempt,
     AgentHarnessContext,
     AgentHarnessStep,
+    AgentPlanningBaseContext,
+    AgentTeamRoleContext,
 )
-from src.backend.app.schemas.agent_evidence import EvidenceSnapshot
 from src.backend.app.schemas.agent_invariant import AgentInvariantAuditRecord
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
-from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
-from src.backend.app.schemas.agent_execution_wake import AgentExecutionWakeRecord
 from src.backend.app.schemas.agent_recovery_scan import (
-    AgentRecoveryScanPage, RecoveryScanConsumer, RECOVERY_SCAN_STATES,
+    RECOVERY_SCAN_STATES,
+    AgentRecoveryScanPage,
+    RecoveryScanConsumer,
+)
+from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
+from src.backend.app.schemas.agent_team import (
+    AgentReviewerKind,
+    AgentTeamAdvisory,
+    AgentTeamContextSnapshot,
+    AgentTeamEvent,
+    AgentTeamFinding,
+    AgentTeamModelCallRecord,
+    AgentTeamRecord,
+    AgentTeamWakeRecord,
+    AgentTeamWorkItem,
+    canonical_hash,
+    team_transition_allowed,
+    wake_transition_allowed,
+    work_item_transition_allowed,
 )
 from src.backend.app.schemas.desktop import (
     ApprovalRecord,
@@ -42,12 +61,12 @@ from src.backend.app.schemas.desktop import (
     TaskLogEntry,
     TaskStatus,
 )
-from src.backend.app.schemas.execution_ticket import ExecutionTicket, ExecutionTicketEvent
 from src.backend.app.schemas.execution_environment import ExecutionEnvironmentSnapshot
+from src.backend.app.schemas.execution_ticket import ExecutionTicket, ExecutionTicketEvent
 from src.backend.app.schemas.gateway_dispatch import GatewayDispatch, GatewayDispatchEvent
-from src.backend.app.schemas.sandbox import SandboxAttemptRecord
 from src.backend.app.schemas.goal_contract import GoalEvaluationRecord
 from src.backend.app.schemas.observation import ObservationRecord
+from src.backend.app.schemas.project_agent_settings import ProjectMultiAgentConsent
 from src.backend.app.schemas.recovery import DiagnosisRecord, RecoveryProposal
 from src.backend.app.schemas.recovery_attempt import (
     RecoveryApprovalEvent,
@@ -56,6 +75,7 @@ from src.backend.app.schemas.recovery_attempt import (
     RecoveryAttemptRecord,
     RecoveryQuotaReservation,
 )
+from src.backend.app.schemas.sandbox import SandboxAttemptRecord
 
 DEFAULT_STORE_PATH = Path("outputs/work/desktop/desktop_state.sqlite")
 
@@ -66,7 +86,7 @@ def utc_now_iso() -> str:
 
 def _decode_agent_lifecycle(payload: str) -> AgentLifecycleRecord:
     data = json.loads(payload)
-    if data.get("schema_version") != 6:
+    if data.get("schema_version") != 7:
         raise SafetyError("AGENT_LIFECYCLE_VERSION_UNSUPPORTED", code="AGENT_LIFECYCLE_VERSION_UNSUPPORTED")
     return AgentLifecycleRecord.model_validate(data)
 
@@ -343,6 +363,139 @@ class SQLiteDesktopStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_harness_contexts_lifecycle
                     ON agent_harness_contexts(lifecycle_id, created_at);
+                CREATE TABLE IF NOT EXISTS agent_planning_base_contexts (
+                    base_context_hash TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    planning_epoch INTEGER NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(lifecycle_id, planning_epoch)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_planning_base_contexts_project_lifecycle
+                    ON agent_planning_base_contexts(project_id, lifecycle_id, planning_epoch);
+                CREATE TABLE IF NOT EXISTS agent_teams (
+                    team_id TEXT PRIMARY KEY,
+                    team_epoch INTEGER NOT NULL,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(lifecycle_id, team_epoch)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_teams_project_status
+                    ON agent_teams(project_id, status, updated_at);
+                CREATE TABLE IF NOT EXISTS agent_team_contexts (
+                    snapshot_hash TEXT PRIMARY KEY,
+                    team_id TEXT NOT NULL,
+                    team_epoch INTEGER NOT NULL,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    base_context_hash TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    role_contexts_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(team_id, team_epoch)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_team_contexts_project_lifecycle_team
+                    ON agent_team_contexts(project_id, lifecycle_id, team_id);
+                CREATE TABLE IF NOT EXISTS agent_team_work_items (
+                    work_item_id TEXT PRIMARY KEY,
+                    team_id TEXT NOT NULL,
+                    team_epoch INTEGER NOT NULL,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    reviewer_kind TEXT NOT NULL,
+                    attempt_no INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    available_at TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(team_id, reviewer_kind, attempt_no)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_team_work_items_status_available
+                    ON agent_team_work_items(status, available_at, team_id);
+                CREATE TABLE IF NOT EXISTS agent_team_model_calls (
+                    model_call_id TEXT PRIMARY KEY,
+                    team_id TEXT NOT NULL,
+                    team_epoch INTEGER NOT NULL,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    work_item_id TEXT NOT NULL,
+                    request_hash TEXT NOT NULL,
+                    attempt_no INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    UNIQUE(work_item_id, request_hash, attempt_no)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_team_model_calls_team_status_started
+                    ON agent_team_model_calls(team_id, status, started_at);
+                CREATE TABLE IF NOT EXISTS agent_team_findings (
+                    finding_id TEXT PRIMARY KEY,
+                    finding_hash TEXT NOT NULL UNIQUE,
+                    team_id TEXT NOT NULL,
+                    team_epoch INTEGER NOT NULL,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    reviewer_kind TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_team_findings_team_role_severity
+                    ON agent_team_findings(team_id, reviewer_kind, severity);
+                CREATE TABLE IF NOT EXISTS agent_team_advisories (
+                    advisory_id TEXT PRIMARY KEY,
+                    team_id TEXT NOT NULL,
+                    team_epoch INTEGER NOT NULL,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    context_snapshot_hash TEXT NOT NULL,
+                    advisory_hash TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(team_id, context_snapshot_hash, advisory_hash)
+                );
+                CREATE TABLE IF NOT EXISTS agent_team_events (
+                    event_id TEXT PRIMARY KEY,
+                    team_id TEXT NOT NULL,
+                    team_epoch INTEGER NOT NULL,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    command_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    payload_hash TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    UNIQUE(command_id, event_type),
+                    UNIQUE(team_id, idempotency_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_team_events_team_time
+                    ON agent_team_events(team_id, occurred_at);
+                CREATE TABLE IF NOT EXISTS agent_team_wake_outbox (
+                    wake_id TEXT PRIMARY KEY,
+                    team_id TEXT NOT NULL,
+                    team_epoch INTEGER NOT NULL,
+                    project_id TEXT NOT NULL,
+                    lifecycle_id TEXT NOT NULL,
+                    step_key TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    available_at TEXT NOT NULL,
+                    lease_owner TEXT,
+                    lease_expires_at TEXT,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(team_id, step_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_team_wake_ready
+                    ON agent_team_wake_outbox(status, available_at, team_id);
                 CREATE TABLE IF NOT EXISTS agent_evidence_snapshots (
                     snapshot_hash TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL,
@@ -559,6 +712,28 @@ class SQLiteDesktopStore:
                     ON memory_forget_ledger(project_id, canonical_key, forget_epoch DESC);
                 """
             )
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute(
+                "SELECT lifecycle_id, payload FROM agent_lifecycles"
+            ).fetchall()
+            for row in rows:
+                payload = json.loads(row["payload"])
+                if payload.get("schema_version") != 6:
+                    continue
+                payload.update(
+                    schema_version=7,
+                    planning_mode="single_agent",
+                    planning_team_id=None,
+                    planning_team_epoch=0,
+                )
+                conn.execute(
+                    "UPDATE agent_lifecycles SET payload=? WHERE lifecycle_id=? AND payload=?",
+                    (
+                        json.dumps(payload, ensure_ascii=False),
+                        row["lifecycle_id"],
+                        row["payload"],
+                    ),
+                )
 
     def get_memory_consent(self, project_id: str) -> dict[str, object]:
         with self._lock, self._connect() as conn:
@@ -1230,6 +1405,59 @@ class SQLiteDesktopStore:
             )
         return updated
 
+    def update_project_agent_settings(
+        self,
+        project_id: str,
+        settings: dict[str, object],
+        *,
+        expected_consent_hash: str,
+    ) -> ProjectDetail | None:
+        """Persist settings and consent together with an epoch/hash CAS."""
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT payload FROM projects WHERE id=?", (project_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            project = self._load_payload(row["payload"], ProjectDetail)
+            metadata = dict(project.metadata or {})
+            defaults = metadata.get("agent_defaults")
+            if not isinstance(defaults, dict):
+                defaults = {}
+            current_payload = defaults.get("multi_agent_consent")
+            current_consent = (
+                ProjectMultiAgentConsent.model_validate(current_payload)
+                if isinstance(current_payload, dict)
+                else ProjectMultiAgentConsent.default_for_project(project_id)
+            )
+            if current_consent.consent_hash != expected_consent_hash:
+                raise RuntimeError("PROJECT_AGENT_SETTINGS_CONCURRENT_UPDATE")
+            consent_payload = settings.get("multi_agent_consent")
+            if not isinstance(consent_payload, dict):
+                raise RuntimeError("PROJECT_AGENT_CONSENT_REQUIRED")
+            consent = ProjectMultiAgentConsent.model_validate(consent_payload)
+            if consent.project_id != project_id:
+                raise RuntimeError("PROJECT_AGENT_CONSENT_PROJECT_MISMATCH")
+            consent_changed = (
+                consent.enabled != current_consent.enabled
+                or consent.allowed_data_categories
+                != current_consent.allowed_data_categories
+                or consent.max_model_calls != current_consent.max_model_calls
+                or consent.max_input_tokens != current_consent.max_input_tokens
+            )
+            expected_epoch = current_consent.consent_epoch + int(consent_changed)
+            if consent.consent_epoch != expected_epoch:
+                raise RuntimeError("PROJECT_AGENT_CONSENT_EPOCH_INVALID")
+            defaults.update(settings)
+            metadata["agent_defaults"] = defaults
+            updated = project.model_copy(update={"metadata": metadata})
+            conn.execute(
+                "UPDATE projects SET payload=? WHERE id=?",
+                (self._dump_model(updated), project_id),
+            )
+        return updated
+
     def add_project(
         self,
         project: ProjectDetail,
@@ -1322,6 +1550,15 @@ class SQLiteDesktopStore:
             conn.execute("DELETE FROM gateway_dispatches WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_harness_steps WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_harness_contexts WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_team_wake_outbox WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_team_events WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_team_advisories WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_team_findings WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_team_model_calls WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_team_work_items WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_team_contexts WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_teams WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM agent_planning_base_contexts WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_harness_attempts WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_evidence_snapshots WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM agent_lifecycle_events WHERE project_id = ?", (project_id,))
@@ -3282,6 +3519,2260 @@ class SQLiteDesktopStore:
             ).fetchall()
         return [_decode_agent_lifecycle(row["payload"]) for row in rows]
 
+    def _current_project_multi_agent_consent(
+        self, conn: sqlite3.Connection, project_id: str
+    ) -> ProjectMultiAgentConsent | None:
+        row = conn.execute(
+            "SELECT payload FROM projects WHERE id=?", (project_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        project = self._load_payload(row["payload"], ProjectDetail)
+        metadata = project.metadata if isinstance(project.metadata, dict) else {}
+        defaults = metadata.get("agent_defaults")
+        raw = defaults.get("multi_agent_consent") if isinstance(defaults, dict) else None
+        return (
+            ProjectMultiAgentConsent.model_validate(raw)
+            if isinstance(raw, dict)
+            else ProjectMultiAgentConsent.default_for_project(project_id)
+        )
+
+    @staticmethod
+    def _lifecycle_has_current_team_binding(
+        conn: sqlite3.Connection, team: AgentTeamRecord
+    ) -> bool:
+        row = conn.execute(
+            "SELECT payload FROM agent_lifecycles WHERE lifecycle_id=? AND project_id=?",
+            (team.lifecycle_id, team.project_id),
+        ).fetchone()
+        if row is None:
+            return False
+        lifecycle = _decode_agent_lifecycle(row["payload"])
+        return (
+            lifecycle.planning_mode == "multi_agent"
+            and lifecycle.planning_team_id == team.team_id
+            and lifecycle.planning_team_epoch == team.team_epoch
+        )
+
+    @staticmethod
+    def _insert_agent_team_event(conn: sqlite3.Connection, event: AgentTeamEvent) -> None:
+        conn.execute(
+            """INSERT INTO agent_team_events
+               (event_id, team_id, team_epoch, project_id, lifecycle_id, command_id,
+                event_type, idempotency_key, payload_hash, payload, occurred_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event.event_id,
+                event.team_id,
+                event.team_epoch,
+                event.project_id,
+                event.lifecycle_id,
+                event.command_id,
+                event.event_type,
+                event.idempotency_key,
+                event.payload_hash,
+                event.model_dump_json(),
+                event.occurred_at.isoformat(),
+            ),
+        )
+
+    @staticmethod
+    def _insert_agent_team_wake(conn: sqlite3.Connection, wake: AgentTeamWakeRecord) -> None:
+        conn.execute(
+            """INSERT INTO agent_team_wake_outbox
+               (wake_id, team_id, team_epoch, project_id, lifecycle_id, step_key,
+                status, available_at, lease_owner, lease_expires_at, attempt_count,
+                payload, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                wake.wake_id,
+                wake.team_id,
+                wake.team_epoch,
+                wake.project_id,
+                wake.lifecycle_id,
+                wake.step_key,
+                wake.status,
+                wake.available_at.isoformat(),
+                wake.lease_owner,
+                wake.lease_expires_at.isoformat() if wake.lease_expires_at else None,
+                wake.attempt_count,
+                wake.model_dump_json(),
+                wake.created_at.isoformat(),
+                wake.updated_at.isoformat(),
+            ),
+        )
+
+    def add_agent_planning_base_context(
+        self, record: AgentPlanningBaseContext
+    ) -> AgentPlanningBaseContext:
+        with self._lock, self._connect() as conn:
+            lifecycle = conn.execute(
+                "SELECT 1 FROM agent_lifecycles WHERE lifecycle_id=? AND project_id=?",
+                (record.lifecycle_id, record.project_id),
+            ).fetchone()
+            if lifecycle is None:
+                raise RuntimeError("AGENT_PLANNING_BASE_LIFECYCLE_NOT_FOUND")
+            conn.execute(
+                """INSERT OR IGNORE INTO agent_planning_base_contexts
+                   (base_context_hash, project_id, lifecycle_id, planning_epoch, payload, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    record.base_context_hash,
+                    record.project_id,
+                    record.lifecycle_id,
+                    record.planning_epoch,
+                    self._dump_model(record),
+                    record.created_at.isoformat(),
+                ),
+            )
+            row = conn.execute(
+                """SELECT payload FROM agent_planning_base_contexts
+                   WHERE lifecycle_id=? AND planning_epoch=?""",
+                (record.lifecycle_id, record.planning_epoch),
+            ).fetchone()
+            persisted = (
+                AgentPlanningBaseContext.model_validate_json(row["payload"])
+                if row is not None else None
+            )
+            if (
+                persisted is None
+                or persisted.model_dump(mode="json", exclude={"created_at"})
+                != record.model_dump(mode="json", exclude={"created_at"})
+            ):
+                raise RuntimeError("AGENT_PLANNING_BASE_CONTEXT_CONFLICT")
+        return persisted
+
+    def get_agent_planning_base_context(
+        self, project_id: str, base_context_hash: str
+    ) -> AgentPlanningBaseContext | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                """SELECT payload FROM agent_planning_base_contexts
+                   WHERE project_id=? AND base_context_hash=?""",
+                (project_id, base_context_hash),
+            ).fetchone()
+        return AgentPlanningBaseContext.model_validate_json(row["payload"]) if row else None
+
+    def create_agent_team_bundle(
+        self,
+        *,
+        lifecycle_record: AgentLifecycleRecord,
+        lifecycle_event: AgentLifecycleEvent,
+        expected_team_id: str | None,
+        expected_team_epoch: int,
+        base_context: AgentPlanningBaseContext,
+        team: AgentTeamRecord,
+        context_snapshot: AgentTeamContextSnapshot,
+        role_contexts: dict[AgentReviewerKind, AgentTeamRoleContext],
+        work_items: tuple[AgentTeamWorkItem, ...],
+        event: AgentTeamEvent,
+        wakes: tuple[AgentTeamWakeRecord, ...],
+    ) -> AgentTeamRecord:
+        role_kinds = {"science", "safety", "completeness"}
+        if (
+            lifecycle_record.planning_mode != "multi_agent"
+            or lifecycle_record.planning_team_id != team.team_id
+            or lifecycle_record.planning_team_epoch != expected_team_epoch + 1
+            or lifecycle_record.last_command_id != lifecycle_event.command_id
+            or lifecycle_event.lifecycle_id != team.lifecycle_id
+            or lifecycle_event.project_id != team.project_id
+            or lifecycle_event.from_state != lifecycle_event.to_state
+            or team.team_id == expected_team_id
+            or team.team_epoch != expected_team_epoch + 1
+            or team.status != "READY"
+            or team.lease_owner is not None
+            or team.snapshot_hash != context_snapshot.snapshot_hash
+            or team.project_id != base_context.project_id
+            or team.lifecycle_id != base_context.lifecycle_id
+            or not base_context.complete
+            or context_snapshot.team_id != team.team_id
+            or context_snapshot.team_epoch != team.team_epoch
+            or context_snapshot.project_id != team.project_id
+            or context_snapshot.lifecycle_id != team.lifecycle_id
+            or context_snapshot.base_context_hash != base_context.base_context_hash
+            or context_snapshot.consent_epoch != team.consent_epoch
+            or context_snapshot.consent_hash != team.consent_hash
+            or context_snapshot.role_registry_hash != team.role_registry_hash
+            or context_snapshot.context_projector_hash != team.context_projector_hash
+            or set(role_contexts) != role_kinds
+            or {item.reviewer_kind for item in work_items} != role_kinds
+            or len(work_items) != 3
+            or len(wakes) != 3
+            or {wake.step_key for wake in wakes}
+            != {f"work:{item.work_item_id}:attempt:1" for item in work_items}
+            or event.team_id != team.team_id
+            or event.team_epoch != team.team_epoch
+            or event.project_id != team.project_id
+            or event.lifecycle_id != team.lifecycle_id
+            or event.command_id != lifecycle_event.command_id
+            or event.event_type != "TEAM_REQUESTED"
+            or any(
+                wake.team_id != team.team_id
+                or wake.team_epoch != team.team_epoch
+                or wake.project_id != team.project_id
+                or wake.lifecycle_id != team.lifecycle_id
+                or wake.reason != "work_item"
+                or wake.status != "PENDING"
+                for wake in wakes
+            )
+        ):
+            raise RuntimeError("AGENT_TEAM_BUNDLE_BINDING_INVALID")
+        if (
+            team.budget.max_model_calls > team.budget.max_repairs + 3
+            or team.budget.max_model_calls > 6
+        ):
+            raise RuntimeError("AGENT_TEAM_BUDGET_INVALID")
+        for item in work_items:
+            role_context = role_contexts.get(item.reviewer_kind)
+            if (
+                item.team_id != team.team_id
+                or item.team_epoch != team.team_epoch
+                or item.project_id != team.project_id
+                or item.lifecycle_id != team.lifecycle_id
+                or item.attempt_no != 1
+                or item.status != "PENDING"
+                or role_context is None
+                or role_context.team_id != team.team_id
+                or role_context.team_epoch != team.team_epoch
+                or role_context.project_id != team.project_id
+                or role_context.lifecycle_id != team.lifecycle_id
+                or role_context.reviewer_kind != item.reviewer_kind
+                or role_context.role_id != item.role_id
+                or role_context.base_context_hash != base_context.base_context_hash
+                or role_context.model_profile_hash != team.model_profile_hash
+                or role_context.consent_epoch != team.consent_epoch
+                or role_context.consent_hash != team.consent_hash
+                or role_context.role_context_hash
+                != context_snapshot.role_context_hashes[item.reviewer_kind]
+                or item.deadline_at > team.budget.deadline_at
+            ):
+                raise RuntimeError("AGENT_TEAM_BUNDLE_ROLE_BINDING_INVALID")
+
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            prior_event = conn.execute(
+                """SELECT payload FROM agent_team_events
+                   WHERE command_id=? AND event_type=?""",
+                (event.command_id, event.event_type),
+            ).fetchone()
+            if prior_event is not None:
+                prior = AgentTeamEvent.model_validate_json(prior_event["payload"])
+                if (
+                    prior.project_id != event.project_id
+                    or prior.lifecycle_id != event.lifecycle_id
+                    or prior.payload_hash != event.payload_hash
+                    or prior.idempotency_key != event.idempotency_key
+                ):
+                    raise RuntimeError("AGENT_TEAM_COMMAND_REPLAYED")
+                prior_team = conn.execute(
+                    "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                    (prior.project_id, prior.team_id),
+                ).fetchone()
+                if prior_team is None:
+                    raise RuntimeError("AGENT_TEAM_COMMAND_REPLAYED")
+                return AgentTeamRecord.model_validate_json(prior_team["payload"])
+
+            lifecycle_row = conn.execute(
+                "SELECT payload FROM agent_lifecycles WHERE lifecycle_id=? AND project_id=?",
+                (team.lifecycle_id, team.project_id),
+            ).fetchone()
+            if lifecycle_row is None:
+                raise RuntimeError("LIFECYCLE_NOT_FOUND")
+            current_lifecycle = _decode_agent_lifecycle(lifecycle_row["payload"])
+            expected_lifecycle = current_lifecycle.model_copy(
+                update={
+                    "planning_mode": "multi_agent",
+                    "planning_team_id": team.team_id,
+                    "planning_team_epoch": expected_team_epoch + 1,
+                    "updated_at": lifecycle_record.updated_at,
+                    "last_command_id": lifecycle_event.command_id,
+                }
+            )
+            if (
+                current_lifecycle.planning_team_id != expected_team_id
+                or current_lifecycle.planning_team_epoch != expected_team_epoch
+                or current_lifecycle.state != lifecycle_event.from_state
+                or lifecycle_event.to_state != current_lifecycle.state
+                or lifecycle_record != expected_lifecycle
+            ):
+                raise RuntimeError("TEAM_BINDING_INVALIDATED")
+            consent = self._current_project_multi_agent_consent(conn, team.project_id)
+            if (
+                consent is None
+                or not consent.enabled
+                or consent.consent_epoch != team.consent_epoch
+                or consent.consent_hash != team.consent_hash
+                or team.budget.max_model_calls > consent.max_model_calls
+                or team.budget.reserved_input_tokens > consent.max_input_tokens
+            ):
+                raise RuntimeError("MULTI_AGENT_CONSENT_INVALIDATED")
+            active_team = conn.execute(
+                """SELECT team_id FROM agent_teams
+                   WHERE lifecycle_id=? AND status NOT IN ('COMPLETED','NEEDS_ATTENTION','CANCELED','FAILED')
+                   LIMIT 1""",
+                (team.lifecycle_id,),
+            ).fetchone()
+            if active_team is not None:
+                raise RuntimeError("AGENT_TEAM_ALREADY_ACTIVE")
+
+            conn.execute(
+                """INSERT OR IGNORE INTO agent_planning_base_contexts
+                   (base_context_hash, project_id, lifecycle_id, planning_epoch, payload, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    base_context.base_context_hash,
+                    base_context.project_id,
+                    base_context.lifecycle_id,
+                    base_context.planning_epoch,
+                    self._dump_model(base_context),
+                    base_context.created_at.isoformat(),
+                ),
+            )
+            stored_base = conn.execute(
+                """SELECT payload FROM agent_planning_base_contexts
+                   WHERE lifecycle_id=? AND planning_epoch=?""",
+                (base_context.lifecycle_id, base_context.planning_epoch),
+            ).fetchone()
+            if (
+                stored_base is None
+                or AgentPlanningBaseContext.model_validate_json(stored_base["payload"])
+                != base_context
+            ):
+                raise RuntimeError("AGENT_PLANNING_BASE_CONTEXT_CONFLICT")
+
+            cursor = conn.execute(
+                """UPDATE agent_lifecycles SET payload=?, updated_at=?
+                   WHERE lifecycle_id=? AND project_id=? AND state=?
+                     AND json_extract(payload, '$.planning_mode')=?
+                     AND json_extract(payload, '$.planning_team_id') IS ?
+                     AND json_extract(payload, '$.planning_team_epoch')=?""",
+                (
+                    self._dump_model(lifecycle_record),
+                    lifecycle_record.updated_at.isoformat(),
+                    lifecycle_record.lifecycle_id,
+                    lifecycle_record.project_id,
+                    current_lifecycle.state,
+                    current_lifecycle.planning_mode,
+                    expected_team_id,
+                    expected_team_epoch,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("TEAM_BINDING_INVALIDATED")
+            conn.execute(
+                """INSERT INTO agent_teams
+                   (team_id, team_epoch, project_id, lifecycle_id, status, payload, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    team.team_id,
+                    team.team_epoch,
+                    team.project_id,
+                    team.lifecycle_id,
+                    team.status,
+                    self._dump_model(team),
+                    team.created_at.isoformat(),
+                    team.updated_at.isoformat(),
+                ),
+            )
+            conn.execute(
+                """INSERT INTO agent_team_contexts
+                   (snapshot_hash, team_id, team_epoch, project_id, lifecycle_id,
+                    base_context_hash, payload, role_contexts_json, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    context_snapshot.snapshot_hash,
+                    team.team_id,
+                    team.team_epoch,
+                    team.project_id,
+                    team.lifecycle_id,
+                    context_snapshot.base_context_hash,
+                    self._dump_model(context_snapshot),
+                    json.dumps(
+                        {
+                            kind: role.model_dump(mode="json")
+                            for kind, role in role_contexts.items()
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    context_snapshot.created_at.isoformat(),
+                ),
+            )
+            for item in work_items:
+                conn.execute(
+                    """INSERT INTO agent_team_work_items
+                       (work_item_id, team_id, team_epoch, project_id, lifecycle_id,
+                        reviewer_kind, attempt_no, status, available_at, payload, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        item.work_item_id,
+                        item.team_id,
+                        item.team_epoch,
+                        item.project_id,
+                        item.lifecycle_id,
+                        item.reviewer_kind,
+                        item.attempt_no,
+                        item.status,
+                        item.available_at.isoformat(),
+                        self._dump_model(item),
+                        item.created_at.isoformat(),
+                        item.updated_at.isoformat(),
+                    ),
+                )
+            self._insert_agent_team_event(conn, event)
+            for wake in wakes:
+                self._insert_agent_team_wake(conn, wake)
+            self._insert_agent_lifecycle_event(conn, lifecycle_event)
+        return team
+
+    def get_agent_team(self, project_id: str, team_id: str) -> AgentTeamRecord | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (project_id, team_id),
+            ).fetchone()
+        return AgentTeamRecord.model_validate_json(row["payload"]) if row else None
+
+    def get_agent_team_creation_by_command(
+        self, project_id: str, lifecycle_id: str, command_id: str
+    ) -> tuple[AgentTeamRecord, AgentTeamEvent] | None:
+        with self._lock, self._connect() as conn:
+            event_row = conn.execute(
+                """SELECT payload FROM agent_team_events
+                   WHERE project_id=? AND lifecycle_id=? AND command_id=?
+                     AND event_type='TEAM_REQUESTED'""",
+                (project_id, lifecycle_id, command_id),
+            ).fetchone()
+            if event_row is None:
+                return None
+            event = AgentTeamEvent.model_validate_json(event_row["payload"])
+            team_row = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (project_id, event.team_id),
+            ).fetchone()
+        if team_row is None:
+            raise SafetyError("AGENT_TEAM_COMMAND_RECORD_CORRUPT", code="AGENT_TEAM_COMMAND_RECORD_CORRUPT")
+        return AgentTeamRecord.model_validate_json(team_row["payload"]), event
+
+    def list_agent_teams(
+        self, project_id: str, *, lifecycle_id: str | None = None
+    ) -> list[AgentTeamRecord]:
+        query = "SELECT payload FROM agent_teams WHERE project_id=?"
+        params: tuple[object, ...] = (project_id,)
+        if lifecycle_id is not None:
+            query += " AND lifecycle_id=?"
+            params = (*params, lifecycle_id)
+        query += " ORDER BY team_epoch, team_id"
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [AgentTeamRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def get_agent_team_context(
+        self, project_id: str, team_id: str
+    ) -> tuple[AgentTeamContextSnapshot, dict[AgentReviewerKind, AgentTeamRoleContext]] | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                """SELECT payload, role_contexts_json FROM agent_team_contexts
+                   WHERE project_id=? AND team_id=?""",
+                (project_id, team_id),
+            ).fetchone()
+        if row is None:
+            return None
+        snapshot = AgentTeamContextSnapshot.model_validate_json(row["payload"])
+        raw_roles = json.loads(row["role_contexts_json"])
+        roles = {
+            kind: AgentTeamRoleContext.model_validate(value)
+            for kind, value in raw_roles.items()
+        }
+        if set(roles) != set(snapshot.role_context_hashes) or any(
+            roles[kind].role_context_hash != snapshot.role_context_hashes[kind]
+            for kind in roles
+        ):
+            raise SafetyError("AGENT_TEAM_CONTEXT_PROJECTION_CORRUPT", code="AGENT_TEAM_CONTEXT_PROJECTION_CORRUPT")
+        return snapshot, roles
+
+    def get_agent_team_work_item(
+        self, project_id: str, work_item_id: str
+    ) -> AgentTeamWorkItem | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM agent_team_work_items WHERE project_id=? AND work_item_id=?",
+                (project_id, work_item_id),
+            ).fetchone()
+        return AgentTeamWorkItem.model_validate_json(row["payload"]) if row else None
+
+    def list_agent_team_work_items(
+        self, project_id: str, team_id: str
+    ) -> list[AgentTeamWorkItem]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """SELECT payload FROM agent_team_work_items
+                   WHERE project_id=? AND team_id=? ORDER BY reviewer_kind, attempt_no""",
+                (project_id, team_id),
+            ).fetchall()
+        return [AgentTeamWorkItem.model_validate_json(row["payload"]) for row in rows]
+
+    def get_agent_team_model_call(
+        self, project_id: str, model_call_id: str
+    ) -> AgentTeamModelCallRecord | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM agent_team_model_calls WHERE project_id=? AND model_call_id=?",
+                (project_id, model_call_id),
+            ).fetchone()
+        return AgentTeamModelCallRecord.model_validate_json(row["payload"]) if row else None
+
+    def list_agent_team_model_calls(
+        self, project_id: str, team_id: str
+    ) -> list[AgentTeamModelCallRecord]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """SELECT payload FROM agent_team_model_calls
+                   WHERE project_id=? AND team_id=? ORDER BY started_at, model_call_id""",
+                (project_id, team_id),
+            ).fetchall()
+        return [AgentTeamModelCallRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def list_agent_team_findings(
+        self, project_id: str, team_id: str
+    ) -> list[AgentTeamFinding]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """SELECT payload FROM agent_team_findings
+                   WHERE project_id=? AND team_id=? ORDER BY created_at, finding_id""",
+                (project_id, team_id),
+            ).fetchall()
+        return [AgentTeamFinding.model_validate_json(row["payload"]) for row in rows]
+
+    def get_agent_team_advisory(
+        self, project_id: str, team_id: str
+    ) -> AgentTeamAdvisory | None:
+        with self._lock, self._connect() as conn:
+            team = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (project_id, team_id),
+            ).fetchone()
+            if team is None:
+                return None
+            record = AgentTeamRecord.model_validate_json(team["payload"])
+            if record.advisory_id is None:
+                return None
+            row = conn.execute(
+                """SELECT payload FROM agent_team_advisories
+                   WHERE project_id=? AND team_id=? AND advisory_id=?""",
+                (project_id, team_id, record.advisory_id),
+            ).fetchone()
+        return AgentTeamAdvisory.model_validate_json(row["payload"]) if row else None
+
+    def list_agent_team_events(
+        self, project_id: str, team_id: str
+    ) -> list[AgentTeamEvent]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """SELECT payload FROM agent_team_events
+                   WHERE project_id=? AND team_id=? ORDER BY occurred_at, event_id""",
+                (project_id, team_id),
+            ).fetchall()
+        return [AgentTeamEvent.model_validate_json(row["payload"]) for row in rows]
+
+    def list_agent_team_wakes(
+        self, project_id: str, team_id: str
+    ) -> list[AgentTeamWakeRecord]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """SELECT payload FROM agent_team_wake_outbox
+                   WHERE project_id=? AND team_id=? ORDER BY available_at, step_key""",
+                (project_id, team_id),
+            ).fetchall()
+        return [AgentTeamWakeRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def enqueue_agent_team_wake(self, record: AgentTeamWakeRecord) -> AgentTeamWakeRecord:
+        with self._lock, self._connect() as conn:
+            team_row = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (record.project_id, record.team_id),
+            ).fetchone()
+            team = AgentTeamRecord.model_validate_json(team_row["payload"]) if team_row else None
+            if (
+                team is None
+                or team.team_epoch != record.team_epoch
+                or team.lifecycle_id != record.lifecycle_id
+                or record.status != "PENDING"
+            ):
+                raise RuntimeError("AGENT_TEAM_WAKE_BINDING_INVALID")
+            existing_row = conn.execute(
+                "SELECT payload FROM agent_team_wake_outbox WHERE team_id=? AND step_key=?",
+                (record.team_id, record.step_key),
+            ).fetchone()
+            if existing_row is not None:
+                existing = AgentTeamWakeRecord.model_validate_json(existing_row["payload"])
+                if (
+                    existing.project_id != record.project_id
+                    or existing.lifecycle_id != record.lifecycle_id
+                    or existing.team_epoch != record.team_epoch
+                    or existing.reason != record.reason
+                ):
+                    raise RuntimeError("AGENT_TEAM_WAKE_IDEMPOTENCY_CONFLICT")
+                return existing
+            self._insert_agent_team_wake(conn, record)
+        return record
+
+    def claim_next_agent_team_wake(
+        self, *, owner: str, now: datetime, lease_expires_at: datetime
+    ) -> AgentTeamWakeRecord | None:
+        if not owner or lease_expires_at <= now:
+            raise RuntimeError("AGENT_TEAM_LEASE_INVALID")
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT wake_id, payload FROM agent_team_wake_outbox
+                   WHERE (status IN ('PENDING','RETRY') AND available_at<=?)
+                      OR (status='CLAIMED' AND lease_expires_at IS NOT NULL AND lease_expires_at<=?)
+                   ORDER BY available_at, created_at, wake_id LIMIT 1""",
+                (now.isoformat(), now.isoformat()),
+            ).fetchone()
+            if row is None:
+                return None
+            wake = AgentTeamWakeRecord.model_validate_json(row["payload"])
+            team_row = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (wake.project_id, wake.team_id),
+            ).fetchone()
+            team = AgentTeamRecord.model_validate_json(team_row["payload"]) if team_row else None
+            if (
+                team is None
+                or team.team_epoch != wake.team_epoch
+                or team.lifecycle_id != wake.lifecycle_id
+                or not (
+                    team.status in {"READY", "RUNNING", "AGGREGATING"}
+                    or team.status == "COMPLETED" and wake.reason == "planning_resume"
+                )
+                or not self._lifecycle_has_current_team_binding(conn, team)
+            ):
+                canceled = wake.model_copy(update={
+                    "status": "CANCELED",
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                    "updated_at": now,
+                })
+                conn.execute(
+                    """UPDATE agent_team_wake_outbox SET status='CANCELED', lease_owner=NULL,
+                       lease_expires_at=NULL, payload=?, updated_at=? WHERE wake_id=?""",
+                    (self._dump_model(canceled), now.isoformat(), wake.wake_id),
+                )
+                return None
+            if wake.status != "CLAIMED" and not wake_transition_allowed(wake.status, "CLAIMED"):
+                raise RuntimeError("AGENT_TEAM_WAKE_TRANSITION_INVALID")
+            claimed = AgentTeamWakeRecord.model_validate({
+                **wake.model_dump(mode="python"),
+                "status": "CLAIMED",
+                "attempt_count": wake.attempt_count + 1,
+                "lease_owner": owner,
+                "lease_expires_at": lease_expires_at,
+                "fencing_token": wake.fencing_token + 1,
+                "updated_at": now,
+            })
+            cursor = conn.execute(
+                """UPDATE agent_team_wake_outbox SET status=?, attempt_count=?, lease_owner=?,
+                   lease_expires_at=?, payload=?, updated_at=? WHERE wake_id=?
+                   AND json_extract(payload, '$.fencing_token')=?""",
+                (
+                    claimed.status, claimed.attempt_count, owner, lease_expires_at.isoformat(),
+                    self._dump_model(claimed), now.isoformat(), wake.wake_id, wake.fencing_token,
+                ),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return claimed
+
+    def next_agent_team_wake_at(self) -> datetime | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                """SELECT MIN(CASE WHEN status='CLAIMED' THEN lease_expires_at ELSE available_at END) AS due_at
+                   FROM agent_team_wake_outbox WHERE status IN ('PENDING','RETRY')
+                      OR (status='CLAIMED' AND lease_expires_at IS NOT NULL)"""
+            ).fetchone()
+        return datetime.fromisoformat(row["due_at"]) if row and row["due_at"] else None
+
+    def complete_agent_team_wake(
+        self, record: AgentTeamWakeRecord, *, owner: str, now: datetime
+    ) -> AgentTeamWakeRecord:
+        if record.lease_owner != owner:
+            raise RuntimeError("AGENT_TEAM_WAKE_OWNER_MISMATCH")
+        if not wake_transition_allowed(record.status, "CONSUMED"):
+            raise RuntimeError("AGENT_TEAM_WAKE_TRANSITION_INVALID")
+        completed = AgentTeamWakeRecord.model_validate({
+            **record.model_dump(mode="python"),
+            "status": "CONSUMED",
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "updated_at": now,
+        })
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """UPDATE agent_team_wake_outbox SET status=?, lease_owner=NULL,
+                   lease_expires_at=NULL, payload=?, updated_at=? WHERE wake_id=?
+                   AND status='CLAIMED' AND lease_owner=?
+                   AND json_extract(payload, '$.fencing_token')=?""",
+                (
+                    completed.status, self._dump_model(completed), now.isoformat(),
+                    record.wake_id, owner, record.fencing_token,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_TEAM_WAKE_CONCURRENT_UPDATE")
+        return completed
+
+    def retry_agent_team_wake(
+        self,
+        record: AgentTeamWakeRecord,
+        *,
+        owner: str,
+        now: datetime,
+        available_at: datetime,
+        error_code: str,
+    ) -> AgentTeamWakeRecord:
+        if record.lease_owner != owner:
+            raise RuntimeError("AGENT_TEAM_WAKE_OWNER_MISMATCH")
+        if not wake_transition_allowed(record.status, "RETRY"):
+            raise RuntimeError("AGENT_TEAM_WAKE_TRANSITION_INVALID")
+        retried = AgentTeamWakeRecord.model_validate({
+            **record.model_dump(mode="python"),
+            "status": "RETRY",
+            "available_at": available_at,
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "last_error_code": error_code,
+            "updated_at": now,
+        })
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """UPDATE agent_team_wake_outbox SET status=?, available_at=?, lease_owner=NULL,
+                   lease_expires_at=NULL, payload=?, updated_at=? WHERE wake_id=?
+                   AND status='CLAIMED' AND lease_owner=?
+                   AND json_extract(payload, '$.fencing_token')=?""",
+                (
+                    retried.status, available_at.isoformat(), self._dump_model(retried),
+                    now.isoformat(), record.wake_id, owner, record.fencing_token,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_TEAM_WAKE_CONCURRENT_UPDATE")
+        return retried
+
+    def fail_agent_team_wake(
+        self,
+        record: AgentTeamWakeRecord,
+        *,
+        owner: str,
+        now: datetime,
+        error_code: str,
+    ) -> AgentTeamWakeRecord:
+        if record.lease_owner != owner:
+            raise RuntimeError("AGENT_TEAM_WAKE_OWNER_MISMATCH")
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            wake_row = conn.execute(
+                "SELECT payload FROM agent_team_wake_outbox WHERE wake_id=?",
+                (record.wake_id,),
+            ).fetchone()
+            if wake_row is None:
+                raise RuntimeError("AGENT_TEAM_WAKE_NOT_FOUND")
+            current_wake = AgentTeamWakeRecord.model_validate_json(wake_row["payload"])
+            if (
+                current_wake.status != "CLAIMED"
+                or current_wake.lease_owner != owner
+                or current_wake.fencing_token != record.fencing_token
+            ):
+                raise RuntimeError("AGENT_TEAM_WAKE_CONCURRENT_UPDATE")
+            canceled_wake = AgentTeamWakeRecord.model_validate({
+                **current_wake.model_dump(mode="python"),
+                "status": "CANCELED",
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "fencing_token": current_wake.fencing_token + 1,
+                "last_error_code": error_code,
+                "updated_at": now,
+            })
+            team_row = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (record.project_id, record.team_id),
+            ).fetchone()
+            team = AgentTeamRecord.model_validate_json(team_row["payload"]) if team_row else None
+            if team is not None and team.status in {"READY", "RUNNING", "AGGREGATING"}:
+                if not team_transition_allowed(team.status, "NEEDS_ATTENTION"):
+                    raise RuntimeError("AGENT_TEAM_TRANSITION_INVALID")
+                updated_team = team.model_copy(update={
+                    "status": "NEEDS_ATTENTION",
+                    "updated_at": now,
+                })
+                conn.execute(
+                    "UPDATE agent_teams SET status=?, payload=?, updated_at=? WHERE project_id=? AND team_id=?",
+                    (updated_team.status, self._dump_model(updated_team), now.isoformat(),
+                     team.project_id, team.team_id),
+                )
+                work_rows = conn.execute(
+                    "SELECT payload FROM agent_team_work_items WHERE project_id=? AND team_id=?",
+                    (team.project_id, team.team_id),
+                ).fetchall()
+                for work_row in work_rows:
+                    work = AgentTeamWorkItem.model_validate_json(work_row["payload"])
+                    if work.status in {"COMPLETED", "FAILED", "INDETERMINATE", "CANCELED"}:
+                        continue
+                    target = "INDETERMINATE" if (
+                        work.status == "MODEL_STARTED"
+                        and work.model_call_id is not None
+                        and self._agent_team_call_was_network_called(
+                            conn, team.project_id, work.model_call_id
+                        )
+                    ) else "CANCELED"
+                    updated_work = work.model_copy(update={
+                        "status": target,
+                        "lease_owner": None,
+                        "lease_expires_at": None,
+                        "fencing_token": work.fencing_token + 1,
+                        "error_code": error_code,
+                        "updated_at": now,
+                    })
+                    conn.execute(
+                        "UPDATE agent_team_work_items SET status=?, payload=?, updated_at=? "
+                        "WHERE project_id=? AND team_id=? AND work_item_id=?",
+                        (updated_work.status, self._dump_model(updated_work), now.isoformat(),
+                         team.project_id, team.team_id, work.work_item_id),
+                    )
+                    if work.status == "MODEL_STARTED" and work.model_call_id is not None:
+                        call_row = conn.execute(
+                            "SELECT payload FROM agent_team_model_calls WHERE project_id=? AND model_call_id=?",
+                            (team.project_id, work.model_call_id),
+                        ).fetchone()
+                        if call_row is not None:
+                            call = AgentTeamModelCallRecord.model_validate_json(call_row["payload"])
+                            if call.status == "started":
+                                call_status = "indeterminate" if call.network_called else "canceled"
+                                failed_call = call.model_copy(update={
+                                    "status": call_status,
+                                    "error_code": error_code,
+                                    "completed_at": now,
+                                })
+                                conn.execute(
+                                    "UPDATE agent_team_model_calls SET status=?, payload=? "
+                                    "WHERE project_id=? AND model_call_id=? AND status='started'",
+                                    (failed_call.status, self._dump_model(failed_call),
+                                     team.project_id, call.model_call_id),
+                                )
+                conn.execute(
+                    "UPDATE agent_team_wake_outbox SET status='CANCELED', lease_owner=NULL, "
+                    "lease_expires_at=NULL, payload=json_set(payload, '$.status', 'CANCELED', "
+                    "'$.lease_owner', NULL, '$.lease_expires_at', NULL, "
+                    "'$.fencing_token', json_extract(payload, '$.fencing_token') + 1, "
+                    "'$.last_error_code', ?, '$.updated_at', ?), updated_at=? "
+                    "WHERE project_id=? AND team_id=? AND status IN ('PENDING','RETRY','CLAIMED') "
+                    "AND wake_id<>?",
+                    (error_code, now.isoformat(), now.isoformat(), team.project_id, team.team_id, record.wake_id),
+                )
+                event = AgentTeamEvent(
+                    event_id=f"team_event_{uuid4().hex}",
+                    team_id=team.team_id,
+                    team_epoch=team.team_epoch,
+                    project_id=team.project_id,
+                    lifecycle_id=team.lifecycle_id,
+                    command_id=f"scheduler-failed:{record.wake_id}",
+                    idempotency_key=f"scheduler-failed:{record.wake_id}",
+                    source="scheduler",
+                    event_type="TEAM_NEEDS_ATTENTION",
+                    payload_hash=canonical_hash({"wake_id": record.wake_id, "error_code": error_code}),
+                    occurred_at=now,
+                )
+                self._insert_agent_team_event(conn, event)
+            conn.execute(
+                "UPDATE agent_team_wake_outbox SET status=?, lease_owner=NULL, lease_expires_at=NULL, "
+                "payload=?, updated_at=? WHERE wake_id=? AND status='CLAIMED' AND lease_owner=? "
+                "AND json_extract(payload, '$.fencing_token')=?",
+                (canceled_wake.status, self._dump_model(canceled_wake), now.isoformat(),
+                 record.wake_id, owner, record.fencing_token),
+            )
+        return canceled_wake
+
+    @staticmethod
+    def _agent_team_call_was_network_called(
+        conn: sqlite3.Connection, project_id: str, model_call_id: str
+    ) -> bool:
+        row = conn.execute(
+            "SELECT payload FROM agent_team_model_calls WHERE project_id=? AND model_call_id=?",
+            (project_id, model_call_id),
+        ).fetchone()
+        if row is None:
+            return False
+        return AgentTeamModelCallRecord.model_validate_json(row["payload"]).network_called
+
+    @staticmethod
+    def _stop_agent_team_children(
+        conn: sqlite3.Connection,
+        *,
+        team: AgentTeamRecord,
+        now: datetime,
+        error_code: str,
+    ) -> None:
+        work_rows = conn.execute(
+            "SELECT payload FROM agent_team_work_items WHERE project_id=? AND team_id=?",
+            (team.project_id, team.team_id),
+        ).fetchall()
+        for row in work_rows:
+            work = AgentTeamWorkItem.model_validate_json(row["payload"])
+            if work.status in {"COMPLETED", "FAILED", "INDETERMINATE", "CANCELED"}:
+                continue
+            call = None
+            if work.status == "MODEL_STARTED" and work.model_call_id is not None:
+                call_row = conn.execute(
+                    "SELECT payload FROM agent_team_model_calls WHERE project_id=? AND model_call_id=?",
+                    (team.project_id, work.model_call_id),
+                ).fetchone()
+                call = AgentTeamModelCallRecord.model_validate_json(call_row["payload"]) if call_row else None
+            target = "INDETERMINATE" if call is not None and call.network_called else "CANCELED"
+            stopped_work = AgentTeamWorkItem.model_validate({
+                **work.model_dump(mode="python"),
+                "status": target,
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "fencing_token": work.fencing_token + 1,
+                "error_code": error_code,
+                "updated_at": now,
+            })
+            conn.execute(
+                "UPDATE agent_team_work_items SET status=?, payload=?, updated_at=? "
+                "WHERE project_id=? AND team_id=? AND work_item_id=? AND status=? "
+                "AND json_extract(payload, '$.fencing_token')=?",
+                (stopped_work.status, SQLiteDesktopStore._dump_model(stopped_work), now.isoformat(),
+                 team.project_id, team.team_id, work.work_item_id, work.status, work.fencing_token),
+            )
+            if call is not None and call.status == "started":
+                call_status = "indeterminate" if call.network_called else "canceled"
+                stopped_call = AgentTeamModelCallRecord.model_validate({
+                    **call.model_dump(mode="python"),
+                    "status": call_status,
+                    "error_code": error_code,
+                    "completed_at": now,
+                })
+                conn.execute(
+                    "UPDATE agent_team_model_calls SET status=?, payload=? "
+                    "WHERE project_id=? AND model_call_id=? AND status='started'",
+                    (stopped_call.status, SQLiteDesktopStore._dump_model(stopped_call),
+                     team.project_id, call.model_call_id),
+                )
+        wake_rows = conn.execute(
+            "SELECT payload FROM agent_team_wake_outbox WHERE project_id=? AND team_id=? "
+            "AND status IN ('PENDING','RETRY','CLAIMED')",
+            (team.project_id, team.team_id),
+        ).fetchall()
+        for row in wake_rows:
+            wake = AgentTeamWakeRecord.model_validate_json(row["payload"])
+            if not wake_transition_allowed(wake.status, "CANCELED"):
+                continue
+            stopped_wake = AgentTeamWakeRecord.model_validate({
+                **wake.model_dump(mode="python"),
+                "status": "CANCELED",
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "fencing_token": wake.fencing_token + 1,
+                "last_error_code": error_code,
+                "updated_at": now,
+            })
+            conn.execute(
+                "UPDATE agent_team_wake_outbox SET status=?, lease_owner=NULL, lease_expires_at=NULL, "
+                "payload=?, updated_at=? WHERE wake_id=? AND status=? "
+                "AND json_extract(payload, '$.fencing_token')=?",
+                (stopped_wake.status, SQLiteDesktopStore._dump_model(stopped_wake), now.isoformat(),
+                 wake.wake_id, wake.status, wake.fencing_token),
+            )
+
+    def claim_agent_team_work_and_start_call(
+        self,
+        *,
+        work_item_id: str,
+        expected_fencing_token: int,
+        owner: str,
+        now: datetime,
+        lease_expires_at: datetime,
+        call: AgentTeamModelCallRecord,
+        event: AgentTeamEvent,
+    ) -> tuple[AgentTeamWorkItem, AgentTeamModelCallRecord]:
+        if (
+            not owner
+            or lease_expires_at <= now
+            or call.status != "started"
+            or call.network_called
+            or event.event_type != "MODEL_CALL_STARTED"
+            or event.team_id != call.team_id
+            or event.team_epoch != call.team_epoch
+            or event.project_id != call.project_id
+            or event.lifecycle_id != call.lifecycle_id
+        ):
+            raise RuntimeError("AGENT_TEAM_MODEL_CALL_START_INVALID")
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT payload FROM agent_team_work_items
+                   WHERE project_id=? AND team_id=? AND work_item_id=?""",
+                (call.project_id, call.team_id, work_item_id),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_NOT_FOUND")
+            work = AgentTeamWorkItem.model_validate_json(row["payload"])
+            if (
+                work.team_epoch != call.team_epoch
+                or work.lifecycle_id != call.lifecycle_id
+                or work.work_item_id != call.work_item_id
+                or work.reviewer_kind != call.reviewer_kind
+                or work.role_id != call.role_id
+                or work.attempt_no != call.attempt_no
+                or work.fencing_token != expected_fencing_token
+                or work.status not in {"PENDING", "CLAIMED", "RETRY_READY"}
+                or work.available_at > now
+                or work.deadline_at <= now
+                or (
+                    work.status == "RETRY_READY"
+                    and (
+                        call.attempt_no != 2
+                        or work.model_call_id != call.repair_of_model_call_id
+                    )
+                )
+                or (
+                    work.status != "RETRY_READY"
+                    and (work.model_call_id is not None or call.attempt_no != 1)
+                )
+            ):
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_CLAIM_INVALIDATED")
+            if work.status == "CLAIMED" and (
+                work.lease_expires_at is None or work.lease_expires_at > now
+            ):
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_ALREADY_CLAIMED")
+            for from_status, to_status in (
+                (work.status, "CLAIMED"),
+                ("CLAIMED", "MODEL_STARTED"),
+            ):
+                if from_status != to_status and not work_item_transition_allowed(
+                    from_status, to_status
+                ):
+                    raise RuntimeError("AGENT_TEAM_WORK_ITEM_TRANSITION_INVALID")
+
+            team_row = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (call.project_id, call.team_id),
+            ).fetchone()
+            if team_row is None:
+                raise RuntimeError("AGENT_TEAM_NOT_FOUND")
+            team = AgentTeamRecord.model_validate_json(team_row["payload"])
+            consent = self._current_project_multi_agent_consent(conn, call.project_id)
+            if (
+                team.team_epoch != call.team_epoch
+                or team.lifecycle_id != call.lifecycle_id
+                or team.status not in {"READY", "RUNNING"}
+                or not self._lifecycle_has_current_team_binding(conn, team)
+                or consent is None
+                or not consent.enabled
+                or consent.consent_epoch != call.consent_epoch
+                or consent.consent_hash != call.consent_hash
+                or team.consent_epoch != call.consent_epoch
+                or team.consent_hash != call.consent_hash
+                or call.role_registry_hash != team.role_registry_hash
+                or call.model_profile_hash != team.model_profile_hash
+                or call.attempt_no == 1 and call.repair_of_model_call_id is not None
+                or call.attempt_no == 2 and call.repair_of_model_call_id is None
+            ):
+                raise RuntimeError("MULTI_AGENT_CONSENT_INVALIDATED")
+            context_row = conn.execute(
+                """SELECT role_contexts_json FROM agent_team_contexts
+                   WHERE project_id=? AND team_id=? AND snapshot_hash=?""",
+                (call.project_id, call.team_id, team.snapshot_hash),
+            ).fetchone()
+            if context_row is None:
+                raise RuntimeError("AGENT_TEAM_CONTEXT_NOT_FOUND")
+            role_payload = json.loads(context_row["role_contexts_json"]).get(
+                call.reviewer_kind
+            )
+            role_context = (
+                AgentTeamRoleContext.model_validate(role_payload)
+                if isinstance(role_payload, dict)
+                else None
+            )
+            if (
+                role_context is None
+                or role_context.role_context_hash != call.role_context_hash
+                or role_context.role_id != call.role_id
+                or role_context.model_profile_hash != call.model_profile_hash
+                or role_context.prompt_template_version != call.prompt_template_version
+                or role_context.output_schema_version != call.output_schema_version
+                or role_context.consent_epoch != call.consent_epoch
+                or role_context.consent_hash != call.consent_hash
+            ):
+                raise RuntimeError("AGENT_TEAM_ROLE_CONTEXT_INVALIDATED")
+            prior_calls = conn.execute(
+                "SELECT COUNT(*) FROM agent_team_model_calls WHERE team_id=?",
+                (call.team_id,),
+            ).fetchone()[0]
+            if prior_calls >= team.budget.max_model_calls:
+                raise RuntimeError("MULTI_AGENT_BUDGET_EXCEEDED")
+
+            updated_work = work.model_copy(
+                update={
+                    "status": "MODEL_STARTED",
+                    "model_call_id": call.model_call_id,
+                    "request_hash": call.request_hash,
+                    "lease_owner": owner,
+                    "lease_expires_at": lease_expires_at,
+                    "fencing_token": expected_fencing_token + 1,
+                    "updated_at": now,
+                }
+            )
+            if team.status == "READY":
+                if not team_transition_allowed(team.status, "RUNNING"):
+                    raise RuntimeError("AGENT_TEAM_TRANSITION_INVALID")
+                updated_team = team.model_copy(update={"status": "RUNNING", "updated_at": now})
+            else:
+                updated_team = team
+            cursor = conn.execute(
+                """UPDATE agent_team_work_items SET status=?, available_at=?, payload=?, updated_at=?
+                   WHERE project_id=? AND team_id=? AND work_item_id=? AND status=?
+                     AND json_extract(payload, '$.fencing_token')=?""",
+                (
+                    updated_work.status,
+                    updated_work.available_at.isoformat(),
+                    self._dump_model(updated_work),
+                    updated_work.updated_at.isoformat(),
+                    work.project_id,
+                    work.team_id,
+                    work.work_item_id,
+                    work.status,
+                    expected_fencing_token,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_CLAIM_INVALIDATED")
+            conn.execute(
+                """INSERT INTO agent_team_model_calls
+                   (model_call_id, team_id, team_epoch, project_id, lifecycle_id,
+                    work_item_id, request_hash, attempt_no, status, started_at, payload)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    call.model_call_id,
+                    call.team_id,
+                    call.team_epoch,
+                    call.project_id,
+                    call.lifecycle_id,
+                    call.work_item_id,
+                    call.request_hash,
+                    call.attempt_no,
+                    call.status,
+                    call.started_at.isoformat(),
+                    self._dump_model(call),
+                ),
+            )
+            if updated_team != team:
+                conn.execute(
+                    """UPDATE agent_teams SET status=?, payload=?, updated_at=?
+                       WHERE project_id=? AND team_id=? AND status='READY'""",
+                    (
+                        updated_team.status,
+                        self._dump_model(updated_team),
+                        updated_team.updated_at.isoformat(),
+                        team.project_id,
+                        team.team_id,
+                    ),
+                )
+            self._insert_agent_team_event(conn, event)
+        return updated_work, call
+
+    def reclaim_agent_team_call(
+        self,
+        *,
+        project_id: str,
+        model_call_id: str,
+        expected_fencing_token: int,
+        owner: str,
+        now: datetime,
+        lease_expires_at: datetime,
+        event: AgentTeamEvent,
+    ) -> tuple[AgentTeamWorkItem, AgentTeamModelCallRecord]:
+        if not owner or lease_expires_at <= now:
+            raise RuntimeError("AGENT_TEAM_LEASE_INVALID")
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            call_row = conn.execute(
+                """SELECT payload FROM agent_team_model_calls
+                   WHERE project_id=? AND model_call_id=?""",
+                (project_id, model_call_id),
+            ).fetchone()
+            if call_row is None:
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_NOT_FOUND")
+            call = AgentTeamModelCallRecord.model_validate_json(call_row["payload"])
+            if call.status != "started":
+                raise RuntimeError("AGENT_TEAM_CALL_RECLAIM_INVALID")
+            work_row = conn.execute(
+                """SELECT payload FROM agent_team_work_items
+                   WHERE project_id=? AND team_id=? AND work_item_id=?""",
+                (project_id, call.team_id, call.work_item_id),
+            ).fetchone()
+            if work_row is None:
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_NOT_FOUND")
+            work = AgentTeamWorkItem.model_validate_json(work_row["payload"])
+            if (
+                work.status != "MODEL_STARTED"
+                or work.model_call_id != model_call_id
+                or work.fencing_token != expected_fencing_token
+                or work.lease_expires_at is None
+                or work.lease_expires_at > now
+            ):
+                raise RuntimeError("AGENT_TEAM_FENCING_TOKEN_STALE")
+            if (
+                event.team_id != call.team_id
+                or event.team_epoch != call.team_epoch
+                or event.project_id != project_id
+                or event.lifecycle_id != call.lifecycle_id
+                or event.event_type != "WORK_ITEM_CLAIMED"
+            ):
+                raise RuntimeError("AGENT_TEAM_CALL_RECLAIM_INVALID")
+            updated_work = work.model_copy(
+                update={
+                    "lease_owner": owner,
+                    "lease_expires_at": lease_expires_at,
+                    "fencing_token": expected_fencing_token + 1,
+                    "updated_at": now,
+                }
+            )
+            cursor = conn.execute(
+                """UPDATE agent_team_work_items SET payload=?, updated_at=?
+                   WHERE project_id=? AND team_id=? AND work_item_id=?
+                     AND status='MODEL_STARTED'
+                     AND json_extract(payload, '$.fencing_token')=?""",
+                (
+                    self._dump_model(updated_work),
+                    now.isoformat(),
+                    project_id,
+                    work.team_id,
+                    work.work_item_id,
+                    expected_fencing_token,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_TEAM_FENCING_TOKEN_STALE")
+            self._insert_agent_team_event(conn, event)
+        return updated_work, call
+
+    def mark_agent_team_call_network_called(
+        self,
+        *,
+        project_id: str,
+        model_call_id: str,
+        owner: str,
+        fencing_token: int,
+        now: datetime,
+    ) -> AgentTeamModelCallRecord:
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            call_row = conn.execute(
+                """SELECT payload FROM agent_team_model_calls
+                   WHERE project_id=? AND model_call_id=?""",
+                (project_id, model_call_id),
+            ).fetchone()
+            if call_row is None:
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_NOT_FOUND")
+            call = AgentTeamModelCallRecord.model_validate_json(call_row["payload"])
+            if call.status != "started":
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_NOT_STARTED")
+            work_row = conn.execute(
+                """SELECT payload FROM agent_team_work_items
+                   WHERE project_id=? AND work_item_id=? AND team_id=?""",
+                (project_id, call.work_item_id, call.team_id),
+            ).fetchone()
+            if work_row is None:
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_NOT_FOUND")
+            work = AgentTeamWorkItem.model_validate_json(work_row["payload"])
+            if (
+                work.status != "MODEL_STARTED"
+                or work.model_call_id != call.model_call_id
+                or work.lease_owner != owner
+                or work.fencing_token != fencing_token
+                or work.lease_expires_at is None
+                or work.lease_expires_at <= now
+            ):
+                raise RuntimeError("AGENT_TEAM_FENCING_TOKEN_STALE")
+            if call.network_called:
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_NETWORK_ALREADY_STARTED")
+            team_row = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (project_id, call.team_id),
+            ).fetchone()
+            team = AgentTeamRecord.model_validate_json(team_row["payload"]) if team_row else None
+            consent = self._current_project_multi_agent_consent(conn, project_id)
+            current_binding = team is not None and self._lifecycle_has_current_team_binding(conn, team)
+            current_consent = (
+                consent is not None
+                and consent.enabled
+                and consent.consent_epoch == call.consent_epoch
+                and consent.consent_hash == call.consent_hash
+            )
+            if (
+                current_binding
+                and current_consent
+                and team is not None
+                and team.status in {"READY", "RUNNING"}
+            ):
+                updated_call = call.model_copy(update={"network_called": True})
+                cursor = conn.execute(
+                    """UPDATE agent_team_model_calls SET payload=?
+                       WHERE project_id=? AND model_call_id=? AND status='started'
+                         AND json_extract(payload, '$.network_called')=0""",
+                    (self._dump_model(updated_call), project_id, model_call_id),
+                )
+                if cursor.rowcount != 1:
+                    raise RuntimeError("AGENT_TEAM_MODEL_CALL_PRENETWORK_CAS_FAILED")
+                return updated_call
+
+            updated_call = call.model_copy(
+                update={
+                    "status": "canceled",
+                    "completed_at": now,
+                    "error_code": "TEAM_BINDING_INVALIDATED",
+                }
+            )
+            updated_work = work.model_copy(
+                update={
+                    "status": "CANCELED",
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                    "error_code": "TEAM_BINDING_INVALIDATED",
+                    "updated_at": now,
+                }
+            )
+            conn.execute(
+                """UPDATE agent_team_model_calls SET status=?, payload=?
+                   WHERE project_id=? AND model_call_id=? AND status='started'
+                     AND json_extract(payload, '$.network_called')=0""",
+                (updated_call.status, self._dump_model(updated_call), project_id, model_call_id),
+            )
+            conn.execute(
+                """UPDATE agent_team_work_items SET status=?, payload=?, updated_at=?
+                   WHERE project_id=? AND work_item_id=? AND status='MODEL_STARTED'
+                     AND json_extract(payload, '$.lease_owner')=?
+                     AND json_extract(payload, '$.fencing_token')=?""",
+                (
+                    updated_work.status,
+                    self._dump_model(updated_work),
+                    now.isoformat(),
+                    project_id,
+                    work.work_item_id,
+                    owner,
+                    fencing_token,
+                ),
+            )
+            if team is not None and team.status in {"READY", "RUNNING", "AGGREGATING"}:
+                target_status = "NEEDS_ATTENTION" if current_binding else "CANCELED"
+                if team_transition_allowed(team.status, target_status):
+                    updated_team = team.model_copy(
+                        update={"status": target_status, "updated_at": now}
+                    )
+                    conn.execute(
+                        """UPDATE agent_teams SET status=?, payload=?, updated_at=?
+                           WHERE project_id=? AND team_id=? AND status=?""",
+                        (
+                            updated_team.status,
+                            self._dump_model(updated_team),
+                            now.isoformat(),
+                            project_id,
+                            team.team_id,
+                            team.status,
+                        ),
+                    )
+            invalidation_event = AgentTeamEvent(
+                event_id=f"team_event_{uuid4().hex}",
+                team_id=call.team_id,
+                team_epoch=call.team_epoch,
+                project_id=project_id,
+                lifecycle_id=call.lifecycle_id,
+                command_id=f"preflight:{call.model_call_id}",
+                idempotency_key=f"preflight:{call.model_call_id}",
+                source="system",
+                event_type="TEAM_BINDING_INVALIDATED",
+                payload_hash=canonical_hash(
+                    {"model_call_id": call.model_call_id, "network_called": False}
+                ),
+                occurred_at=now,
+            )
+            self._insert_agent_team_event(conn, invalidation_event)
+            if team is not None:
+                self._stop_agent_team_children(
+                    conn,
+                    team=team,
+                    now=now,
+                    error_code="TEAM_BINDING_INVALIDATED",
+                )
+            return updated_call
+
+    def complete_agent_team_model_call(
+        self,
+        *,
+        project_id: str,
+        model_call_id: str,
+        owner: str,
+        fencing_token: int,
+        now: datetime,
+        completed_call: AgentTeamModelCallRecord,
+        findings: tuple[AgentTeamFinding, ...],
+        event: AgentTeamEvent,
+        wake: AgentTeamWakeRecord,
+    ) -> AgentTeamModelCallRecord:
+        if (
+            completed_call.model_call_id != model_call_id
+            or completed_call.project_id != project_id
+            or completed_call.status != "completed"
+            or not completed_call.network_called
+            or completed_call.response_hash is None
+            or completed_call.schema_valid is not True
+            or completed_call.completed_at is None
+            or event.team_id != completed_call.team_id
+            or event.team_epoch != completed_call.team_epoch
+            or event.project_id != project_id
+            or event.lifecycle_id != completed_call.lifecycle_id
+            or event.event_type != "MODEL_CALL_COMPLETED"
+            or wake.team_id != completed_call.team_id
+            or wake.team_epoch != completed_call.team_epoch
+            or wake.project_id != project_id
+            or wake.lifecycle_id != completed_call.lifecycle_id
+            or wake.status != "PENDING"
+        ):
+            raise RuntimeError("AGENT_TEAM_MODEL_CALL_COMPLETION_INVALID")
+
+        immutable_call_fields = (
+            "model_call_id",
+            "team_id",
+            "team_epoch",
+            "project_id",
+            "lifecycle_id",
+            "work_item_id",
+            "reviewer_kind",
+            "role_id",
+            "role_registry_hash",
+            "role_context_hash",
+            "model_profile_hash",
+            "request_hash",
+            "request_bytes",
+            "provider_id",
+            "model_id",
+            "endpoint_class",
+            "prompt_template_version",
+            "output_schema_version",
+            "consent_epoch",
+            "consent_hash",
+            "attempt_no",
+            "repair_of_model_call_id",
+            "started_at",
+        )
+        for finding in findings:
+            if (
+                finding.team_id != completed_call.team_id
+                or finding.team_epoch != completed_call.team_epoch
+                or finding.project_id != project_id
+                or finding.lifecycle_id != completed_call.lifecycle_id
+                or finding.work_item_id != completed_call.work_item_id
+                or finding.reviewer_kind != completed_call.reviewer_kind
+                or finding.role_id != completed_call.role_id
+                or finding.role_context_hash != completed_call.role_context_hash
+                or finding.model_call_id != model_call_id
+                or finding.model_response_hash != completed_call.response_hash
+            ):
+                raise RuntimeError("AGENT_TEAM_FINDING_BINDING_INVALID")
+
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            call_row = conn.execute(
+                """SELECT payload FROM agent_team_model_calls
+                   WHERE project_id=? AND model_call_id=?""",
+                (project_id, model_call_id),
+            ).fetchone()
+            if call_row is None:
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_NOT_FOUND")
+            current_call = AgentTeamModelCallRecord.model_validate_json(call_row["payload"])
+            if current_call.status == "completed":
+                prior_event = conn.execute(
+                    """SELECT payload FROM agent_team_events
+                       WHERE team_id=? AND idempotency_key=?""",
+                    (current_call.team_id, event.idempotency_key),
+                ).fetchone()
+                prior_wake = conn.execute(
+                    """SELECT payload FROM agent_team_wake_outbox
+                       WHERE team_id=? AND step_key=?""",
+                    (current_call.team_id, wake.step_key),
+                ).fetchone()
+                prior_findings = conn.execute(
+                    """SELECT payload FROM agent_team_findings
+                       WHERE project_id=?
+                         AND json_extract(payload, '$.model_call_id')=?
+                       ORDER BY finding_id""",
+                    (project_id, model_call_id),
+                ).fetchall()
+                if (
+                    current_call == completed_call
+                    and prior_event is not None
+                    and AgentTeamEvent.model_validate_json(prior_event["payload"]) == event
+                    and prior_wake is not None
+                    and AgentTeamWakeRecord.model_validate_json(prior_wake["payload"]) == wake
+                    and tuple(
+                        AgentTeamFinding.model_validate_json(row["payload"])
+                        for row in prior_findings
+                    )
+                    == tuple(sorted(findings, key=lambda item: item.finding_id))
+                ):
+                    return current_call
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_COMPLETION_REPLAYED")
+            if current_call.status != "started" or not current_call.network_called:
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_NOT_COMPLETABLE")
+            if any(
+                getattr(current_call, name) != getattr(completed_call, name)
+                for name in immutable_call_fields
+            ):
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_IDENTITY_CHANGED")
+
+            work_row = conn.execute(
+                """SELECT payload FROM agent_team_work_items
+                   WHERE project_id=? AND team_id=? AND work_item_id=?""",
+                (project_id, current_call.team_id, current_call.work_item_id),
+            ).fetchone()
+            if work_row is None:
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_NOT_FOUND")
+            work = AgentTeamWorkItem.model_validate_json(work_row["payload"])
+            if (
+                work.status != "MODEL_STARTED"
+                or work.model_call_id != model_call_id
+                or work.lease_owner != owner
+                or work.fencing_token != fencing_token
+                or work.lease_expires_at is None
+                or work.lease_expires_at <= now
+            ):
+                raise RuntimeError("AGENT_TEAM_FENCING_TOKEN_STALE")
+
+            team_row = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (project_id, current_call.team_id),
+            ).fetchone()
+            team = AgentTeamRecord.model_validate_json(team_row["payload"]) if team_row else None
+            consent = self._current_project_multi_agent_consent(conn, project_id)
+            current_binding = team is not None and self._lifecycle_has_current_team_binding(conn, team)
+            current_consent = (
+                consent is not None
+                and consent.enabled
+                and consent.consent_epoch == current_call.consent_epoch
+                and consent.consent_hash == current_call.consent_hash
+            )
+            context_row = (
+                conn.execute(
+                    """SELECT role_contexts_json FROM agent_team_contexts
+                       WHERE project_id=? AND team_id=? AND team_epoch=?""",
+                    (project_id, current_call.team_id, current_call.team_epoch),
+                ).fetchone()
+                if team is not None
+                else None
+            )
+            role_payload = (
+                json.loads(context_row["role_contexts_json"]).get(current_call.reviewer_kind)
+                if context_row is not None
+                else None
+            )
+            role_context = (
+                AgentTeamRoleContext.model_validate(role_payload)
+                if isinstance(role_payload, dict)
+                else None
+            )
+            context_valid = (
+                role_context is not None
+                and role_context.role_context_hash == current_call.role_context_hash
+                and role_context.model_profile_hash == current_call.model_profile_hash
+                and role_context.consent_epoch == current_call.consent_epoch
+                and role_context.consent_hash == current_call.consent_hash
+            )
+            if not (
+                team is not None
+                and team.status == "RUNNING"
+                and current_binding
+                and current_consent
+                and context_valid
+            ):
+                canceled_call = current_call.model_copy(
+                    update={
+                        "status": "canceled",
+                        "completed_at": now,
+                        "error_code": "TEAM_BINDING_INVALIDATED",
+                    }
+                )
+                canceled_work = work.model_copy(
+                    update={
+                        "status": "CANCELED",
+                        "lease_owner": None,
+                        "lease_expires_at": None,
+                        "error_code": "TEAM_BINDING_INVALIDATED",
+                        "updated_at": now,
+                    }
+                )
+                conn.execute(
+                    """UPDATE agent_team_model_calls SET status=?, payload=?
+                       WHERE project_id=? AND model_call_id=? AND status='started'""",
+                    (canceled_call.status, self._dump_model(canceled_call), project_id, model_call_id),
+                )
+                conn.execute(
+                    """UPDATE agent_team_work_items SET status=?, payload=?, updated_at=?
+                       WHERE project_id=? AND team_id=? AND work_item_id=? AND status='MODEL_STARTED'
+                         AND json_extract(payload, '$.lease_owner')=?
+                         AND json_extract(payload, '$.fencing_token')=?""",
+                    (
+                        canceled_work.status,
+                        self._dump_model(canceled_work),
+                        now.isoformat(),
+                        project_id,
+                        work.team_id,
+                        work.work_item_id,
+                        owner,
+                        fencing_token,
+                    ),
+                )
+                if team is not None and team.status in {"READY", "RUNNING", "AGGREGATING"}:
+                    target = "NEEDS_ATTENTION" if current_binding else "CANCELED"
+                    if team_transition_allowed(team.status, target):
+                        updated_team = team.model_copy(update={"status": target, "updated_at": now})
+                        conn.execute(
+                            """UPDATE agent_teams SET status=?, payload=?, updated_at=?
+                               WHERE project_id=? AND team_id=? AND status=?""",
+                            (
+                                updated_team.status,
+                                self._dump_model(updated_team),
+                                now.isoformat(),
+                                project_id,
+                                team.team_id,
+                                team.status,
+                            ),
+                        )
+                invalidation_event = AgentTeamEvent(
+                    event_id=f"team_event_{uuid4().hex}",
+                    team_id=current_call.team_id,
+                    team_epoch=current_call.team_epoch,
+                    project_id=project_id,
+                    lifecycle_id=current_call.lifecycle_id,
+                    command_id=f"completion-invalidated:{model_call_id}",
+                    idempotency_key=f"completion-invalidated:{model_call_id}",
+                    source="system",
+                    event_type="TEAM_BINDING_INVALIDATED",
+                    payload_hash=canonical_hash({"model_call_id": model_call_id}),
+                    occurred_at=now,
+                )
+                self._insert_agent_team_event(conn, invalidation_event)
+                if team is not None:
+                    self._stop_agent_team_children(
+                        conn,
+                        team=team,
+                        now=now,
+                        error_code="TEAM_BINDING_INVALIDATED",
+                    )
+                return canceled_call
+
+            updated_work = work.model_copy(
+                update={
+                    "status": "COMPLETED",
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                    "updated_at": now,
+                }
+            )
+            if not (
+                work_item_transition_allowed(work.status, "VALIDATING")
+                and work_item_transition_allowed("VALIDATING", "COMPLETED")
+            ):
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_TRANSITION_INVALID")
+            cursor = conn.execute(
+                """UPDATE agent_team_model_calls SET status=?, payload=?
+                   WHERE project_id=? AND model_call_id=? AND status='started'
+                     AND json_extract(payload, '$.network_called')=1""",
+                (completed_call.status, self._dump_model(completed_call), project_id, model_call_id),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_COMPLETION_CAS_FAILED")
+            cursor = conn.execute(
+                """UPDATE agent_team_work_items SET status=?, payload=?, updated_at=?
+                   WHERE project_id=? AND team_id=? AND work_item_id=? AND status='MODEL_STARTED'
+                     AND json_extract(payload, '$.lease_owner')=?
+                     AND json_extract(payload, '$.fencing_token')=?""",
+                (
+                    updated_work.status,
+                    self._dump_model(updated_work),
+                    now.isoformat(),
+                    project_id,
+                    work.team_id,
+                    work.work_item_id,
+                    owner,
+                    fencing_token,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_COMPLETION_CAS_FAILED")
+            for finding in findings:
+                conn.execute(
+                    """INSERT INTO agent_team_findings
+                       (finding_id, finding_hash, team_id, team_epoch, project_id,
+                        lifecycle_id, reviewer_kind, severity, payload, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        finding.finding_id,
+                        finding.finding_hash,
+                        finding.team_id,
+                        finding.team_epoch,
+                        finding.project_id,
+                        finding.lifecycle_id,
+                        finding.reviewer_kind,
+                        finding.severity,
+                        self._dump_model(finding),
+                        finding.created_at.isoformat(),
+                    ),
+                )
+            self._insert_agent_team_event(conn, event)
+            self._insert_agent_team_wake(conn, wake)
+        return completed_call
+
+    def fail_agent_team_model_call(
+        self,
+        *,
+        project_id: str,
+        model_call_id: str,
+        owner: str,
+        fencing_token: int,
+        now: datetime,
+        failed_call: AgentTeamModelCallRecord,
+        event: AgentTeamEvent,
+        retry_wake: AgentTeamWakeRecord | None = None,
+    ) -> AgentTeamModelCallRecord:
+        if (
+            failed_call.model_call_id != model_call_id
+            or failed_call.project_id != project_id
+            or failed_call.status not in {"failed", "indeterminate"}
+            or failed_call.completed_at is None
+            or failed_call.error_code is None
+            or event.team_id != failed_call.team_id
+            or event.team_epoch != failed_call.team_epoch
+            or event.project_id != project_id
+            or event.lifecycle_id != failed_call.lifecycle_id
+            or event.event_type != (
+                "MODEL_CALL_INDETERMINATE"
+                if failed_call.status == "indeterminate"
+                else "MODEL_CALL_FAILED"
+            )
+            or retry_wake is not None
+            and (
+                failed_call.status != "failed"
+                or failed_call.attempt_no != 1
+                or not failed_call.network_called
+                or failed_call.schema_valid is not False
+                or retry_wake.team_id != failed_call.team_id
+                or retry_wake.team_epoch != failed_call.team_epoch
+                or retry_wake.project_id != project_id
+                or retry_wake.lifecycle_id != failed_call.lifecycle_id
+                or retry_wake.status != "PENDING"
+                or retry_wake.reason != "work_item"
+            )
+        ):
+            raise RuntimeError("AGENT_TEAM_MODEL_CALL_FAILURE_INVALID")
+
+        immutable_fields = (
+            "model_call_id", "team_id", "team_epoch", "project_id", "lifecycle_id",
+            "work_item_id", "reviewer_kind", "role_id", "role_registry_hash",
+            "role_context_hash", "model_profile_hash", "request_hash", "request_bytes",
+            "provider_id", "model_id", "endpoint_class", "prompt_template_version",
+            "output_schema_version", "consent_epoch", "consent_hash", "attempt_no",
+            "repair_of_model_call_id", "started_at",
+        )
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            call_row = conn.execute(
+                "SELECT payload FROM agent_team_model_calls WHERE project_id=? AND model_call_id=?",
+                (project_id, model_call_id),
+            ).fetchone()
+            if call_row is None:
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_NOT_FOUND")
+            current_call = AgentTeamModelCallRecord.model_validate_json(call_row["payload"])
+            prior_event = conn.execute(
+                "SELECT payload FROM agent_team_events WHERE team_id=? AND idempotency_key=?",
+                (current_call.team_id, event.idempotency_key),
+            ).fetchone()
+            prior_wake = (
+                conn.execute(
+                    "SELECT payload FROM agent_team_wake_outbox WHERE team_id=? AND step_key=?",
+                    (current_call.team_id, retry_wake.step_key),
+                ).fetchone()
+                if retry_wake is not None
+                else None
+            )
+            if current_call.status in {"failed", "indeterminate"}:
+                if (
+                    current_call == failed_call
+                    and prior_event is not None
+                    and AgentTeamEvent.model_validate_json(prior_event["payload"]) == event
+                    and (
+                        retry_wake is None
+                        or prior_wake is not None
+                        and AgentTeamWakeRecord.model_validate_json(prior_wake["payload"])
+                        == retry_wake
+                    )
+                ):
+                    return current_call
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_FAILURE_REPLAYED")
+            if current_call.status != "started" or any(
+                getattr(current_call, name) != getattr(failed_call, name)
+                for name in immutable_fields
+            ):
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_IDENTITY_CHANGED")
+
+            work_row = conn.execute(
+                """SELECT payload FROM agent_team_work_items
+                   WHERE project_id=? AND team_id=? AND work_item_id=?""",
+                (project_id, current_call.team_id, current_call.work_item_id),
+            ).fetchone()
+            if work_row is None:
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_NOT_FOUND")
+            work = AgentTeamWorkItem.model_validate_json(work_row["payload"])
+            if (
+                work.status != "MODEL_STARTED"
+                or work.model_call_id != model_call_id
+                or work.lease_owner != owner
+                or work.fencing_token != fencing_token
+                or work.lease_expires_at is None
+                or work.lease_expires_at <= now
+            ):
+                raise RuntimeError("AGENT_TEAM_FENCING_TOKEN_STALE")
+
+            team_row = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (project_id, current_call.team_id),
+            ).fetchone()
+            team = AgentTeamRecord.model_validate_json(team_row["payload"]) if team_row else None
+            consent = self._current_project_multi_agent_consent(conn, project_id)
+            current_binding = team is not None and self._lifecycle_has_current_team_binding(conn, team)
+            current_consent = (
+                consent is not None
+                and consent.enabled
+                and consent.consent_epoch == current_call.consent_epoch
+                and consent.consent_hash == current_call.consent_hash
+            )
+            context_row = (
+                conn.execute(
+                    """SELECT role_contexts_json FROM agent_team_contexts
+                       WHERE project_id=? AND team_id=? AND team_epoch=?""",
+                    (project_id, current_call.team_id, current_call.team_epoch),
+                ).fetchone()
+                if team is not None
+                else None
+            )
+            role_payload = (
+                json.loads(context_row["role_contexts_json"]).get(current_call.reviewer_kind)
+                if context_row is not None
+                else None
+            )
+            role_context = (
+                AgentTeamRoleContext.model_validate(role_payload)
+                if isinstance(role_payload, dict)
+                else None
+            )
+            if not (
+                team is not None
+                and team.status == "RUNNING"
+                and current_binding
+                and current_consent
+                and role_context is not None
+                and role_context.role_context_hash == current_call.role_context_hash
+                and role_context.consent_epoch == current_call.consent_epoch
+                and role_context.consent_hash == current_call.consent_hash
+            ):
+                canceled_call = current_call.model_copy(
+                    update={
+                        "status": "canceled",
+                        "completed_at": now,
+                        "error_code": "TEAM_BINDING_INVALIDATED",
+                    }
+                )
+                canceled_work = work.model_copy(
+                    update={
+                        "status": "CANCELED",
+                        "lease_owner": None,
+                        "lease_expires_at": None,
+                        "error_code": "TEAM_BINDING_INVALIDATED",
+                        "updated_at": now,
+                    }
+                )
+                conn.execute(
+                    """UPDATE agent_team_model_calls SET status=?, payload=?
+                       WHERE project_id=? AND model_call_id=? AND status='started'""",
+                    (canceled_call.status, self._dump_model(canceled_call), project_id, model_call_id),
+                )
+                conn.execute(
+                    """UPDATE agent_team_work_items SET status=?, payload=?, updated_at=?
+                       WHERE project_id=? AND team_id=? AND work_item_id=? AND status='MODEL_STARTED'
+                         AND json_extract(payload, '$.lease_owner')=?
+                         AND json_extract(payload, '$.fencing_token')=?""",
+                    (
+                        canceled_work.status, self._dump_model(canceled_work), now.isoformat(),
+                        project_id, work.team_id, work.work_item_id, owner, fencing_token,
+                    ),
+                )
+                if team is not None and team.status in {"READY", "RUNNING", "AGGREGATING"}:
+                    target = "NEEDS_ATTENTION" if current_binding else "CANCELED"
+                    if team_transition_allowed(team.status, target):
+                        updated_team = team.model_copy(update={"status": target, "updated_at": now})
+                        conn.execute(
+                            """UPDATE agent_teams SET status=?, payload=?, updated_at=?
+                               WHERE project_id=? AND team_id=? AND status=?""",
+                            (updated_team.status, self._dump_model(updated_team), now.isoformat(),
+                             project_id, team.team_id, team.status),
+                        )
+                invalidation_event = AgentTeamEvent(
+                    event_id=f"team_event_{uuid4().hex}",
+                    team_id=current_call.team_id,
+                    team_epoch=current_call.team_epoch,
+                    project_id=project_id,
+                    lifecycle_id=current_call.lifecycle_id,
+                    command_id=f"failure-invalidated:{model_call_id}",
+                    idempotency_key=f"failure-invalidated:{model_call_id}",
+                    source="system",
+                    event_type="TEAM_BINDING_INVALIDATED",
+                    payload_hash=canonical_hash({"model_call_id": model_call_id}),
+                    occurred_at=now,
+                )
+                self._insert_agent_team_event(conn, invalidation_event)
+                if team is not None:
+                    self._stop_agent_team_children(
+                        conn,
+                        team=team,
+                        now=now,
+                        error_code="TEAM_BINDING_INVALIDATED",
+                    )
+                return canceled_call
+
+            if retry_wake is not None:
+                if work.attempt_no != 1 or team.budget.max_repairs < 1:
+                    raise RuntimeError("AGENT_TEAM_REPAIR_BUDGET_EXCEEDED")
+                if not (
+                    work_item_transition_allowed(work.status, "VALIDATING")
+                    and work_item_transition_allowed("VALIDATING", "RETRY_READY")
+                ):
+                    raise RuntimeError("AGENT_TEAM_WORK_ITEM_TRANSITION_INVALID")
+                updated_work = work.model_copy(
+                    update={
+                        "status": "RETRY_READY",
+                        "attempt_no": 2,
+                        "lease_owner": None,
+                        "lease_expires_at": None,
+                        "error_code": failed_call.error_code,
+                        "updated_at": now,
+                    }
+                )
+            else:
+                target_status = "INDETERMINATE" if failed_call.status == "indeterminate" else "FAILED"
+                if not work_item_transition_allowed(work.status, target_status):
+                    raise RuntimeError("AGENT_TEAM_WORK_ITEM_TRANSITION_INVALID")
+                updated_work = work.model_copy(
+                    update={
+                        "status": target_status,
+                        "lease_owner": None,
+                        "lease_expires_at": None,
+                        "error_code": failed_call.error_code,
+                        "updated_at": now,
+                    }
+                )
+
+            cursor = conn.execute(
+                """UPDATE agent_team_model_calls SET status=?, payload=?
+                   WHERE project_id=? AND model_call_id=? AND status='started'""",
+                (failed_call.status, self._dump_model(failed_call), project_id, model_call_id),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_TEAM_MODEL_CALL_FAILURE_CAS_FAILED")
+            cursor = conn.execute(
+                """UPDATE agent_team_work_items SET status=?, payload=?, updated_at=?
+                   WHERE project_id=? AND team_id=? AND work_item_id=? AND status='MODEL_STARTED'
+                     AND json_extract(payload, '$.lease_owner')=?
+                     AND json_extract(payload, '$.fencing_token')=?""",
+                (
+                    updated_work.status, self._dump_model(updated_work), now.isoformat(),
+                    project_id, work.team_id, work.work_item_id, owner, fencing_token,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_TEAM_WORK_ITEM_FAILURE_CAS_FAILED")
+            self._insert_agent_team_event(conn, event)
+            if retry_wake is not None:
+                self._insert_agent_team_wake(conn, retry_wake)
+            else:
+                attention_event = AgentTeamEvent(
+                    event_id=f"team_event_{uuid4().hex}",
+                    team_id=team.team_id,
+                    team_epoch=team.team_epoch,
+                    project_id=team.project_id,
+                    lifecycle_id=team.lifecycle_id,
+                    command_id=f"team-attention:{model_call_id}",
+                    idempotency_key=f"team-attention:{model_call_id}",
+                    source="system",
+                    event_type="TEAM_NEEDS_ATTENTION",
+                    payload_hash=canonical_hash({
+                        "model_call_id": model_call_id,
+                        "error_code": failed_call.error_code,
+                    }),
+                    occurred_at=now,
+                )
+                self._insert_agent_team_event(conn, attention_event)
+                if team_transition_allowed(team.status, "NEEDS_ATTENTION"):
+                    updated_team = team.model_copy(update={"status": "NEEDS_ATTENTION", "updated_at": now})
+                    conn.execute(
+                        """UPDATE agent_teams SET status=?, payload=?, updated_at=?
+                           WHERE project_id=? AND team_id=? AND status=?""",
+                        (updated_team.status, self._dump_model(updated_team), now.isoformat(),
+                         project_id, team.team_id, team.status),
+                    )
+                self._stop_agent_team_children(
+                    conn,
+                    team=team,
+                    now=now,
+                    error_code=failed_call.error_code or "TEAM_SCHEDULER_FAILED",
+                )
+        return failed_call
+
+    def complete_agent_team_aggregation(
+        self,
+        *,
+        advisory: AgentTeamAdvisory,
+        event: AgentTeamEvent,
+        wake: AgentTeamWakeRecord,
+        now: datetime,
+    ) -> AgentTeamAdvisory:
+        if (
+            advisory.project_id != event.project_id
+            or advisory.team_id != event.team_id
+            or advisory.team_epoch != event.team_epoch
+            or advisory.lifecycle_id != event.lifecycle_id
+            or event.event_type != "TEAM_ADVISORY_FROZEN"
+            or event.payload_hash != advisory.advisory_hash
+            or wake.project_id != advisory.project_id
+            or wake.team_id != advisory.team_id
+            or wake.team_epoch != advisory.team_epoch
+            or wake.lifecycle_id != advisory.lifecycle_id
+            or wake.reason != "planning_resume"
+            or wake.status != "PENDING"
+        ):
+            raise RuntimeError("AGENT_TEAM_AGGREGATION_BINDING_INVALID")
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            team_row = conn.execute(
+                "SELECT payload FROM agent_teams WHERE project_id=? AND team_id=?",
+                (advisory.project_id, advisory.team_id),
+            ).fetchone()
+            team = AgentTeamRecord.model_validate_json(team_row["payload"]) if team_row else None
+            if team is None:
+                raise RuntimeError("AGENT_TEAM_NOT_FOUND")
+            if team.status == "COMPLETED":
+                existing_row = conn.execute(
+                    "SELECT payload FROM agent_team_advisories WHERE project_id=? AND team_id=? AND advisory_id=?",
+                    (advisory.project_id, advisory.team_id, team.advisory_id),
+                ).fetchone()
+                prior_wake = conn.execute(
+                    "SELECT payload FROM agent_team_wake_outbox WHERE team_id=? AND step_key=?",
+                    (advisory.team_id, wake.step_key),
+                ).fetchone()
+                prior_event = conn.execute(
+                    "SELECT payload FROM agent_team_events WHERE team_id=? AND idempotency_key=?",
+                    (event.team_id, event.idempotency_key),
+                ).fetchone()
+                existing = (
+                    AgentTeamAdvisory.model_validate_json(existing_row["payload"])
+                    if existing_row
+                    else None
+                )
+                if (
+                    existing is not None
+                    and existing.advisory_hash == advisory.advisory_hash
+                    and prior_wake is not None
+                    and AgentTeamWakeRecord.model_validate_json(prior_wake["payload"]).reason
+                    == "planning_resume"
+                    and prior_event is not None
+                    and AgentTeamEvent.model_validate_json(prior_event["payload"]).payload_hash
+                    == event.payload_hash
+                ):
+                    return existing
+                raise RuntimeError("AGENT_TEAM_AGGREGATION_REPLAYED")
+
+            consent = self._current_project_multi_agent_consent(conn, advisory.project_id)
+            if (
+                team.status not in {"RUNNING", "AGGREGATING"}
+                or team.team_epoch != advisory.team_epoch
+                or team.lifecycle_id != advisory.lifecycle_id
+                or team.snapshot_hash != advisory.context_snapshot_hash
+                or team.role_registry_hash != advisory.role_registry_hash
+                or team.context_projector_hash != advisory.context_projector_hash
+                or team.aggregation_policy_hash != advisory.aggregation_policy_hash
+                or team.model_profile_hash != advisory.model_profile_hash
+                or team.consent_epoch != advisory.consent_epoch
+                or team.consent_hash != advisory.consent_hash
+                or not self._lifecycle_has_current_team_binding(conn, team)
+                or consent is None
+                or not consent.enabled
+                or consent.consent_epoch != advisory.consent_epoch
+                or consent.consent_hash != advisory.consent_hash
+            ):
+                raise RuntimeError("AGENT_TEAM_AGGREGATION_BINDING_INVALID")
+
+            context_row = conn.execute(
+                "SELECT payload FROM agent_team_contexts WHERE project_id=? AND team_id=? AND snapshot_hash=?",
+                (advisory.project_id, advisory.team_id, advisory.context_snapshot_hash),
+            ).fetchone()
+            if context_row is None:
+                raise RuntimeError("AGENT_TEAM_CONTEXT_NOT_FOUND")
+            snapshot = AgentTeamContextSnapshot.model_validate_json(context_row["payload"])
+            if (
+                snapshot.base_context_hash != advisory.base_context_hash
+                or snapshot.policy_version != advisory.policy_version
+                or snapshot.redaction_policy_version != advisory.redaction_policy_version
+            ):
+                raise RuntimeError("AGENT_TEAM_AGGREGATION_BINDING_INVALID")
+            work_rows = conn.execute(
+                "SELECT payload FROM agent_team_work_items WHERE project_id=? AND team_id=?",
+                (advisory.project_id, advisory.team_id),
+            ).fetchall()
+            work_items = [AgentTeamWorkItem.model_validate_json(row["payload"]) for row in work_rows]
+            if len(work_items) != 3 or {item.status for item in work_items} != {"COMPLETED"}:
+                raise RuntimeError("AGENT_TEAM_AGGREGATION_INCOMPLETE")
+            finding_rows = conn.execute(
+                "SELECT payload FROM agent_team_findings WHERE project_id=? AND team_id=?",
+                (advisory.project_id, advisory.team_id),
+            ).fetchall()
+            findings = [AgentTeamFinding.model_validate_json(row["payload"]) for row in finding_rows]
+            finding_ids = {finding.finding_id for finding in findings}
+            coverage_by_role = {
+                role: sum(finding.reviewer_kind == role for finding in findings)
+                for role in {"science", "safety", "completeness"}
+            }
+            if (
+                set(advisory.accepted_finding_ids) | set(advisory.rejected_finding_ids)
+                != finding_ids
+                or advisory.coverage_by_role != coverage_by_role
+                or not advisory.safety_reviewer_present
+                or advisory.decision
+                != (
+                    "accepted"
+                    if not advisory.blocking_codes and not advisory.conflict_codes
+                    else "rejected"
+                )
+            ):
+                raise RuntimeError("AGENT_TEAM_AGGREGATION_CONTENT_INVALID")
+            for item in work_items:
+                call_row = conn.execute(
+                    "SELECT payload FROM agent_team_model_calls WHERE project_id=? AND model_call_id=?",
+                    (advisory.project_id, item.model_call_id),
+                ).fetchone()
+                call = AgentTeamModelCallRecord.model_validate_json(call_row["payload"]) if call_row else None
+                if (
+                    call is None
+                    or call.status != "completed"
+                    or call.work_item_id != item.work_item_id
+                    or call.attempt_no != item.attempt_no
+                ):
+                    raise RuntimeError("AGENT_TEAM_AGGREGATION_CALL_INVALID")
+
+            if team.status == "RUNNING" and not team_transition_allowed("RUNNING", "AGGREGATING"):
+                raise RuntimeError("AGENT_TEAM_TRANSITION_INVALID")
+            if not team_transition_allowed("AGGREGATING", "COMPLETED"):
+                raise RuntimeError("AGENT_TEAM_TRANSITION_INVALID")
+            updated_team = team.model_copy(update={
+                "status": "COMPLETED",
+                "advisory_id": advisory.advisory_id,
+                "updated_at": now,
+            })
+            conn.execute(
+                "INSERT INTO agent_team_advisories "
+                "(advisory_id, team_id, team_epoch, project_id, lifecycle_id, context_snapshot_hash, advisory_hash, payload, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (advisory.advisory_id, advisory.team_id, advisory.team_epoch,
+                 advisory.project_id, advisory.lifecycle_id, advisory.context_snapshot_hash,
+                 advisory.advisory_hash, self._dump_model(advisory), advisory.created_at.isoformat()),
+            )
+            cursor = conn.execute(
+                "UPDATE agent_teams SET status=?, payload=?, updated_at=? "
+                "WHERE project_id=? AND team_id=? AND status=?",
+                (updated_team.status, self._dump_model(updated_team), now.isoformat(),
+                 advisory.project_id, advisory.team_id, team.status),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_TEAM_AGGREGATION_CAS_FAILED")
+            self._insert_agent_team_event(conn, event)
+            self._insert_agent_team_wake(conn, wake)
+        return advisory
+
+    def bind_agent_planning_team(
+        self,
+        record: AgentLifecycleRecord,
+        event: AgentLifecycleEvent,
+        *,
+        expected_team_id: str | None,
+        expected_team_epoch: int,
+    ) -> AgentLifecycleRecord:
+        if (
+            record.planning_mode != "multi_agent"
+            or not record.planning_team_id
+            or record.planning_team_epoch != expected_team_epoch + 1
+            or record.last_command_id != event.command_id
+            or event.lifecycle_id != record.lifecycle_id
+            or event.project_id != record.project_id
+            or event.from_state != event.to_state
+        ):
+            raise RuntimeError("TEAM_BINDING_INVALIDATED")
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT payload FROM agent_lifecycles WHERE lifecycle_id=? AND project_id=?",
+                (record.lifecycle_id, record.project_id),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("TEAM_BINDING_INVALIDATED")
+            current = _decode_agent_lifecycle(row["payload"])
+            if (
+                current.planning_team_id != expected_team_id
+                or current.planning_team_epoch != expected_team_epoch
+                or event.from_state != current.state
+            ):
+                raise RuntimeError("TEAM_BINDING_INVALIDATED")
+            expected = current.model_copy(
+                update={
+                    "planning_mode": "multi_agent",
+                    "planning_team_id": record.planning_team_id,
+                    "planning_team_epoch": expected_team_epoch + 1,
+                    "updated_at": record.updated_at,
+                    "last_command_id": event.command_id,
+                }
+            )
+            if record != expected:
+                raise RuntimeError("TEAM_BINDING_INVALIDATED")
+            cursor = conn.execute(
+                """UPDATE agent_lifecycles SET payload=?, updated_at=?
+                   WHERE lifecycle_id=? AND project_id=? AND state=?
+                     AND json_extract(payload, '$.planning_mode')=?
+                     AND json_extract(payload, '$.planning_team_id') IS ?
+                     AND json_extract(payload, '$.planning_team_epoch')=?""",
+                (
+                    self._dump_model(record),
+                    record.updated_at.isoformat(),
+                    record.lifecycle_id,
+                    record.project_id,
+                    current.state,
+                    current.planning_mode,
+                    expected_team_id,
+                    expected_team_epoch,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("TEAM_BINDING_INVALIDATED")
+            self._insert_agent_lifecycle_event(conn, event)
+        return record
+
     def transition_agent_lifecycle(
         self,
         record: AgentLifecycleRecord,
@@ -3295,6 +5786,9 @@ class SQLiteDesktopStore:
                 UPDATE agent_lifecycles
                 SET state = ?, payload = ?, updated_at = ?
                 WHERE lifecycle_id = ? AND project_id = ? AND state = ?
+                  AND json_extract(payload, '$.planning_mode') = ?
+                  AND json_extract(payload, '$.planning_team_id') IS ?
+                  AND json_extract(payload, '$.planning_team_epoch') = ?
                 """,
                 (
                     record.state,
@@ -3303,6 +5797,9 @@ class SQLiteDesktopStore:
                     record.lifecycle_id,
                     record.project_id,
                     expected_state,
+                    record.planning_mode,
+                    record.planning_team_id,
+                    record.planning_team_epoch,
                 ),
             )
             if cursor.rowcount != 1:
@@ -3318,9 +5815,13 @@ class SQLiteDesktopStore:
         with self._lock, self._connect() as conn:
             cursor = conn.execute(
                 """UPDATE agent_lifecycles SET state=?, payload=?, updated_at=?
-                   WHERE lifecycle_id=? AND project_id=? AND state=?""",
+                   WHERE lifecycle_id=? AND project_id=? AND state=?
+                     AND json_extract(payload, '$.planning_mode')=?
+                     AND json_extract(payload, '$.planning_team_id') IS ?
+                     AND json_extract(payload, '$.planning_team_epoch')=?""",
                 (record.state, json.dumps(record.model_dump(mode="json"), ensure_ascii=False),
-                 record.updated_at.isoformat(), record.lifecycle_id, record.project_id, expected_state),
+                 record.updated_at.isoformat(), record.lifecycle_id, record.project_id, expected_state,
+                 record.planning_mode, record.planning_team_id, record.planning_team_epoch),
             )
             if cursor.rowcount != 1:
                 raise RuntimeError("LIFECYCLE_CONCURRENT_TRANSITION")
@@ -3346,9 +5847,13 @@ class SQLiteDesktopStore:
             cursor = conn.execute(
                 """UPDATE agent_lifecycles SET state=?, payload=?, updated_at=?
                    WHERE lifecycle_id=? AND project_id=? AND state='WAITING_FOR_SCIENCE_DECISION'
-                   AND json_extract(payload, '$.pending_decision_batch.batch_id')=?""",
+                   AND json_extract(payload, '$.pending_decision_batch.batch_id')=?
+                   AND json_extract(payload, '$.planning_mode')=?
+                   AND json_extract(payload, '$.planning_team_id') IS ?
+                   AND json_extract(payload, '$.planning_team_epoch')=?""",
                 (record.state, self._dump_model(record), record.updated_at.isoformat(),
-                 record.lifecycle_id, record.project_id, expected_batch_id),
+                 record.lifecycle_id, record.project_id, expected_batch_id,
+                 record.planning_mode, record.planning_team_id, record.planning_team_epoch),
             )
             if cursor.rowcount != 1:
                 raise RuntimeError("AGENT_DECISION_STALE")
@@ -3399,9 +5904,13 @@ class SQLiteDesktopStore:
                     return authoritative
             cursor = conn.execute(
                 """UPDATE agent_lifecycles SET state=?, payload=?, updated_at=?
-                   WHERE lifecycle_id=? AND project_id=? AND state=?""",
+                   WHERE lifecycle_id=? AND project_id=? AND state=?
+                     AND json_extract(payload, '$.planning_mode')=?
+                     AND json_extract(payload, '$.planning_team_id') IS ?
+                     AND json_extract(payload, '$.planning_team_epoch')=?""",
                 (record.state, json.dumps(record.model_dump(mode="json"), ensure_ascii=False),
-                 record.updated_at.isoformat(), record.lifecycle_id, record.project_id, expected_state),
+                 record.updated_at.isoformat(), record.lifecycle_id, record.project_id, expected_state,
+                 record.planning_mode, record.planning_team_id, record.planning_team_epoch),
             )
             if cursor.rowcount != 1:
                 raise RuntimeError("LIFECYCLE_CONCURRENT_TRANSITION")

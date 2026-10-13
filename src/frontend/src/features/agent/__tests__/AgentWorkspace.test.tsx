@@ -9,7 +9,7 @@ import type { AgentTaskController } from "../useAgentTaskController";
 
 function approvalTask(): AgentTaskResponse {
   return {
-    schema_version: 3,
+    schema_version: 4,
     task_id: "task-1",
     project_id: "project-1",
     state: "waiting_for_user",
@@ -220,6 +220,30 @@ function controller(task: AgentTaskResponse | null): AgentTaskController {
 }
 
 describe("AgentWorkspace", () => {
+  it("requires an explicit selection before requesting an independent review team", async () => {
+    const active = controller(null);
+    render(
+      <I18nProvider locale="en">
+        <AgentWorkspaceView
+          advancedMode={false}
+          controller={active}
+          dataStateLabel="Converted BIDS/NIfTI"
+          onOpenRuns={vi.fn()}
+          projectName="Demo Project"
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("radio", { name: /Standard planning/ })).toBeChecked();
+    fireEvent.change(screen.getByLabelText("Research goal"), {
+      target: { value: "Inspect scientific prerequisites" },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: /Independent review team/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Start task" }));
+
+    expect(active.create).toHaveBeenCalledWith("Inspect scientific prerequisites", "team");
+  });
+
   it("renders a reviewed-execution safety block as actionable policy guidance", () => {
     render(
       <I18nProvider locale="zh-CN">

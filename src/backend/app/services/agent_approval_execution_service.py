@@ -15,6 +15,7 @@ from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
 from src.backend.app.services.agent_execution_coordinator import AgentExecutionCoordinator
 from src.backend.app.services.approval_summary_service import ApprovalSummaryService
 from src.backend.app.services.reviewed_execution_service import ReviewedExecutionService
+from src.backend.app.services.team_ticket_policy_verifier import TeamTicketPolicyVerifier
 
 
 logger = logging.getLogger(__name__)
@@ -29,12 +30,14 @@ class AgentApprovalExecutionService:
         dry_runner: Callable[..., dict[str, Any]],
         reconcile_once: Callable[..., object] | None = None,
         monitor_scheduler: Callable[..., bool] | None = None,
+        team_policy_verifier: TeamTicketPolicyVerifier | None = None,
     ) -> None:
         self.store = store
         self.orchestrator = AgentOrchestrator(store)
         self.executor = executor
         self.summary_service = summary_service
         self.dry_runner = dry_runner
+        self.team_policy_verifier = team_policy_verifier or TeamTicketPolicyVerifier(store)
         reconciler = AgentTaskReconciler(store)
         self.reconcile_once = reconcile_once or reconciler.reconcile_once
         self.monitor_scheduler = monitor_scheduler or AgentExecutionCoordinator(
@@ -108,6 +111,9 @@ class AgentApprovalExecutionService:
             or reviewed.plan_hash != summary.plan_hash
         ):
             raise SafetyError("APPROVAL_SUMMARY_STALE", code="APPROVAL_SUMMARY_STALE")
+        self.team_policy_verifier.verify_reviewed_plan(
+            reviewed, lifecycle_id=current.lifecycle_id
+        )
         from src.backend.app.services.agent_execution_prerequisites import execution_prerequisite_issue
 
         prerequisite_issue = execution_prerequisite_issue(reviewed.payload["plan"])

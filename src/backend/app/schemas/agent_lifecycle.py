@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from src.backend.app.schemas.system_message import SystemMessage
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.backend.app.schemas.agent_team import AgentPlanningMode
 from src.backend.app.schemas.goal_contract import GoalEvaluationSummary
 from src.backend.app.schemas.observation import ObservationSummary
 from src.backend.app.schemas.recovery import DiagnosisSummary, RecoveryProposalSummary
+from src.backend.app.schemas.system_message import SystemMessage
 
 AgentLifecycleState = Literal[
     "CREATED",
@@ -128,10 +128,13 @@ class AgentLifecycleRecord(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[6] = 6
+    schema_version: Literal[7] = 7
     lifecycle_id: str
     project_id: str
     state: AgentLifecycleState = "CREATED"
+    planning_mode: AgentPlanningMode = "single_agent"
+    planning_team_id: str | None = None
+    planning_team_epoch: int = Field(default=0, ge=0)
     goal_text: str | None = None
     goal_hash: str | None = None
     created_actor: str | None = None
@@ -166,6 +169,19 @@ class AgentLifecycleRecord(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_command_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_current_planning_team(self) -> AgentLifecycleRecord:
+        if self.planning_mode == "single_agent" and (
+            self.planning_team_id is not None or self.planning_team_epoch != 0
+        ):
+            raise ValueError("LIFECYCLE_PLANNING_TEAM_BINDING_INVALID")
+        if self.planning_mode == "multi_agent" and (
+            not self.planning_team_id or self.planning_team_epoch < 1
+        ):
+            raise ValueError("LIFECYCLE_PLANNING_TEAM_BINDING_INVALID")
+        return self
+
 
 class AgentLifecycleEvent(BaseModel):
     model_config = ConfigDict(frozen=True)

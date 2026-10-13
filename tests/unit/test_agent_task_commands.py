@@ -293,7 +293,7 @@ def test_reho_approval_preflight_rejects_incomplete_native_preprocessing_chain()
 def test_current_lifecycle_payload_uses_batch_decision_defaults() -> None:
     record = AgentLifecycleRecord.model_validate(
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "lifecycle_id": "current-5",
             "project_id": "project-1",
             "state": "CREATED",

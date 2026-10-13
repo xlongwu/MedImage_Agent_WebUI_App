@@ -16,6 +16,16 @@ class AgentReplayService:
 
     def replay(self, bundle: AgentTraceBundle) -> AgentReplayResult:
         violations: list[AgentReplayViolation] = []
+        if bundle.planning_mode == "multi_agent" and (
+            bundle.team is None or bundle.team.binding_status != "valid"
+        ):
+            violations.append(
+                self._violation(
+                    "TRACE_TEAM_BINDING_INVALID",
+                    None,
+                    "The Team identity or one of its bound records is missing or inconsistent.",
+                )
+            )
         if bundle.integrity_hash != calculate_trace_integrity_hash(bundle):
             violations.append(self._violation("TRACE_INTEGRITY_HASH_MISMATCH", None, "Trace integrity hash does not match the canonical bundle."))
         for reference in (*bundle.references, *(ref for entry in bundle.entries for ref in entry.references)):
@@ -28,7 +38,12 @@ class AgentReplayService:
         self._check_budget(bundle, violations)
         return AgentReplayResult(
             trace_id=bundle.trace_id,
-            integrity_valid=not any(item.code.startswith("TRACE_INTEGRITY") or item.code.startswith("TRACE_REFERENCE") for item in violations),
+            integrity_valid=not any(
+                item.code.startswith("TRACE_INTEGRITY")
+                or item.code.startswith("TRACE_REFERENCE")
+                or item.code == "TRACE_TEAM_BINDING_INVALID"
+                for item in violations
+            ),
             state_valid=not any(item.code in {"TRACE_ENTRY_ORDER_INVALID", "TRACE_STEP_IDEMPOTENCY_DUPLICATE", "TRACE_STEP_STATE_MISMATCH", "TRACE_CAPABILITY_DENIED", "TRACE_LIFECYCLE_EVENT_CHAIN_INVALID", "TRACE_FINAL_STATE_MISMATCH"} for item in violations),
             budget_valid=not any(item.code == "TRACE_BUDGET_MISMATCH" for item in violations),
             final_state=final_state,

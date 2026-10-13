@@ -11,10 +11,12 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
+from src.backend.app.core.config import ConfigService
 from src.backend.app.core.exceptions import NotFoundError, SafetyError
+from src.backend.app.schemas.agent_harness import AgentHarnessSummary
 from src.backend.app.schemas.agent_task import (
-    AgentTaskAutomation,
     AgentTaskApprovalSummary,
+    AgentTaskAutomation,
     AgentTaskBackendSelection,
     AgentTaskDecision,
     AgentTaskDecisionOption,
@@ -29,10 +31,9 @@ from src.backend.app.schemas.agent_task import (
     AgentTaskResultSummary,
     AgentTaskTechnicalDetails,
 )
-from src.backend.app.core.config import ConfigService
-from src.backend.app.schemas.agent_harness import AgentHarnessSummary
-from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
 from src.backend.app.schemas.system_message import message
+from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
+from src.backend.app.services.agent_team_read_model import AgentTeamReadModel
 
 
 class AgentTaskReadStore(Protocol):
@@ -58,6 +59,12 @@ class AgentTaskReadStore(Protocol):
     def list_recovery_attempts(self, project_id: str, **filters): ...
     def get_agent_harness_attempt(self, lifecycle_id: str): ...
     def list_agent_harness_steps(self, attempt_id: str): ...
+    def get_agent_team(self, project_id: str, team_id: str): ...
+    def get_agent_team_advisory(self, project_id: str, team_id: str): ...
+    def list_agent_team_work_items(self, project_id: str, team_id: str): ...
+    def list_agent_team_model_calls(self, project_id: str, team_id: str): ...
+    def list_agent_team_findings(self, project_id: str, team_id: str): ...
+    def list_agent_team_events(self, project_id: str, team_id: str): ...
 
 
 _STATE_MAP: dict[str, str] = {
@@ -253,6 +260,7 @@ class AgentTaskReadModel:
         goal = self._goal_summary(plan, lifecycle)
         technical = self._technical_details(lifecycle, plan, ticket, observation, evaluation)
         harness_summary = self._harness_summary(lifecycle)
+        team_summary = AgentTeamReadModel(self.store).summary_for_lifecycle(lifecycle)
         return AgentTaskResponse(
             task_id=lifecycle.lifecycle_id,
             project_id=lifecycle.project_id,
@@ -273,6 +281,12 @@ class AgentTaskReadModel:
             evidence_links=self._evidence_links(lifecycle, observation, evaluation),
             technical_details=technical,
             harness_summary=harness_summary,
+            team=team_summary,
+            team_fallback_code=(
+                lifecycle.command_context.get("multi_agent_fallback_warning")
+                if isinstance(lifecycle.command_context, dict)
+                else None
+            ),
             created_at=lifecycle.created_at,
             updated_at=lifecycle.updated_at,
         )
@@ -629,7 +643,9 @@ class AgentTaskReadModel:
         if observation is None or evaluation is None:
             return None
         try:
-            from src.backend.app.services.agent_task_result_summary import AgentTaskResultSummaryService
+            from src.backend.app.services.agent_task_result_summary import (
+                AgentTaskResultSummaryService,
+            )
 
             return AgentTaskResultSummaryService().build_explanation(
                 lifecycle=lifecycle,

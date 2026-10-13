@@ -8,6 +8,7 @@ from src.backend.app.core.config_schema import (
     AgentHarnessConfig,
     AgentModelPublicConfig,
     AgentModelRuntimeConfig,
+    AgentMultiAgentConfig,
     AppConfig,
     MemoryConfig,
     ServerConfig,
@@ -29,6 +30,7 @@ class ConfigService:
         self.server = ServerConfig.from_env()
         self.memory = MemoryConfig.from_env()
         self.harness = AgentHarnessConfig.from_env()
+        self.multi_agent = AgentMultiAgentConfig.from_env()
         self.model = AgentModelRuntimeConfig.from_env()
         self.project = (
             ProjectSettings.from_yaml(project_config_path)
@@ -58,6 +60,7 @@ class ConfigService:
             server=self.server,
             memory=self.memory,
             harness=self.harness,
+            multi_agent=self.multi_agent,
             model=AgentModelPublicConfig.from_runtime(self.model),
             project=project_payload,
             project_config_path=self.project_config_path,

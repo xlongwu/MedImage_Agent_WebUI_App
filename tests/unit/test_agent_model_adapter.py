@@ -1,18 +1,25 @@
 from __future__ import annotations
 
-from pydantic import SecretStr
+import json
+
 import pytest
+from pydantic import SecretStr
 
 from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.planner.agent_model_adapter import (
-    AgentModelRequestLimitExceededError,
-    AgentModelProviderError,
-    DefaultAgentModelAdapter,
     MAX_COMPLETE_REQUEST_BYTES,
+    AgentModelProviderError,
+    AgentModelRequestLimitExceededError,
+    DefaultAgentModelAdapter,
     assert_complete_request_within_limit,
     complete_request_bytes,
 )
+from src.backend.app.planner.llm_provider import LLMProviderResult
 from src.backend.app.schemas.agent_harness import CanonicalModelRequest
+from src.backend.app.services.structured_agent_model_adapter import (
+    StructuredAgentModelAdapter,
+    StructuredModelCallError,
+)
 
 
 def _request(*, provider: str) -> CanonicalModelRequest:
@@ -40,7 +47,7 @@ def test_default_rule_based_adapter_never_calls_network(monkeypatch: pytest.Monk
         raise AssertionError("rule-based adapter must not call a network provider")
 
     monkeypatch.setattr(
-        "src.backend.app.planner.llm_provider.call_openai_compatible_action_provider",
+        "src.backend.app.services.structured_agent_model_adapter.StructuredAgentModelAdapter.propose_action",
         fail_network,
     )
     proposal = DefaultAgentModelAdapter(
@@ -75,6 +82,61 @@ def test_runtime_config_redacts_api_key() -> None:
 
     assert secret not in repr(config)
     assert secret not in config.model_dump_json()
+
+
+def test_shared_structured_review_validates_role_output_and_preserves_metadata() -> None:
+    class Provider:
+        def complete(self, *, request: CanonicalModelRequest) -> LLMProviderResult:
+            return LLMProviderResult(
+                ok=True,
+                content=json.dumps([{
+                    "reviewer_kind": "science",
+                    "severity": "warning",
+                    "code": "SCIENCE_GAP",
+                    "message_key": "review.science.gap",
+                    "input_refs": ["section:goal"],
+                }]),
+                model=request.model,
+                input_tokens=15,
+                output_tokens=8,
+                cached_input_tokens=2,
+                latency_ms=31,
+                provider_request_id="request-1",
+                network_called=True,
+            )
+
+    findings, metadata = StructuredAgentModelAdapter(Provider()).review(
+        request=_request(provider="openai_compatible"),
+        reviewer_kind="science",
+    )
+    assert len(findings) == 1
+    assert findings[0].code == "SCIENCE_GAP"
+    assert metadata.provider_id == "openai_compatible"
+    assert metadata.input_tokens == 15 and metadata.cached_input_tokens == 2
+    assert metadata.response_hash is not None and metadata.network_called is True
+
+
+def test_shared_structured_review_rejects_wrong_role() -> None:
+    class Provider:
+        def complete(self, *, request: CanonicalModelRequest) -> LLMProviderResult:
+            return LLMProviderResult(
+                ok=True,
+                content=json.dumps([{
+                    "reviewer_kind": "safety",
+                    "severity": "warning",
+                    "code": "SCIENCE_GAP",
+                    "message_key": "review.science.gap",
+                    "input_refs": ["section:goal"],
+                }]),
+                network_called=True,
+            )
+
+    with pytest.raises(StructuredModelCallError) as exc_info:
+        StructuredAgentModelAdapter(Provider()).review(
+            request=_request(provider="openai_compatible"),
+            reviewer_kind="science",
+        )
+    assert exc_info.value.code == "MULTI_AGENT_REVIEWER_KIND_MISMATCH"
 
 
 @pytest.mark.parametrize("repair", [False, True])

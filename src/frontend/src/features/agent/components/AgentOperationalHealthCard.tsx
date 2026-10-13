@@ -58,6 +58,23 @@ export function AgentOperationalHealthCard({
               unknown: summary.model_call_counts.unknown ?? 0,
             })}
           </p>
+          <p>
+            {t("agent.operations.teamStates", {
+              active:
+                (summary.team_status_counts.READY ?? 0) +
+                (summary.team_status_counts.RUNNING ?? 0) +
+                (summary.team_status_counts.AGGREGATING ?? 0),
+              attention: summary.team_status_counts.NEEDS_ATTENTION ?? 0,
+              completed: summary.team_status_counts.COMPLETED ?? 0,
+            })}
+          </p>
+          <p>
+            {t("agent.operations.teamCalls", {
+              success: summary.team_model_call_counts.success ?? 0,
+              failure: summary.team_model_call_counts.failure ?? 0,
+              unknown: summary.team_model_call_counts.unknown ?? 0,
+            })}
+          </p>
           {summary.attention.map((item) => (
             <p key={item.code}>
               {t("agent.operations.attention", { code: item.code, count: item.count })}

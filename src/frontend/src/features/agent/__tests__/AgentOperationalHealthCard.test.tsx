@@ -13,13 +13,15 @@ describe("AgentOperationalHealthCard", () => {
   beforeEach(() => {
     vi.mocked(getAgentOperationalSummary).mockReset();
     vi.mocked(getAgentOperationalSummary).mockResolvedValue({
-      schema_version: 1,
+      schema_version: 2,
       project_id: "project-1",
       window_started_at: "2026-08-09T00:00:00Z",
       generated_at: "2026-08-16T00:00:00Z",
       truncated: true,
       task_counts: { total: 3, WAITING_FOR_APPROVAL: 1 },
       model_call_counts: { success: 2, failure: 1, unknown: 0 },
+      team_model_call_counts: { success: 1, failure: 0, unknown: 0 },
+      team_status_counts: { COMPLETED: 1 },
       provider_failure_counts: { AGENT_HARNESS_PROVIDER_UNAVAILABLE: 1 },
       scheduler_counts: {},
       approval_counts: { waiting: 1 },

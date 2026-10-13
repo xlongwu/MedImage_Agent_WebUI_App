@@ -28,7 +28,6 @@ from src.backend.app.planner.approval_gate import check_approval_gate
 from src.backend.app.planner.audit_record import (
     audit_record_to_dict,
     build_review_audit_record,
-    stable_hash,
     write_audit_record,
 )
 from src.backend.app.planner.plan_adapter import adapt_reviewed_plan
@@ -1360,6 +1359,15 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                     else {}
                 )
             )
+            from src.backend.app.services.team_ticket_policy_verifier import (
+                TeamTicketPolicyVerifier,
+            )
+
+            team_binding_hash = TeamTicketPolicyVerifier(
+                mock_store
+            ).verify_reviewed_plan(
+                reviewed_plan, lifecycle_id=request.lifecycle_id
+            )
             issued_ticket = ticket_service.issue(
                 project_id=reviewed_plan.project_id,
                 reviewed_plan_id=reviewed_plan.reviewed_plan_id,
@@ -1389,6 +1397,7 @@ def _execute_reviewed_application(request: ExecuteReviewedRequest) -> dict[str, 
                 audit_id=str(audit_info.get("audit_id") or ""),
                 goal_contract_hash=goal_contract_hash,
                 evaluation_policy_version=evaluation_policy_version,
+                team_binding_hash=team_binding_hash,
                 max_retry_count=0,
                 max_lifecycle_recovery_attempts=(
                     recovery_quota.max_lifecycle_recovery_attempts

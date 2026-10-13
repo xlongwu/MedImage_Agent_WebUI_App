@@ -28,7 +28,10 @@ ReplayViolationCode = Literal[
     "TRACE_BUDGET_MISMATCH",
     "TRACE_REFERENCE_MISSING",
     "TRACE_REFERENCE_CONFLICT",
+    "TRACE_TEAM_BINDING_INVALID",
 ]
+AgentTracePlanningMode = Literal["single_agent", "multi_agent"]
+AgentTraceBindingStatus = Literal["valid", "incomplete", "conflict"]
 
 
 class AgentTraceReference(BaseModel):
@@ -130,15 +133,40 @@ class AgentTraceBudget(BaseModel):
     output_tokens_used: int | None = Field(default=None, ge=0)
 
 
+class AgentTraceTeamProjection(BaseModel):
+    """Team identity and usage metadata without prompts or model-authored text."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    team_id: str = Field(min_length=1, max_length=128)
+    team_epoch: int = Field(ge=1)
+    status: str = Field(min_length=1, max_length=32)
+    binding_status: AgentTraceBindingStatus
+    snapshot_hash: str | None = Field(default=None, max_length=128)
+    base_context_hash: str | None = Field(default=None, max_length=128)
+    role_registry_hash: str | None = Field(default=None, max_length=128)
+    context_projector_hash: str | None = Field(default=None, max_length=128)
+    aggregation_policy_hash: str | None = Field(default=None, max_length=128)
+    model_profile_hash: str | None = Field(default=None, max_length=128)
+    global_policy_hash: str | None = Field(default=None, max_length=128)
+    consent_epoch: int | None = Field(default=None, ge=0)
+    consent_hash: str | None = Field(default=None, max_length=128)
+    advisory_hash: str | None = Field(default=None, max_length=128)
+    model_call_count: int = Field(default=0, ge=0)
+    finding_count: int = Field(default=0, ge=0)
+
+
 class AgentTraceBundle(BaseModel):
     """Redacted, canonical, read-only projection for one lifecycle."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     trace_id: str = Field(min_length=1, max_length=128)
     project_id: str = Field(min_length=1, max_length=128)
     lifecycle_id: str = Field(min_length=1, max_length=128)
+    planning_mode: AgentTracePlanningMode = "single_agent"
+    team: AgentTraceTeamProjection | None = None
     attempt_id: str | None = Field(default=None, max_length=128)
     policy_version: str | None = Field(default=None, max_length=128)
     prompt_template_version: str | None = Field(default=None, max_length=128)
@@ -161,9 +189,12 @@ class AgentTracePage(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    schema_version: Literal[2] = 2
     trace_id: str
     project_id: str
     lifecycle_id: str
+    planning_mode: AgentTracePlanningMode = "single_agent"
+    team: AgentTraceTeamProjection | None = None
     integrity_status: TraceIntegrityStatus
     integrity_hash: str
     final_state: str

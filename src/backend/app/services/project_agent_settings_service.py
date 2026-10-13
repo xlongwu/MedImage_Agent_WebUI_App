@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
 
 from src.backend.app.core.exceptions import NotFoundError, SafetyError
 from src.backend.app.schemas.project_agent_settings import (
     ProjectAgentSettings,
+    ProjectMultiAgentConsent,
     RegisteredScientificResource,
     ScientificResourceInput,
     UpdateProjectAgentSettingsRequest,
@@ -26,12 +28,19 @@ class ProjectAgentSettingsService:
         payload = metadata.get("agent_defaults")
         if not isinstance(payload, dict):
             payload = {}
+        consent_payload = payload.get("multi_agent_consent")
+        consent = (
+            ProjectMultiAgentConsent.model_validate(consent_payload)
+            if isinstance(consent_payload, dict)
+            else ProjectMultiAgentConsent.default_for_project(project_id)
+        )
         return ProjectAgentSettings(
             project_id=project_id,
             default_atlas=self._stored_resource(payload.get("default_atlas")),
             default_template=self._stored_resource(payload.get("default_template")),
             cpu_policy=str(payload.get("cpu_policy") or "auto"),
             compute_policy=str(payload.get("compute_policy") or "auto"),
+            multi_agent_consent=consent,
         )
 
     def update(
@@ -44,9 +53,42 @@ class ProjectAgentSettingsService:
         if project is None:
             raise NotFoundError("PROJECT_NOT_FOUND", code="PROJECT_NOT_FOUND")
         metadata = project.metadata if isinstance(project.metadata, dict) else {}
+        existing_defaults = metadata.get("agent_defaults")
+        if not isinstance(existing_defaults, dict):
+            existing_defaults = {}
+        consent_payload = existing_defaults.get("multi_agent_consent")
+        current_consent = (
+            ProjectMultiAgentConsent.model_validate(consent_payload)
+            if isinstance(consent_payload, dict)
+            else ProjectMultiAgentConsent.default_for_project(project_id)
+        )
         project_dir = Path(str(metadata.get("project_dir") or "")).expanduser().resolve()
         if not project_dir.is_dir():
             raise SafetyError("PROJECT_DIRECTORY_INVALID", code="PROJECT_DIRECTORY_INVALID")
+        enabled = (
+            current_consent.enabled
+            if request.multi_agent_consent_enabled is None
+            else request.multi_agent_consent_enabled
+        )
+        max_model_calls = request.multi_agent_max_model_calls or current_consent.max_model_calls
+        max_input_tokens = request.multi_agent_max_input_tokens or current_consent.max_input_tokens
+        changed = (
+            enabled != current_consent.enabled
+            or max_model_calls != current_consent.max_model_calls
+            or max_input_tokens != current_consent.max_input_tokens
+        )
+        consent = (
+            ProjectMultiAgentConsent.build(
+                project_id=project_id,
+                enabled=enabled,
+                consent_epoch=current_consent.consent_epoch + 1,
+                max_model_calls=max_model_calls,
+                max_input_tokens=max_input_tokens,
+                updated_at=datetime.now(UTC),
+            )
+            if changed
+            else current_consent
+        )
         payload = {
             "schema_version": 1,
             "default_atlas": self._verify_resource(
@@ -57,9 +99,27 @@ class ProjectAgentSettingsService:
             ),
             "cpu_policy": request.cpu_policy,
             "compute_policy": request.compute_policy,
+            "multi_agent_consent": consent.model_dump(mode="json"),
         }
-        self.store.update_project_metadata(project_id, {"agent_defaults": payload})
-        return self.get(project_id=project_id)
+        try:
+            self.store.update_project_agent_settings(
+                project_id,
+                payload,
+                expected_consent_hash=current_consent.consent_hash,
+            )
+        except RuntimeError as exc:
+            raise SafetyError(
+                "PROJECT_AGENT_SETTINGS_CONCURRENT_UPDATE",
+                code="PROJECT_AGENT_SETTINGS_CONCURRENT_UPDATE",
+                status_code=409,
+            ) from exc
+        updated = self.get(project_id=project_id)
+        from src.backend.app.services.team_ticket_policy_verifier import (
+            TeamTicketPolicyVerifier,
+        )
+
+        TeamTicketPolicyVerifier(self.store).reconcile_project_tickets(project_id)
+        return updated
 
     def verify_template(self, *, project_id: str, resource: ScientificResourceInput) -> dict[str, str]:
         project = self.store.get_project(project_id)

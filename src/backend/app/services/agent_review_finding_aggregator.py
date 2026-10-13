@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,7 +29,15 @@ class AgentReviewAggregation(BaseModel):
 class AgentReviewFindingAggregator:
     """No model, store, planner or execution dependency is permitted here."""
 
-    def aggregate(self, *, findings: tuple[AgentReviewFinding, ...], input_refs: tuple[str, ...], allowed_codes: tuple[str, ...], required_safety: bool = True) -> AgentReviewAggregation:
+    def aggregate(
+        self,
+        *,
+        findings: tuple[AgentReviewFinding, ...],
+        input_refs: tuple[str, ...],
+        allowed_codes: tuple[str, ...],
+        required_safety: bool = True,
+        completed_reviewer_kinds: tuple[str, ...] | None = None,
+    ) -> AgentReviewAggregation:
         rejected: list[str] = []
         valid: list[AgentReviewFinding] = []
         for finding in findings:
@@ -51,7 +60,11 @@ class AgentReviewFindingAggregator:
         for finding in accepted:
             by_code.setdefault(finding.code, set()).add(finding.severity)
         conflicts = tuple(sorted(code for code, severities in by_code.items() if len(severities) > 1))
-        safety_present = any(item.reviewer_kind == "safety" for item in accepted)
+        safety_present = (
+            "safety" in completed_reviewer_kinds
+            if completed_reviewer_kinds is not None
+            else any(item.reviewer_kind == "safety" for item in accepted)
+        )
         if required_safety and not safety_present:
             rejected.append("MULTI_AGENT_REVIEW_SAFETY_REQUIRED")
         identity = {
@@ -60,9 +73,11 @@ class AgentReviewFindingAggregator:
             "conflicts": conflicts,
             "safety_reviewer_present": safety_present,
         }
+        if completed_reviewer_kinds is not None:
+            identity["completed_reviewer_kinds"] = sorted(set(completed_reviewer_kinds))
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
         return AgentReviewAggregation(accepted=accepted, rejected_codes=tuple(sorted(set(rejected))), conflict_codes=conflicts, safety_reviewer_present=safety_present, advisory_hash=digest)
 
 
 def aggregation_policy_hash() -> str:
-    return hashlib.sha256(b"agent-review-finding-aggregator-v1:code-severity-refs").hexdigest()
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()

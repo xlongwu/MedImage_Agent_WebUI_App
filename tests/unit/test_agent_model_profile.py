@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.backend.app.agent_skills.registry import AgentSkillRegistry, BUILTIN_SKILL_IDS
+from src.backend.app.agent_skills.registry import BUILTIN_SKILL_IDS, AgentSkillRegistry
 from src.backend.app.core.config import ConfigService
 from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.planner.agent_model_adapter import (
@@ -89,7 +89,7 @@ def test_canonical_request_binds_the_runtime_profile() -> None:
         config=config,
         repair=False,
         snapshot={
-            "schema_version": 3,
+            "schema_version": 4,
             "purpose": "plan_draft",
             "complete": True,
             "required_sections": ["goal", "policy"],

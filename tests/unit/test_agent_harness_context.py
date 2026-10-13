@@ -3,13 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from src.backend.app.agent_skills.schemas import SkillContextRef
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.planner.agent_model_adapter import (
     DefaultAgentModelAdapter,
-    build_canonical_model_request,
     build_action_prompt,
-    serialize_context_v3,
+    build_canonical_model_request,
+    serialize_context_v4,
 )
-from src.backend.app.core.config_schema import AgentModelRuntimeConfig
 from src.backend.app.schemas.agent_evidence import EvidenceFact, EvidenceSnapshot, EvidenceSourceRef
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleRecord
 from src.backend.app.schemas.desktop import ProjectDetail
@@ -56,11 +56,15 @@ def test_context_is_allowlisted_redacted_and_stably_hashed() -> None:
     second = builder.build(sources=HarnessContextSources(lifecycle=lifecycle, project=project, evidence_snapshot=_evidence()))
 
     assert first.context_hash == second.context_hash
-    assert first.schema_version == 3
+    assert first.schema_version == 4
     assert first.complete is True
     assert first.purpose == "plan_draft"
     assert tuple(type(first.sections).model_fields) == builder.SECTION_ORDER
-    assert set(first.section_hashes) == set(builder.SECTION_ORDER)
+    assert set(first.section_hashes) == set(first.included_sections)
+    base, _ = builder.build_with_base(
+        sources=HarnessContextSources(lifecycle=lifecycle, project=project, evidence_snapshot=_evidence())
+    )
+    assert set(base.section_hashes) == set(builder.SECTION_ORDER)
     rendered = str(first.model_dump())
     assert "secret" not in rendered
     assert "c:/private/rawdata" not in rendered.casefold()
@@ -97,7 +101,7 @@ def test_missing_required_section_is_marked_incomplete_and_not_serializable() ->
     assert context.complete is False
     assert context.incomplete_reason == "AGENT_CONTEXT_REQUIRED_SECTION_MISSING:goal"
     try:
-        serialize_context_v3(context.prompt_payload())
+        serialize_context_v4(context.prompt_payload())
     except ValueError as error:
         assert str(error) == "AGENT_CONTEXT_INCOMPLETE"
     else:
@@ -156,8 +160,8 @@ def test_dynamic_section_or_policy_change_invalidates_context_hash() -> None:
 
 
 def test_evidence_memory_and_catalog_changes_invalidate_context_hash(monkeypatch) -> None:
-    from src.backend.app.runtime.tool_catalog import ToolCatalogItem
     import src.backend.app.runtime.tool_catalog as tool_catalog
+    from src.backend.app.runtime.tool_catalog import ToolCatalogItem
 
     builder = HarnessContextBuilder()
     lifecycle = _lifecycle({"memory_context": {"context_hash": "memory-one", "memory_ids": ["m1"]}})
@@ -214,7 +218,7 @@ def test_skill_prompt_receives_only_manifest_allowed_context_sections() -> None:
         ),),
     ))
 
-    serialized = serialize_context_v3(context.prompt_payload())
+    serialized = serialize_context_v4(context.prompt_payload())
 
     assert tuple(serialized["sections"]) == ("goal", "policy")
 
@@ -232,14 +236,14 @@ def test_required_context_that_cannot_fit_stops_before_provider() -> None:
         raise AssertionError("required Context v3 sections must not be string-truncated")
 
 
-def test_adapter_serializes_context_v2_in_fixed_order_and_rejects_flat_v1() -> None:
+def test_adapter_serializes_context_v4_in_fixed_order_and_rejects_flat_v1() -> None:
     context = HarnessContextBuilder().build(
         sources=HarnessContextSources(lifecycle=_lifecycle(), project=_project({}), evidence_snapshot=_evidence())
     )
     payload = context.prompt_payload()
     payload["sections"] = dict(reversed(list(payload["sections"].items())))
 
-    serialized = serialize_context_v3(payload)
+    serialized = serialize_context_v4(payload)
     request = build_canonical_model_request(
         snapshot=payload, config=AgentModelRuntimeConfig(), repair=False
     )
@@ -250,7 +254,7 @@ def test_adapter_serializes_context_v2_in_fixed_order_and_rejects_flat_v1() -> N
     assert '"safe_context"' in prompt
     assert action.envelope.expected_state == "CREATED"
     try:
-        serialize_context_v3({"schema_version": 2, "lifecycle_state": "CREATED"})
+        serialize_context_v4({"schema_version": 3, "lifecycle_state": "CREATED"})
     except ValueError as error:
         assert str(error) == "AGENT_CONTEXT_SCHEMA_INVALID"
     else:

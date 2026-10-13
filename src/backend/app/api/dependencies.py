@@ -1,17 +1,35 @@
 from __future__ import annotations
 
-from threading import Lock
 from collections.abc import Callable
+from threading import Lock
 from typing import Any, Protocol
 
 from fastapi import Depends
 
 from src.backend.app.schemas.agent_evidence import EvidenceSnapshot
-from src.backend.app.schemas.agent_harness import AgentActionRecord, AgentHarnessAttempt, AgentHarnessContext, AgentHarnessStep
+from src.backend.app.schemas.agent_harness import (
+    AgentActionRecord,
+    AgentHarnessAttempt,
+    AgentHarnessContext,
+    AgentHarnessStep,
+    AgentPlanningBaseContext,
+    AgentTeamRoleContext,
+)
 from src.backend.app.schemas.agent_invariant import AgentInvariantAuditRecord
 from src.backend.app.schemas.agent_lifecycle import AgentLifecycleEvent, AgentLifecycleRecord
-from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
 from src.backend.app.schemas.agent_recovery_scan import AgentRecoveryScanPage, RecoveryScanConsumer
+from src.backend.app.schemas.agent_task_wake import AgentTaskWakeRecord
+from src.backend.app.schemas.agent_team import (
+    AgentReviewerKind,
+    AgentTeamAdvisory,
+    AgentTeamContextSnapshot,
+    AgentTeamEvent,
+    AgentTeamFinding,
+    AgentTeamModelCallRecord,
+    AgentTeamRecord,
+    AgentTeamWakeRecord,
+    AgentTeamWorkItem,
+)
 from src.backend.app.schemas.desktop import (
     ApprovalRecord,
     DatasetImportRequest,
@@ -29,7 +47,6 @@ from src.backend.app.schemas.desktop import (
 )
 from src.backend.app.schemas.execution_ticket import ExecutionTicket, ExecutionTicketEvent
 from src.backend.app.schemas.gateway_dispatch import GatewayDispatch, GatewayDispatchEvent
-from src.backend.app.schemas.sandbox import SandboxAttemptRecord
 from src.backend.app.schemas.goal_contract import GoalEvaluationRecord
 from src.backend.app.schemas.observation import ObservationRecord
 from src.backend.app.schemas.recovery import DiagnosisRecord, RecoveryProposal
@@ -40,6 +57,7 @@ from src.backend.app.schemas.recovery_attempt import (
     RecoveryAttemptRecord,
     RecoveryQuotaReservation,
 )
+from src.backend.app.schemas.sandbox import SandboxAttemptRecord
 
 
 class ProjectRepository(Protocol):
@@ -51,6 +69,14 @@ class ProjectRepository(Protocol):
 
     def update_project_metadata(
         self, project_id: str, updates: dict[str, object]
+    ) -> ProjectDetail | None: ...
+
+    def update_project_agent_settings(
+        self,
+        project_id: str,
+        settings: dict[str, object],
+        *,
+        expected_consent_hash: str,
     ) -> ProjectDetail | None: ...
 
     def get_study_overview(self, study_id: str) -> StudyOverview | None: ...
@@ -168,6 +194,15 @@ class ProjectStore(
 
     def list_agent_lifecycles(self, project_id: str) -> list[AgentLifecycleRecord]: ...
 
+    def bind_agent_planning_team(
+        self,
+        record: AgentLifecycleRecord,
+        event: AgentLifecycleEvent,
+        *,
+        expected_team_id: str | None,
+        expected_team_epoch: int,
+    ) -> AgentLifecycleRecord: ...
+
     def scan_agent_recovery_page(
         self, *, consumer: RecoveryScanConsumer, now,
         project_id: str | None = None, limit: int = 100,
@@ -201,6 +236,167 @@ class ProjectStore(
         self,
         lifecycle_id: str,
     ) -> list[AgentLifecycleEvent]: ...
+
+    def add_agent_planning_base_context(
+        self, record: AgentPlanningBaseContext
+    ) -> AgentPlanningBaseContext: ...
+
+    def get_agent_planning_base_context(
+        self, project_id: str, base_context_hash: str
+    ) -> AgentPlanningBaseContext | None: ...
+
+    def create_agent_team_bundle(
+        self,
+        *,
+        lifecycle_record: AgentLifecycleRecord,
+        lifecycle_event: AgentLifecycleEvent,
+        expected_team_id: str | None,
+        expected_team_epoch: int,
+        base_context: AgentPlanningBaseContext,
+        team: AgentTeamRecord,
+        context_snapshot: AgentTeamContextSnapshot,
+        role_contexts: dict[AgentReviewerKind, AgentTeamRoleContext],
+        work_items: tuple[AgentTeamWorkItem, ...],
+        event: AgentTeamEvent,
+        wakes: tuple[AgentTeamWakeRecord, ...],
+    ) -> AgentTeamRecord: ...
+
+    def get_agent_team(self, project_id: str, team_id: str) -> AgentTeamRecord | None: ...
+
+    def get_agent_team_creation_by_command(
+        self, project_id: str, lifecycle_id: str, command_id: str
+    ) -> tuple[AgentTeamRecord, AgentTeamEvent] | None: ...
+
+    def list_agent_teams(
+        self, project_id: str, *, lifecycle_id: str | None = None
+    ) -> list[AgentTeamRecord]: ...
+
+    def get_agent_team_context(
+        self, project_id: str, team_id: str
+    ) -> tuple[AgentTeamContextSnapshot, dict[AgentReviewerKind, AgentTeamRoleContext]] | None: ...
+
+    def get_agent_team_work_item(
+        self, project_id: str, work_item_id: str
+    ) -> AgentTeamWorkItem | None: ...
+
+    def list_agent_team_work_items(
+        self, project_id: str, team_id: str
+    ) -> list[AgentTeamWorkItem]: ...
+
+    def get_agent_team_model_call(
+        self, project_id: str, model_call_id: str
+    ) -> AgentTeamModelCallRecord | None: ...
+
+    def list_agent_team_model_calls(
+        self, project_id: str, team_id: str
+    ) -> list[AgentTeamModelCallRecord]: ...
+
+    def list_agent_team_findings(
+        self, project_id: str, team_id: str
+    ) -> list[AgentTeamFinding]: ...
+
+    def get_agent_team_advisory(
+        self, project_id: str, team_id: str
+    ) -> AgentTeamAdvisory | None: ...
+
+    def list_agent_team_events(
+        self, project_id: str, team_id: str
+    ) -> list[AgentTeamEvent]: ...
+
+    def list_agent_team_wakes(
+        self, project_id: str, team_id: str
+    ) -> list[AgentTeamWakeRecord]: ...
+
+    def enqueue_agent_team_wake(
+        self, record: AgentTeamWakeRecord
+    ) -> AgentTeamWakeRecord: ...
+
+    def claim_next_agent_team_wake(
+        self, *, owner: str, now, lease_expires_at
+    ) -> AgentTeamWakeRecord | None: ...
+
+    def next_agent_team_wake_at(self): ...
+
+    def complete_agent_team_wake(
+        self, record: AgentTeamWakeRecord, *, owner: str, now
+    ) -> AgentTeamWakeRecord: ...
+
+    def retry_agent_team_wake(
+        self, record: AgentTeamWakeRecord, *, owner: str, now, available_at, error_code: str
+    ) -> AgentTeamWakeRecord: ...
+
+    def claim_agent_team_work_and_start_call(
+        self,
+        *,
+        work_item_id: str,
+        expected_fencing_token: int,
+        owner: str,
+        now,
+        lease_expires_at,
+        call: AgentTeamModelCallRecord,
+        event: AgentTeamEvent,
+    ) -> tuple[AgentTeamWorkItem, AgentTeamModelCallRecord]: ...
+
+    def reclaim_agent_team_call(
+        self,
+        *,
+        project_id: str,
+        model_call_id: str,
+        expected_fencing_token: int,
+        owner: str,
+        now,
+        lease_expires_at,
+        event: AgentTeamEvent,
+    ) -> tuple[AgentTeamWorkItem, AgentTeamModelCallRecord]: ...
+
+    def mark_agent_team_call_network_called(
+        self, *, project_id: str, model_call_id: str, owner: str, fencing_token: int, now
+    ) -> AgentTeamModelCallRecord: ...
+
+    def complete_agent_team_model_call(
+        self,
+        *,
+        project_id: str,
+        model_call_id: str,
+        owner: str,
+        fencing_token: int,
+        now,
+        completed_call: AgentTeamModelCallRecord,
+        findings: tuple[AgentTeamFinding, ...],
+        event: AgentTeamEvent,
+        wake: AgentTeamWakeRecord,
+    ) -> AgentTeamModelCallRecord: ...
+
+    def fail_agent_team_model_call(
+        self,
+        *,
+        project_id: str,
+        model_call_id: str,
+        owner: str,
+        fencing_token: int,
+        now,
+        failed_call: AgentTeamModelCallRecord,
+        event: AgentTeamEvent,
+        retry_wake: AgentTeamWakeRecord | None = None,
+    ) -> AgentTeamModelCallRecord: ...
+
+    def complete_agent_team_aggregation(
+        self,
+        *,
+        advisory: AgentTeamAdvisory,
+        event: AgentTeamEvent,
+        wake: AgentTeamWakeRecord,
+        now,
+    ) -> AgentTeamAdvisory: ...
+
+    def fail_agent_team_wake(
+        self,
+        record: AgentTeamWakeRecord,
+        *,
+        owner: str,
+        now,
+        error_code: str,
+    ) -> AgentTeamWakeRecord: ...
 
     def add_agent_evidence_snapshot(self, record: EvidenceSnapshot) -> EvidenceSnapshot: ...
 
@@ -426,16 +622,26 @@ def _build_agent_task_command_service(store: ProjectStore):
     from src.backend.app.core.config import ConfigService
     from src.backend.app.planner.memory_influence_guard import MemoryInfluenceGuard
     from src.backend.app.planner.reviewed_plan_store import save_reviewed_plan
-    from src.backend.app.services.agent_approval_execution_service import AgentApprovalExecutionService
+    from src.backend.app.services.agent_approval_execution_service import (
+        AgentApprovalExecutionService,
+    )
     from src.backend.app.services.agent_evidence_service import AgentEvidenceService
+    from src.backend.app.services.agent_execution_coordinator import AgentExecutionCoordinator
     from src.backend.app.services.agent_harness_service import AgentHarnessService
+    from src.backend.app.services.agent_multi_agent_policy_service import (
+        AgentMultiAgentPolicyService,
+    )
     from src.backend.app.services.agent_planning_action_service import AgentPlanningActionService
     from src.backend.app.services.agent_planning_service import AgentPlanningService
     from src.backend.app.services.agent_recovery_command_service import AgentRecoveryCommandService
     from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
     from src.backend.app.services.agent_task_reconciler import AgentTaskReconciler
     from src.backend.app.services.agent_task_scheduler import AgentTaskScheduler
-    from src.backend.app.services.agent_execution_coordinator import AgentExecutionCoordinator
+    from src.backend.app.services.agent_team_coordinator_service import (
+        AgentTeamCoordinatorService,
+    )
+    from src.backend.app.services.agent_team_scheduler import AgentTeamScheduler
+    from src.backend.app.services.agent_team_worker_service import AgentTeamWorkerService
     from src.backend.app.services.approval_summary_service import ApprovalSummaryService
     from src.backend.app.services.execution_environment_service import ExecutionEnvironmentService
     from src.backend.app.services.goal_planning_service import GoalPlanningService
@@ -497,6 +703,30 @@ def _build_agent_task_command_service(store: ProjectStore):
     scheduler = AgentTaskScheduler(store, planning_service=planning)
     planning.bind_scheduler(scheduler)
     reconciler.planning_waker = planning.enqueue_resume
+    multi_agent_policy = AgentMultiAgentPolicyService(store, config.multi_agent)
+    team_coordinator = AgentTeamCoordinatorService(
+        store=store,
+        policy_service=multi_agent_policy,
+        multi_agent_config=config.multi_agent,
+        model_config=config.model,
+    )
+    team_scheduler = AgentTeamScheduler(
+        store,
+        worker_service=AgentTeamWorkerService(
+            multi_agent_config=config.multi_agent,
+            model_config=config.model,
+        ),
+        coordinator_service=team_coordinator,
+        policy_service=multi_agent_policy,
+        planning_resume=planning.enqueue_team_resume,
+        start_workers=config.multi_agent.enabled,
+    )
+    planning.bind_team_runtime(
+        coordinator=team_coordinator,
+        scheduler=team_scheduler,
+        policy_service=multi_agent_policy,
+        config=config.multi_agent,
+    )
     if config.harness.enabled:
         action_service = AgentPlanningActionService(
             store,
@@ -531,6 +761,8 @@ def _build_agent_task_command_service(store: ProjectStore):
         recovery_command_service=recovery,
     )
     command_service.execution_coordinator = execution_coordinator
+    command_service.agent_team_coordinator = team_coordinator
+    command_service.agent_team_scheduler = team_scheduler
     return command_service
 
 

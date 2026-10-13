@@ -8,7 +8,7 @@ import type { AgentTaskController } from "../useAgentTaskController";
 
 function task(projectId = "project-1"): AgentTaskResponse {
   return {
-    schema_version: 3,
+    schema_version: 4,
     task_id: "task-1",
     project_id: projectId,
     state: "waiting_for_user",

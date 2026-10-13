@@ -10,20 +10,20 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from src.backend.app.agent_skills.loader import AgentSkillLoader
-from src.backend.app.core.config_schema import AgentHarnessConfig, AgentModelRuntimeConfig
 from src.backend.app.core.agent_logging import agent_log_context
+from src.backend.app.core.config_schema import AgentHarnessConfig, AgentModelRuntimeConfig
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.agent_model_adapter import (
+    REQUEST_BUILDER_VERSION,
     ActionCallMetadata,
     ActionProposal,
     AgentModelAdapter,
     AgentModelInvalidOutputError,
-    AgentModelRequestLimitExceededError,
     AgentModelProviderError,
+    AgentModelRequestLimitExceededError,
     DefaultAgentModelAdapter,
-    REQUEST_BUILDER_VERSION,
-    build_canonical_model_request,
     assert_complete_request_within_limit,
+    build_canonical_model_request,
     canonical_request_bytes,
 )
 from src.backend.app.planner.audit_record import stable_hash
@@ -53,7 +53,6 @@ from src.backend.app.services.agent_planning_action_service import (
     AgentPlanningActionService,
     HarnessActionResult,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +171,41 @@ class AgentHarnessService:
             return attempt
         return self._transition_attempt(attempt, status="STOPPED", terminal_reason=reason, clear_lease=True)
 
+    def build_context_with_base(
+        self,
+        *,
+        lifecycle,
+        evidence_snapshot,
+        attempt,
+        planning_epoch: int,
+        team_advisory=None,
+        skill_refs=(),
+        skill_error_codes=(),
+    ):
+        """Build from the same explicit current sources used by ``run_one``."""
+        project = self.store.get_project(lifecycle.project_id)
+        observation = self._record("get_observation", lifecycle.observation_id)
+        evaluation = self._record("get_goal_evaluation", lifecycle.goal_evaluation_id)
+        proposal = self._record("get_recovery_proposal", lifecycle.recovery_proposal_id)
+        return self.context_builder.build_with_base(sources=HarnessContextSources(
+            lifecycle=lifecycle,
+            project=project,
+            evidence_snapshot=evidence_snapshot,
+            reviewed_plan=self._record("get_reviewed_plan", lifecycle.reviewed_plan_id),
+            run_link=self._run_link(lifecycle),
+            observation=observation,
+            evaluation=evaluation,
+            recovery_proposal=proposal,
+            result_summary=self._result_summary(lifecycle, observation, evaluation),
+            last_step=self._last_step(attempt) if attempt is not None else None,
+            attempt=attempt,
+            purpose=self.context_builder.purpose_for(lifecycle),
+            planning_epoch=planning_epoch,
+            team_advisory=team_advisory,
+            skill_refs=skill_refs,
+            skill_error_codes=skill_error_codes,
+        ))
+
     def run_one(self, *, lifecycle, actor: str, lease_owner: str | None = None) -> HarnessRunResult:
         AgentInvariantChecker(self.store, now=self.now).assert_clear(
             project_id=lifecycle.project_id,
@@ -207,7 +241,6 @@ class AgentHarnessService:
             prior = self.store.get_agent_harness_step_by_idempotency(previous_key)
             if prior is not None:
                 return self._recover_completed_step(claimed=claimed, lifecycle=lifecycle, step=prior)
-        project = self.store.get_project(lifecycle.project_id)
         evidence_hash = str((lifecycle.command_context or {}).get("evidence_snapshot_hash") or "")
         purpose = self.context_builder.purpose_for(lifecycle)
         try:
@@ -228,32 +261,51 @@ class AgentHarnessService:
                 lifecycle=lifecycle,
                 attempt=self._stop_claimed(claimed, code or "AGENT_CONTEXT_EVIDENCE_MISSING"),
             )
-        observation = self._record("get_observation", lifecycle.observation_id)
-        evaluation = self._record("get_goal_evaluation", lifecycle.goal_evaluation_id)
-        proposal = self._record("get_recovery_proposal", lifecycle.recovery_proposal_id)
-        result_summary = self._result_summary(lifecycle, observation, evaluation)
-        reviewed_plan = self._record("get_reviewed_plan", lifecycle.reviewed_plan_id)
-        run_link = self._run_link(lifecycle)
-        last_step = self._last_step(claimed)
+        team_advisory = None
+        if lifecycle.planning_mode == "multi_agent":
+            if not lifecycle.planning_team_id:
+                return HarnessRunResult(
+                    lifecycle=lifecycle,
+                    attempt=self._stop_claimed(claimed, "AGENT_TEAM_CONTEXT_BINDING_INVALID"),
+                )
+            team_advisory = self.store.get_agent_team_advisory(
+                lifecycle.project_id, lifecycle.planning_team_id
+            )
+            if team_advisory is None or team_advisory.decision != "accepted":
+                return HarnessRunResult(
+                    lifecycle=lifecycle,
+                    attempt=self._stop_claimed(claimed, "AGENT_TEAM_ADVISORY_REQUIRED"),
+                )
+        planning_epoch = (
+            lifecycle.planning_team_epoch
+            if lifecycle.planning_mode == "multi_agent"
+            else claimed.next_step_no
+        )
         try:
-            base_context = self.context_builder.build(sources=HarnessContextSources(
-                lifecycle=lifecycle, project=project, evidence_snapshot=evidence,
-                reviewed_plan=reviewed_plan, run_link=run_link, observation=observation,
-                evaluation=evaluation, recovery_proposal=proposal, result_summary=result_summary,
-                last_step=last_step, attempt=claimed, purpose=purpose,
-            ))
+            base_context, base_harness_context = self.build_context_with_base(
+                lifecycle=lifecycle,
+                evidence_snapshot=evidence,
+                attempt=claimed,
+                planning_epoch=planning_epoch,
+                team_advisory=team_advisory,
+            )
             if not base_context.complete:
                 raise AgentContextIncompleteError(base_context.incomplete_reason or "AGENT_CONTEXT_INCOMPLETE")
-            skills = self.skill_loader.load_for_state(state=lifecycle.state, context=base_context)
-            built_context = self.context_builder.build(sources=HarnessContextSources(
-                lifecycle=lifecycle, project=project, evidence_snapshot=evidence,
-                reviewed_plan=reviewed_plan, run_link=run_link, observation=observation,
-                evaluation=evaluation, recovery_proposal=proposal, result_summary=result_summary,
-                last_step=last_step, attempt=claimed, purpose=purpose, skill_refs=skills.references,
+            skills = self.skill_loader.load_for_state(state=lifecycle.state, context=base_harness_context)
+            built_base_context, built_context = self.build_context_with_base(
+                lifecycle=lifecycle,
+                evidence_snapshot=evidence,
+                attempt=claimed,
+                planning_epoch=planning_epoch,
+                team_advisory=team_advisory,
+                skill_refs=skills.references,
                 skill_error_codes=skills.error_codes,
-            ))
+            )
+            if built_base_context.base_context_hash != base_context.base_context_hash:
+                raise AgentContextIncompleteError("AGENT_PLANNING_BASE_CONTEXT_DRIFT")
             if not built_context.complete:
                 raise AgentContextIncompleteError(built_context.incomplete_reason or "AGENT_CONTEXT_INCOMPLETE")
+            self.store.add_agent_planning_base_context(built_base_context)
         except (AgentContextLimitExceededError, AgentContextIncompleteError) as exc:
             return HarnessRunResult(
                 lifecycle=lifecycle,

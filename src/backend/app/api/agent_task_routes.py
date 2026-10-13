@@ -15,10 +15,15 @@ from src.backend.app.api.dependencies import (
     get_agent_task_command_service,
     get_project_store,
 )
+from src.backend.app.schemas.agent_invariant import AgentInvariantReport
+from src.backend.app.schemas.agent_plan_evidence import AgentPlanEvidence
 from src.backend.app.schemas.agent_task import (
     AgentTaskEventPage,
     AgentTaskListResponse,
     AgentTaskResponse,
+    AgentTaskTeamEventPage,
+    AgentTaskTeamFindingPage,
+    AgentTaskTeamSummary,
     AnswerAgentTaskRequest,
     ApproveAgentTaskRecoveryRequest,
     ApproveAgentTaskRequest,
@@ -26,14 +31,13 @@ from src.backend.app.schemas.agent_task import (
     CreateAgentTaskRequest,
     RegisterAgentTemplateRequest,
 )
-from src.backend.app.schemas.agent_invariant import AgentInvariantReport
 from src.backend.app.schemas.agent_trace import AgentTracePage
+from src.backend.app.services.agent_invariant_checker import AgentInvariantChecker
+from src.backend.app.services.agent_plan_evidence_service import AgentPlanEvidenceService
 from src.backend.app.services.agent_task_command_service import AgentTaskCommandService
 from src.backend.app.services.agent_task_read_model import AgentTaskReadModel
+from src.backend.app.services.agent_team_read_model import AgentTeamReadModel
 from src.backend.app.services.agent_trace_service import AgentTraceService
-from src.backend.app.services.agent_invariant_checker import AgentInvariantChecker
-from src.backend.app.schemas.agent_plan_evidence import AgentPlanEvidence
-from src.backend.app.services.agent_plan_evidence_service import AgentPlanEvidenceService
 
 router = APIRouter(prefix="/api/projects/{project_id}/agent/tasks", tags=["agent-tasks"])
 
@@ -62,6 +66,7 @@ def create_agent_task(
             goal=request.goal,
             command_id=request.command_id,
             actor=request.actor,
+            team_mode=request.team_mode,
         )
         return AgentTaskReadModel(store).get(project_id=project_id, task_id=lifecycle.lifecycle_id)
     except Exception as exc:
@@ -201,6 +206,50 @@ def list_agent_task_events(
         after=after,
         limit=limit,
     )
+
+
+@router.get("/{task_id}/team", response_model=AgentTaskTeamSummary)
+def get_agent_task_team(
+    project_id: str,
+    task_id: str,
+    store: ProjectStore = Depends(get_project_store),
+) -> AgentTaskTeamSummary:
+    try:
+        return AgentTeamReadModel(store).summary(project_id=project_id, task_id=task_id)
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@router.get("/{task_id}/team/findings", response_model=AgentTaskTeamFindingPage)
+def list_agent_task_team_findings(
+    project_id: str,
+    task_id: str,
+    after: str | None = Query(default=None, max_length=128),
+    limit: int = Query(default=50, ge=1, le=100),
+    store: ProjectStore = Depends(get_project_store),
+) -> AgentTaskTeamFindingPage:
+    try:
+        return AgentTeamReadModel(store).findings(
+            project_id=project_id, task_id=task_id, after=after, limit=limit
+        )
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@router.get("/{task_id}/team/events", response_model=AgentTaskTeamEventPage)
+def list_agent_task_team_events(
+    project_id: str,
+    task_id: str,
+    after: str | None = Query(default=None, max_length=128),
+    limit: int = Query(default=50, ge=1, le=100),
+    store: ProjectStore = Depends(get_project_store),
+) -> AgentTaskTeamEventPage:
+    try:
+        return AgentTeamReadModel(store).events(
+            project_id=project_id, task_id=task_id, after=after, limit=limit
+        )
+    except Exception as exc:
+        raise_api_error(exc)
 
 
 @router.get("/{task_id}/trace", response_model=AgentTracePage)

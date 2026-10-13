@@ -6,13 +6,21 @@ They carry no execution ticket, approval, runner, filesystem, or shell fields.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 from src.backend.app.agent_skills.schemas import SkillContextRef
 from src.backend.app.schemas.agent_lifecycle import DecisionItem
+from src.backend.app.schemas.agent_team import (
+    AgentPlanningMode,
+    AgentTeamAdvisory,
+    AgentTeamBudgetSlice,
+    Sha256,
+    canonical_hash,
+)
 
 AgentHarnessStatus = Literal[
     "READY",
@@ -35,6 +43,7 @@ AgentHarnessContextSectionName = Literal[
     "memory_context",
     "budget",
 ]
+AgentHarnessContextV4SectionName = AgentHarnessContextSectionName | Literal["team_advisory"]
 AgentContextPurpose = Literal["decision_request", "plan_draft"]
 
 ModelCallStatus = Literal["started", "succeeded", "failed", "invalid_output", "unknown"]
@@ -284,8 +293,291 @@ class AgentHarnessContextSections(BaseModel):
     budget: AgentHarnessContextSection
 
 
+def agent_planning_base_context_hash(
+    context: AgentPlanningBaseContext | Mapping[str, object],
+) -> str:
+    """Hash Base v1 fields while excluding its self-hash and creation time."""
+    if isinstance(context, BaseModel):
+        payload = context.model_dump(mode="json", exclude={"base_context_hash", "created_at"})
+    else:
+        payload = {
+            key: value
+            for key, value in context.items()
+            if key not in {"base_context_hash", "created_at"}
+        }
+    return canonical_hash(payload)
+
+
+class AgentPlanningBaseContext(BaseModel):
+    """Frozen ten-section parent context shared by eligibility and reviewers."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    base_context_hash: Sha256
+    planning_epoch: int = Field(ge=0)
+    lifecycle_id: str = Field(min_length=1, max_length=128)
+    project_id: str = Field(min_length=1, max_length=128)
+    sections: AgentHarnessContextSections
+    section_hashes: dict[AgentHarnessContextSectionName, Sha256]
+    evidence_refs: tuple[dict[str, str], ...] = Field(default_factory=tuple, max_length=128)
+    evidence_snapshot_hash: str | None = Field(default=None, max_length=128)
+    projection_policy_version: str = Field(min_length=1, max_length=128)
+    complete: bool
+    incomplete_reason: str | None = Field(default=None, max_length=128)
+    project_snapshot_hash: str = Field(min_length=1, max_length=128)
+    policy_version: str = Field(min_length=1, max_length=128)
+    redaction_policy_version: str = Field(min_length=1, max_length=128)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @field_validator("section_hashes")
+    @classmethod
+    def require_all_base_sections(
+        cls, value: dict[AgentHarnessContextSectionName, str]
+    ) -> dict[AgentHarnessContextSectionName, str]:
+        if set(value) != set(AgentHarnessContextSections.model_fields):
+            raise ValueError("AGENT_PLANNING_BASE_SECTIONS_INVALID")
+        return value
+
+    @model_validator(mode="after")
+    def validate_base_hash(self) -> AgentPlanningBaseContext:
+        if self.complete and self.incomplete_reason is not None:
+            raise ValueError("AGENT_PLANNING_BASE_COMPLETENESS_INVALID")
+        if not self.complete and self.incomplete_reason is None:
+            raise ValueError("AGENT_PLANNING_BASE_COMPLETENESS_INVALID")
+        for name in AgentHarnessContextSections.model_fields:
+            if self.section_hashes[name] != canonical_hash(getattr(self.sections, name)):
+                raise ValueError("AGENT_PLANNING_BASE_SECTION_HASH_MISMATCH")
+        if agent_planning_base_context_hash(self) != self.base_context_hash:
+            raise ValueError("AGENT_PLANNING_BASE_HASH_MISMATCH")
+        return self
+
+
+def agent_harness_context_v4_hash(context: AgentHarnessContext | Mapping[str, object]) -> str:
+    """Hash the final Context v4 request identity, excluding its self-hash/time."""
+    if isinstance(context, BaseModel):
+        payload = context.model_dump(mode="json", exclude={"context_hash", "created_at"})
+        advisory = context.team_advisory
+        payload["team_advisory"] = {"advisory_hash": advisory.advisory_hash} if advisory else None
+    else:
+        payload = {
+            key: value
+            for key, value in context.items()
+            if key not in {"context_hash", "created_at"}
+        }
+        advisory = payload.get("team_advisory")
+        if isinstance(advisory, BaseModel):
+            payload["team_advisory"] = {"advisory_hash": advisory.advisory_hash}
+        elif isinstance(advisory, Mapping):
+            payload["team_advisory"] = {"advisory_hash": advisory.get("advisory_hash")}
+    return canonical_hash(payload)
+
+
 class AgentHarnessContext(BaseModel):
-    """Immutable, redacted, purpose-scoped Context v3 snapshot."""
+    """Final Harness context bound to Base v1 and an optional typed advisory."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[4] = 4
+    context_hash: Sha256
+    base_context_hash: Sha256
+    planning_epoch: int = Field(ge=0)
+    lifecycle_id: str = Field(min_length=1, max_length=128)
+    project_id: str = Field(min_length=1, max_length=128)
+    purpose: AgentContextPurpose
+    planning_mode: AgentPlanningMode = "single_agent"
+    team_id: str | None = Field(default=None, min_length=1, max_length=128)
+    team_epoch: int | None = Field(default=None, ge=1)
+    team_advisory: AgentTeamAdvisory | None = None
+    sections: AgentHarnessContextSections
+    section_hashes: dict[AgentHarnessContextV4SectionName, Sha256]
+    required_sections: tuple[AgentHarnessContextSectionName, ...]
+    included_sections: tuple[AgentHarnessContextV4SectionName, ...]
+    omitted_sections: tuple[str, ...] = ()
+    evidence_refs: tuple[dict[str, str], ...] = ()
+    evidence_snapshot_hash: str | None = None
+    projection_policy_version: str = Field(min_length=1, max_length=128)
+    complete: bool
+    incomplete_reason: str | None = None
+    memory_context_hash: str | None = None
+    project_snapshot_hash: str = Field(min_length=1, max_length=128)
+    policy_version: str = "agent-harness-policy-v3"
+    redaction_policy_version: str = "agent-harness-redaction-v3"
+    prompt_template_version: str = "agent-harness-prompt-v3"
+    skill_refs: tuple[SkillContextRef, ...] = Field(default_factory=tuple, max_length=3)
+    skill_error_codes: tuple[str, ...] = Field(default_factory=tuple, max_length=3)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def validate_v4_binding(self) -> AgentHarnessContext:
+        if len(set(self.required_sections)) != len(self.required_sections):
+            raise ValueError("AGENT_HARNESS_CONTEXT_SECTIONS_INVALID")
+        if len(set(self.included_sections)) != len(self.included_sections):
+            raise ValueError("AGENT_HARNESS_CONTEXT_SECTIONS_INVALID")
+        if not set(self.required_sections).issubset(self.included_sections):
+            raise ValueError("AGENT_HARNESS_CONTEXT_REQUIRED_SECTION_MISSING")
+        if set(self.section_hashes) != set(self.included_sections):
+            raise ValueError("AGENT_HARNESS_CONTEXT_SECTION_HASH_MISMATCH")
+        for name in self.included_sections:
+            if name == "team_advisory":
+                continue
+            if self.section_hashes[name] != canonical_hash(getattr(self.sections, name)):
+                raise ValueError("AGENT_HARNESS_CONTEXT_SECTION_HASH_MISMATCH")
+        if self.planning_mode == "single_agent":
+            if any(
+                (
+                    self.team_id is not None,
+                    self.team_epoch is not None,
+                    self.team_advisory is not None,
+                )
+            ):
+                raise ValueError("AGENT_HARNESS_CONTEXT_TEAM_BINDING_INVALID")
+            if "team_advisory" in self.included_sections:
+                raise ValueError("AGENT_HARNESS_CONTEXT_TEAM_BINDING_INVALID")
+        else:
+            advisory = self.team_advisory
+            if advisory is None or advisory.decision != "accepted":
+                raise ValueError("AGENT_HARNESS_CONTEXT_TEAM_ADVISORY_REQUIRED")
+            if self.team_id != advisory.team_id or self.team_epoch != advisory.team_epoch:
+                raise ValueError("AGENT_HARNESS_CONTEXT_TEAM_BINDING_INVALID")
+            if (self.project_id, self.lifecycle_id, self.base_context_hash) != (
+                advisory.project_id,
+                advisory.lifecycle_id,
+                advisory.base_context_hash,
+            ):
+                raise ValueError("AGENT_HARNESS_CONTEXT_TEAM_BINDING_INVALID")
+            if "team_advisory" not in self.included_sections:
+                raise ValueError("AGENT_HARNESS_CONTEXT_TEAM_ADVISORY_REQUIRED")
+            if self.section_hashes.get("team_advisory") != advisory.advisory_hash:
+                raise ValueError("AGENT_HARNESS_CONTEXT_TEAM_ADVISORY_HASH_MISMATCH")
+        if self.complete and self.incomplete_reason is not None:
+            raise ValueError("AGENT_HARNESS_CONTEXT_COMPLETENESS_INVALID")
+        if not self.complete and self.incomplete_reason is None:
+            raise ValueError("AGENT_HARNESS_CONTEXT_COMPLETENESS_INVALID")
+        if agent_harness_context_v4_hash(self) != self.context_hash:
+            raise ValueError("AGENT_HARNESS_CONTEXT_HASH_MISMATCH")
+        return self
+
+    def prompt_payload(self) -> dict[str, Any]:
+        """Return a fixed-order model payload with the typed advisory as data."""
+        return {
+            "schema_version": self.schema_version,
+            "purpose": self.purpose,
+            "required_sections": list(self.required_sections),
+            "included_sections": list(self.included_sections),
+            "omitted_sections": list(self.omitted_sections),
+            "evidence_refs": [dict(reference) for reference in self.evidence_refs],
+            "evidence_snapshot_hash": self.evidence_snapshot_hash,
+            "projection_policy_version": self.projection_policy_version,
+            "complete": self.complete,
+            "incomplete_reason": self.incomplete_reason,
+            "policy_version": self.policy_version,
+            "redaction_policy_version": self.redaction_policy_version,
+            "prompt_template_version": self.prompt_template_version,
+            "skill_refs": [reference.model_dump(mode="json") for reference in self.skill_refs],
+            "skill_error_codes": list(self.skill_error_codes),
+            "sections": {
+                name: getattr(self.sections, name).model_dump(mode="json")
+                for name in self.included_sections
+                if name != "team_advisory"
+            },
+            "team_advisory": self.team_advisory.model_dump(mode="json")
+            if self.team_advisory
+            else None,
+        }
+
+
+def agent_team_role_context_hash(
+    context: AgentTeamRoleContext | Mapping[str, object],
+) -> str:
+    """Hash the actual role projection, excluding only self-hash and timestamp."""
+    if isinstance(context, BaseModel):
+        payload = context.model_dump(mode="json", exclude={"role_context_hash", "created_at"})
+    else:
+        payload = {
+            key: value
+            for key, value in context.items()
+            if key not in {"role_context_hash", "created_at"}
+        }
+    return canonical_hash(payload)
+
+
+class AgentTeamRoleContext(BaseModel):
+    """Bound read-only projection delivered to one fixed reviewer worker."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    team_id: str = Field(min_length=1, max_length=128)
+    team_epoch: int = Field(ge=1)
+    worker_id: str = Field(min_length=1, max_length=128)
+    role_id: Literal["science_reviewer.v1", "safety_reviewer.v1", "completeness_reviewer.v1"]
+    reviewer_kind: Literal["science", "safety", "completeness"]
+    project_id: str = Field(min_length=1, max_length=128)
+    lifecycle_id: str = Field(min_length=1, max_length=128)
+    base_context_hash: Sha256
+    role_context_hash: Sha256
+    purpose: Literal["science_prerequisites", "project_safety", "goal_coverage"]
+    included_sections: tuple[AgentHarnessContextSectionName, ...] = Field(
+        min_length=1, max_length=10
+    )
+    omitted_sections: tuple[AgentHarnessContextSectionName, ...] = Field(max_length=10)
+    sections: dict[AgentHarnessContextSectionName, AgentHarnessContextSection]
+    section_hashes: dict[AgentHarnessContextSectionName, Sha256]
+    evidence_refs: tuple[str, ...] = Field(default_factory=tuple, max_length=128)
+    model_profile_hash: Sha256
+    prompt_template_version: str = Field(min_length=1, max_length=128)
+    output_schema_version: str = Field(min_length=1, max_length=128)
+    policy_version: str = Field(min_length=1, max_length=128)
+    redaction_policy_version: str = Field(min_length=1, max_length=128)
+    consent_epoch: int = Field(ge=0)
+    consent_hash: Sha256
+    budget_slice: AgentTeamBudgetSlice
+    deadline_at: datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def validate_role_projection(self) -> AgentTeamRoleContext:
+        expected_role = {
+            "science": "science_reviewer.v1",
+            "safety": "safety_reviewer.v1",
+            "completeness": "completeness_reviewer.v1",
+        }[self.reviewer_kind]
+        expected_purpose = {
+            "science": "science_prerequisites",
+            "safety": "project_safety",
+            "completeness": "goal_coverage",
+        }[self.reviewer_kind]
+        if self.role_id != expected_role:
+            raise ValueError("MULTI_AGENT_REVIEWER_KIND_MISMATCH")
+        if self.purpose != expected_purpose:
+            raise ValueError("TEAM_ROLE_CONTEXT_PURPOSE_INVALID")
+        if len(set(self.included_sections)) != len(self.included_sections):
+            raise ValueError("TEAM_ROLE_CONTEXT_SECTION_DUPLICATE")
+        if len(set(self.omitted_sections)) != len(self.omitted_sections):
+            raise ValueError("TEAM_ROLE_CONTEXT_SECTION_DUPLICATE")
+        if set(self.included_sections) & set(self.omitted_sections):
+            raise ValueError("TEAM_ROLE_CONTEXT_SECTION_SET_INVALID")
+        if set(self.included_sections) | set(self.omitted_sections) != set(
+            AgentHarnessContextSections.model_fields
+        ):
+            raise ValueError("TEAM_ROLE_CONTEXT_SECTION_SET_INVALID")
+        if set(self.sections) != set(self.included_sections):
+            raise ValueError("TEAM_ROLE_CONTEXT_SECTION_SET_INVALID")
+        if set(self.section_hashes) != set(self.included_sections):
+            raise ValueError("TEAM_ROLE_CONTEXT_SECTION_HASH_MISMATCH")
+        if any(
+            self.section_hashes[name] != canonical_hash(self.sections[name])
+            for name in self.included_sections
+        ):
+            raise ValueError("TEAM_ROLE_CONTEXT_SECTION_HASH_MISMATCH")
+        if agent_team_role_context_hash(self) != self.role_context_hash:
+            raise ValueError("TEAM_ROLE_CONTEXT_HASH_MISMATCH")
+        return self
+
+
+class AgentHarnessContextV3Projection(BaseModel):
+    """Internal pre-V4 projection used only while constructing durable snapshots."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

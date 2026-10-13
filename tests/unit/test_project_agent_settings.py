@@ -5,14 +5,16 @@ from pathlib import Path
 import pytest
 
 from src.backend.app.core.exceptions import SafetyError
+from src.backend.app.planner.project_context import _verified_project_resource
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.schemas.project_agent_settings import (
+    REQUIRED_MULTI_AGENT_DATA_CATEGORIES,
+    ProjectMultiAgentConsent,
     ScientificResourceInput,
     UpdateProjectAgentSettingsRequest,
 )
 from src.backend.app.services.mock_store import SQLiteDesktopStore
 from src.backend.app.services.project_agent_settings_service import ProjectAgentSettingsService
-from src.backend.app.planner.project_context import _verified_project_resource
 
 
 def _store(tmp_path: Path) -> SQLiteDesktopStore:
@@ -119,3 +121,85 @@ def test_registered_resource_is_ignored_after_checksum_drift(tmp_path: Path) -> 
         )
         is None
     )
+
+
+def test_multi_agent_consent_is_closed_by_default_and_persists_epochs(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    service = ProjectAgentSettingsService(store)
+    initial = service.get(project_id="project-1").multi_agent_consent
+    assert initial.enabled is False
+    assert initial.consent_epoch == 0
+    assert initial.allowed_data_categories == ()
+
+    enabled = service.update(
+        project_id="project-1",
+        request=UpdateProjectAgentSettingsRequest(
+            multi_agent_consent_enabled=True,
+            multi_agent_max_model_calls=4,
+            multi_agent_max_input_tokens=8192,
+        ),
+    ).multi_agent_consent
+    assert enabled.enabled is True
+    assert enabled.consent_epoch == 1
+    assert enabled.max_model_calls == 4
+    assert enabled.max_input_tokens == 8192
+    assert enabled.allowed_data_categories == REQUIRED_MULTI_AGENT_DATA_CATEGORIES
+    assert enabled.consent_hash != initial.consent_hash
+    assert ProjectAgentSettingsService(
+        SQLiteDesktopStore(store.db_path)
+    ).get(project_id="project-1").multi_agent_consent == enabled
+
+    resource_only_update = service.update(
+        project_id="project-1",
+        request=UpdateProjectAgentSettingsRequest(),
+    ).multi_agent_consent
+    assert resource_only_update == enabled
+
+    repeated = service.update(
+        project_id="project-1",
+        request=UpdateProjectAgentSettingsRequest(
+            multi_agent_consent_enabled=True,
+            multi_agent_max_model_calls=4,
+            multi_agent_max_input_tokens=8192,
+        ),
+    ).multi_agent_consent
+    assert repeated.consent_epoch == enabled.consent_epoch
+    assert repeated.consent_hash == enabled.consent_hash
+
+    revoked = service.update(
+        project_id="project-1",
+        request=UpdateProjectAgentSettingsRequest(multi_agent_consent_enabled=False),
+    ).multi_agent_consent
+    assert revoked.enabled is False
+    assert revoked.consent_epoch == enabled.consent_epoch + 1
+    assert revoked.allowed_data_categories == ()
+    assert revoked.consent_hash != enabled.consent_hash
+
+
+def test_agent_settings_consent_update_rejects_a_stale_hash(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    service = ProjectAgentSettingsService(store)
+    stale = service.get(project_id="project-1").multi_agent_consent
+    first = ProjectMultiAgentConsent.build(
+        project_id="project-1",
+        enabled=True,
+        consent_epoch=1,
+        max_model_calls=6,
+        max_input_tokens=16384,
+    )
+    store.update_project_agent_settings(
+        "project-1",
+        {"multi_agent_consent": first.model_dump(mode="json")},
+        expected_consent_hash=stale.consent_hash,
+    )
+    stale_write = ProjectMultiAgentConsent.build(
+        project_id="project-1",
+        enabled=False,
+        consent_epoch=1,
+    )
+    with pytest.raises(RuntimeError, match="PROJECT_AGENT_SETTINGS_CONCURRENT_UPDATE"):
+        store.update_project_agent_settings(
+            "project-1",
+            {"multi_agent_consent": stale_write.model_dump(mode="json")},
+            expected_consent_hash=stale.consent_hash,
+        )

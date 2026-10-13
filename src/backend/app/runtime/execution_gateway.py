@@ -21,6 +21,7 @@ from src.backend.app.services.execution_environment_service import ExecutionEnvi
 from src.backend.app.schemas.sandbox import SandboxPolicySet
 from src.backend.app.services.sandbox_policy_service import SandboxPolicyService
 from src.backend.app.services.sandbox_workspace_service import SandboxWorkspaceService
+from src.backend.app.services.team_ticket_policy_verifier import TeamTicketPolicyVerifier
 
 _VERIFICATION_SENTINEL = object()
 logger = logging.getLogger(__name__)
@@ -68,8 +69,12 @@ class ExecutionGateway:
         ticket_service: ExecutionTicketService,
         *,
         environment_service: ExecutionEnvironmentService | None = None,
+        team_policy_verifier: TeamTicketPolicyVerifier | None = None,
     ) -> None:
         self.ticket_service = ticket_service
+        self.team_policy_verifier = team_policy_verifier or TeamTicketPolicyVerifier(
+            ticket_service.store
+        )
         self.environment_service = environment_service or ExecutionEnvironmentService(
             ticket_service.store
         )
@@ -249,6 +254,17 @@ class ExecutionGateway:
                 ticket_id=ticket.execution_ticket_id,
                 audit_id=ticket.audit_id,
                 reason=code,
+            )
+            raise
+
+        try:
+            self.team_policy_verifier.verify_ticket(ticket)
+        except SafetyError as exc:
+            self.ticket_service.record_rejection(
+                project_id=ticket.project_id,
+                ticket_id=ticket.execution_ticket_id,
+                audit_id=ticket.audit_id,
+                reason=str(exc.code or "TEAM_TICKET_POLICY_CHANGED"),
             )
             raise
 

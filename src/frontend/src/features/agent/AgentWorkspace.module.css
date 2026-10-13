@@ -172,6 +172,112 @@
   color: var(--text-muted);
 }
 
+.planningMode {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: 10px;
+}
+.planningMode legend {
+  padding: 0 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.planningMode label {
+  display: flex;
+  gap: 10px;
+  align-items: start;
+  cursor: pointer;
+}
+.planningMode input {
+  margin-top: 3px;
+}
+.planningMode label span {
+  display: grid;
+  gap: 2px;
+}
+.planningMode small {
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.teamActivity {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+.teamActivity h2,
+.teamActivity h3,
+.teamActivity p {
+  margin: 0;
+}
+.teamActivityHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.teamActivityHeader p {
+  color: var(--text-muted);
+}
+.teamRoleList,
+.teamFindingList,
+.teamEventList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.teamRoleList li,
+.teamFindingList li,
+.teamEventList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+.teamRoleList small,
+.teamEventList small {
+  color: var(--text-muted);
+}
+.teamActivityStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+.teamActivityStats div {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: 8px;
+}
+.teamActivityStats dt {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.teamActivityStats dd {
+  margin: 0;
+  font-weight: 650;
+}
+.teamActivityDetails {
+  display: grid;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-divider);
+}
+.teamActivityDetails summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
 .inlineError,
 .connectionError {
   color: var(--color-danger);

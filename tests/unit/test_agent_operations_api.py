@@ -37,7 +37,7 @@ def test_operations_summary_is_read_only_and_structured(tmp_path) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["project_id"] == project_id
     assert payload["task_counts"] == {"total": 0}
     assert payload["attention"] == []

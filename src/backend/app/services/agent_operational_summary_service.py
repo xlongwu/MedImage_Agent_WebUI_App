@@ -13,7 +13,6 @@ from src.backend.app.schemas.agent_operations import (
 )
 from src.backend.app.services.memory_retrieval_service import MemoryRetrievalService
 
-
 _TERMINAL_STATES = {"GOAL_SATISFIED", "SUCCEEDED", "FAILED", "HUMAN_HANDOFF", "CANCELED"}
 _GATEWAY_TERMINAL_EVENTS = {"dispatch_succeeded", "dispatch_failed", "dispatch_rejected"}
 
@@ -64,6 +63,8 @@ class AgentOperationalSummaryService:
         tasks = Counter(item.state for item in lifecycles)
         tasks["total"] = len(lifecycles)
         calls: Counter[str] = Counter()
+        team_calls: Counter[str] = Counter()
+        team_statuses: Counter[str] = Counter()
         provider_failures: Counter[str] = Counter()
         scheduler: Counter[str] = Counter()
         approvals: Counter[str] = Counter()
@@ -112,6 +113,64 @@ class AgentOperationalSummaryService:
                     attention[("AGENT_OP_INVARIANT_BLOCKING", "blocking")].extend(
                         [audit.audit_id] * audit.blocking_count
                     )
+
+        teams_by_lifecycle: dict[str, list[object]] = defaultdict(list)
+        teams = [
+            team
+            for team in self.store.list_agent_teams(project_id)
+            if team.project_id == project_id
+            and team.lifecycle_id in lifecycle_ids
+        ]
+        for team in teams:
+            teams_by_lifecycle[team.lifecycle_id].append(team)
+            team_statuses[team.status] += 1
+            if team.status == "NEEDS_ATTENTION":
+                attention[("AGENT_OP_TEAM_NEEDS_ATTENTION", "warning")].append(
+                    team.team_id
+                )
+            for call in self.store.list_agent_team_model_calls(project_id, team.team_id):
+                if (
+                    call.project_id != project_id
+                    or call.lifecycle_id != team.lifecycle_id
+                    or call.team_id != team.team_id
+                    or call.team_epoch != team.team_epoch
+                ):
+                    attention[("AGENT_OP_TEAM_BINDING_INVALID", "blocking")].append(
+                        call.model_call_id
+                    )
+                    continue
+                calls["total"] += 1
+                team_calls["total"] += 1
+                if call.status == "completed":
+                    calls["success"] += 1
+                    team_calls["success"] += 1
+                elif call.status == "failed":
+                    calls["failure"] += 1
+                    team_calls["failure"] += 1
+                    code = call.error_code or "UNKNOWN_PROVIDER_FAILURE"
+                    provider_failures[code] += 1
+                    attention[("AGENT_OP_TEAM_PROVIDER_FAILURES", "warning")].append(
+                        call.model_call_id
+                    )
+                else:
+                    calls["unknown"] += 1
+                    team_calls["unknown"] += 1
+                    if call.status == "started" and call.network_called:
+                        attention[("AGENT_OP_TEAM_UNKNOWN_MODEL_CALL", "blocking")].append(
+                            call.model_call_id
+                        )
+                if call.latency_ms is not None:
+                    call_latencies.append(call.latency_ms)
+
+        for lifecycle in lifecycles:
+            if lifecycle.planning_mode == "multi_agent" and not any(
+                team.team_id == lifecycle.planning_team_id
+                and team.team_epoch == lifecycle.planning_team_epoch
+                for team in teams_by_lifecycle.get(lifecycle.lifecycle_id, ())
+            ):
+                attention[("AGENT_OP_TEAM_BINDING_MISSING", "blocking")].append(
+                    lifecycle.lifecycle_id
+                )
 
         wakes = [
             wake
@@ -174,6 +233,8 @@ class AgentOperationalSummaryService:
             truncated=truncated,
             task_counts=dict(sorted(tasks.items())),
             model_call_counts=dict(sorted(calls.items())),
+            team_model_call_counts=dict(sorted(team_calls.items())),
+            team_status_counts=dict(sorted(team_statuses.items())),
             provider_failure_counts=dict(sorted(provider_failures.items())),
             scheduler_counts=dict(sorted(scheduler.items())),
             approval_counts=dict(sorted(approvals.items())),

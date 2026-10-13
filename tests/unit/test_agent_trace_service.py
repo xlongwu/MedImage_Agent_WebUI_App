@@ -4,7 +4,11 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from src.backend.app.core.config_schema import AgentHarnessConfig
-from src.backend.app.schemas.agent_harness import AgentActionRecord, AgentHarnessStep, ModelCallRecord
+from src.backend.app.schemas.agent_harness import (
+    AgentActionRecord,
+    AgentHarnessStep,
+    ModelCallRecord,
+)
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.agent_harness_context_service import (
     HarnessContextBuilder,
@@ -71,6 +75,145 @@ def _trace_store(tmp_path) -> tuple[SQLiteDesktopStore, object]:
         expected_status="READY",
     )
     return store, lifecycle
+
+
+def _bind_team_trace(store, lifecycle):
+    team_lifecycle = lifecycle.model_copy(
+        update={
+            "planning_mode": "multi_agent",
+            "planning_team_id": "team-trace",
+            "planning_team_epoch": 1,
+        }
+    )
+    consent_hash = "c" * 64
+    registry_hash = "r" * 64
+    projector_hash = "p" * 64
+    aggregation_hash = "g" * 64
+    profile_hash = "m" * 64
+    snapshot_hash = "s" * 64
+    base_hash = "b" * 64
+    context_hashes = {kind: f"{kind[0]}" * 64 for kind in ("science", "safety", "completeness")}
+    team = SimpleNamespace(
+        team_id="team-trace",
+        team_epoch=1,
+        project_id=lifecycle.project_id,
+        lifecycle_id=lifecycle.lifecycle_id,
+        status="COMPLETED",
+        snapshot_hash=snapshot_hash,
+        role_registry_hash=registry_hash,
+        context_projector_hash=projector_hash,
+        aggregation_policy_hash=aggregation_hash,
+        model_profile_hash=profile_hash,
+        global_policy_hash="h" * 64,
+        consent_epoch=2,
+        consent_hash=consent_hash,
+        advisory_id="advisory-trace",
+        budget=SimpleNamespace(max_model_calls=3),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    snapshot = SimpleNamespace(
+        team_id=team.team_id,
+        team_epoch=team.team_epoch,
+        project_id=team.project_id,
+        lifecycle_id=team.lifecycle_id,
+        snapshot_hash=snapshot_hash,
+        base_context_hash=base_hash,
+        role_context_hashes=context_hashes,
+        role_registry_hash=registry_hash,
+        context_projector_hash=projector_hash,
+        consent_epoch=team.consent_epoch,
+        consent_hash=consent_hash,
+    )
+    role_contexts = {
+        kind: SimpleNamespace(
+            project_id=team.project_id,
+            lifecycle_id=team.lifecycle_id,
+            team_id=team.team_id,
+            team_epoch=team.team_epoch,
+            base_context_hash=base_hash,
+            role_context_hash=context_hashes[kind],
+            consent_epoch=team.consent_epoch,
+            consent_hash=consent_hash,
+        )
+        for kind in ("science", "safety", "completeness")
+    }
+    base = SimpleNamespace(
+        project_id=team.project_id,
+        lifecycle_id=team.lifecycle_id,
+        base_context_hash=base_hash,
+    )
+    role_ids = {
+        "science": "science_reviewer.v1",
+        "safety": "safety_reviewer.v1",
+        "completeness": "completeness_reviewer.v1",
+    }
+    work_items = [
+        SimpleNamespace(
+            team_id=team.team_id,
+            team_epoch=team.team_epoch,
+            project_id=team.project_id,
+            lifecycle_id=team.lifecycle_id,
+            reviewer_kind=kind,
+            role_id=role_ids[kind],
+            status="COMPLETED",
+            error_code=None,
+        )
+        for kind in role_ids
+    ]
+    calls = [
+        SimpleNamespace(
+            model_call_id=f"call-{kind}",
+            team_id=team.team_id,
+            team_epoch=team.team_epoch,
+            project_id=team.project_id,
+            lifecycle_id=team.lifecycle_id,
+            reviewer_kind=kind,
+            role_context_hash=context_hashes[kind],
+            role_registry_hash=registry_hash,
+            model_profile_hash=profile_hash,
+            consent_epoch=team.consent_epoch,
+            consent_hash=consent_hash,
+            work_item_id=f"work-{kind}",
+            status="completed",
+            network_called=True,
+            request_hash=f"{kind[0]}" * 64,
+            response_hash=f"{kind[0]}" * 64,
+            input_tokens=10,
+            output_tokens=2,
+            latency_ms=50,
+        )
+        for kind in role_ids
+    ]
+    advisory = SimpleNamespace(
+        advisory_id=team.advisory_id,
+        advisory_hash="a" * 64,
+        team_id=team.team_id,
+        team_epoch=team.team_epoch,
+        project_id=team.project_id,
+        lifecycle_id=team.lifecycle_id,
+        base_context_hash=base_hash,
+        context_snapshot_hash=snapshot_hash,
+        context_projector_hash=projector_hash,
+        role_registry_hash=registry_hash,
+        aggregation_policy_hash=aggregation_hash,
+        model_profile_hash=profile_hash,
+        consent_epoch=team.consent_epoch,
+        consent_hash=consent_hash,
+        conflict_codes=(),
+    )
+    store.get_agent_lifecycle = lambda record_id: (
+        team_lifecycle if record_id == team_lifecycle.lifecycle_id else None
+    )
+    store.get_agent_team = lambda _project_id, _team_id: team
+    store.get_agent_team_advisory = lambda _project_id, _team_id: advisory
+    store.get_agent_team_context = lambda _project_id, _team_id: (snapshot, role_contexts)
+    store.get_agent_planning_base_context = lambda _project_id, _context_hash: base
+    store.list_agent_team_work_items = lambda _project_id, _team_id: work_items
+    store.list_agent_team_model_calls = lambda _project_id, _team_id: calls
+    store.list_agent_team_findings = lambda _project_id, _team_id: []
+    store.list_agent_team_events = lambda _project_id, _team_id: []
+    return team_lifecycle, snapshot, role_contexts
 
 
 def test_trace_is_read_only_redacted_and_replays_without_operational_dependencies(tmp_path) -> None:
@@ -150,3 +293,44 @@ def test_replay_rejects_an_accepted_action_that_is_not_in_the_capability_catalog
 
     assert result.integrity_valid is True
     assert any(item.code == "TRACE_CAPABILITY_DENIED" for item in result.violations)
+
+
+def test_team_trace_contains_only_bound_identity_and_replays_binding(tmp_path) -> None:
+    store, lifecycle = _trace_store(tmp_path)
+    team_lifecycle, _snapshot, _role_contexts = _bind_team_trace(store, lifecycle)
+
+    bundle = AgentTraceService(store).get(
+        project_id=team_lifecycle.project_id,
+        lifecycle_id=team_lifecycle.lifecycle_id,
+    )
+    replay = AgentReplayService().replay(bundle)
+
+    assert bundle.planning_mode == "multi_agent"
+    assert bundle.team is not None
+    assert bundle.team.binding_status == "valid"
+    assert bundle.team.model_call_count == 3
+    assert bundle.team.advisory_hash == "a" * 64
+    assert replay.integrity_valid is True
+    assert replay.violations == ()
+    assert "system_prompt" not in bundle.model_dump_json()
+    assert "reviewer output" not in bundle.model_dump_json()
+
+
+def test_team_trace_replay_rejects_context_binding_conflicts(tmp_path) -> None:
+    store, lifecycle = _trace_store(tmp_path)
+    team_lifecycle, snapshot, role_contexts = _bind_team_trace(store, lifecycle)
+    mismatched_snapshot = SimpleNamespace(**{**vars(snapshot), "snapshot_hash": "x" * 64})
+    store.get_agent_team_context = lambda _project_id, _team_id: (
+        mismatched_snapshot,
+        role_contexts,
+    )
+
+    bundle = AgentTraceService(store).get(
+        project_id=team_lifecycle.project_id,
+        lifecycle_id=team_lifecycle.lifecycle_id,
+    )
+    replay = AgentReplayService().replay(bundle)
+
+    assert bundle.team is not None
+    assert bundle.team.binding_status == "conflict"
+    assert any(item.code == "TRACE_TEAM_BINDING_INVALID" for item in replay.violations)

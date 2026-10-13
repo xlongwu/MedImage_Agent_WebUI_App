@@ -14,14 +14,12 @@
 > 可人工标注的脱敏 Trace/Replay 证据而明确失败关闭，结论保持 `single_agent`。本文件
 > 不授权 durable Team PoC、公开 API、feature flag、scheduler 或生产执行能力。
 >
-> 当前实施入口：`specs/阶段记录/阶段十四/生产多Agent架构/00_阶段规格与实施总览.md`。
-> 阶段十四把本文件中的架构背景收敛为 G0-G7 的可执行台账；若两者冲突，以阶段十四的
-> 当前范围、角色合同、失败策略和验收门槛为准。
+> 当前实施入口：`specs/阶段记录/阶段十四/生产多Agent架构/00_阶段规格与实施总览.md` 和 `07_逐文件实施台账.md`。
+> 本文的旧 Phase 0—7 与 Gate 顺序已被阶段十四 2026-10-13 调整取代；允许先做默认关闭的离线源码实现，
+> 从 T1.1 Contract/Store 切片开始。真实 G0、外部 provider 和项目 opt-in 后置，不是编码前置。
 >
-> 最新准入状态（2026-10-02）：上述“实施入口”目前**处于 G0 之前的正式延期**，不是活跃的
-> 实施入口。阶段十四 已批准设计口径但经维护者判定不启动 G0、不进入 G1+，六项硬阻塞与重启
-> 条件见其 `00_阶段规格与实施总览.md` §11.1/§11.3。本文件因此继续只是调研背景：既没有生产
-> 多 Agent，也没有可运行的真实 G0 评估。多 Agent 角色集合的唯一权威是阶段十四 `02`
+> 最新状态（2026-10-13）：阶段十四设计已批准，离线默认关闭实现已开放；真实 G0 仍受六项外部评测条件约束，
+> 见其 `00_阶段规格与实施总览.md` §11.1/§11.3。本文件仍只是调研背景：既没有生产多 Agent，也没有可运行的真实 G0 评估。多 Agent 角色集合的唯一权威是阶段十四 `02`
 > （science/safety/completeness 三个只读 reviewer）；`specs/阶段记录/阶段十六/` §12 的
 > 两 reviewer 口径已被其取代。
 >
@@ -43,7 +41,7 @@
 4. 多 Agent 产出的最终候选仍必须进入现有 `GoalPlanningService -> Plan Validator -> Reviewed Plan -> Approval Summary -> 人工审批 -> 审批后 dry-run -> Execution Ticket -> Execution Gateway` 链路。
 5. 不新增第二套顶层任务状态机；Team、Worker、Work Item 是 `AgentLifecycleRecord` 的从属执行域，Agent Task 继续是用户可见的唯一权威任务。
 6. 首期只实现扁平两层、Coordinator 集中通信、最多 3 个 Worker、一次综合和一次有界复核；不实现递归 spawn、Agent 自治执行、自由 peer-to-peer、长时间无限循环或跨任务共享权限。
-7. `v0.6.0-rc2` 收敛窗口已于 2026-10-01 正式终止，当前没有生效的 release 冻结；`PROJECT_STATE.md` 的 “Current Execution Boundaries” 是权威记录。本方案引入的 public API、状态契约与依赖扩展因此不能并入已作废的 RC2 线，必须先通过 `v0.7.0-rc1` 的 capability review，再作为下一阶段实施基线进入新的收敛窗口。
+7. `v0.6.0-rc2` 收敛窗口已于 2026-10-01 正式终止。本方案的 public API、状态契约与依赖扩展不得作为发布操作直接并入已作废的 RC2 线；代码实现按阶段十四离线顺序推进，只有对外开线/tag/发布时才需明确发布授权。
 
 推荐的首个生产用途是“复杂目标的并行只读分析 + 独立安全/科学审查”，而不是并行修改代码或并行运行科学 pipeline。这样能获得上下文隔离、并行探索和交叉审查的收益，同时保持项目现有审批、执行和科学真实性边界。
 
@@ -59,8 +57,7 @@ planner、Approval、Gateway、runner、runtime 或 scheduler，不能创建生�
 不超过 2.5 倍、输入不超过 2 倍、P95 时延不超过 1.8 倍且人工操作不增加。当前 synthetic
 预检的比较数字不能满足“真实 Trace/Replay”的来源要求，因此 Gate 未通过并保持单 Agent。
 
-即使未来 Gate 通过，也只允许新建并人工批准生产设计方案；不会解除 capability review、
-审批或唯一 Execution Gateway 的约束。
+该历史预检不授权生产启用。当前离线实施、真实评测和项目启用的边界按阶段十四 `00`/`07` 执行；审批与唯一 Execution Gateway 约束继续有效。
 
 ---
 
@@ -177,7 +174,7 @@ Prompt cache 依赖稳定前缀，顺序为 `tools -> system -> messages`；工�
 ### 3.3 当前规范冲突
 
 - `specs/规范/平台与运行时/智能体运行时规范.md:34-42` 明确 MVP 不支持 multi-agent communication、UI、database 和 background review；实施本方案时必须版本化更新该正式规范。
-- `PROJECT_STATE.md` 的 “Current Execution Boundaries” 记录：`v0.6.0-rc2` 冻结窗口已于 2026-10-01 终止，当前没有生效的 release 冻结；本方案的 public API、依赖和能力扩展仍需先完成 `v0.7.0-rc1` 的 capability review，再进入实现分支。
+- 历史记录：`v0.6.0-rc2` 冻结窗口于 2026-10-01 终止。本文旧 public API、依赖和能力扩展方案已被阶段十四取代；当前代码实施不等待单独 capability review，公开发布仍需明确授权。
 - `docs/安全与审批/安全边界.md:83-101` 规定 LLM 只能规划、建议、解释，并必须经 validator 和 Approval Gate；本方案把该规则扩展到所有 Worker 和 synthesis model。
 - 当前未跟踪的 `docs/架构与决策/记忆系统设计方案.md` 也会修改 `AgentTaskCommandService`、ProjectStore、Reviewed Plan identity 和 read model。两项工作不能并行写同一文件；应采用单一 owner、顺序集成。
 
@@ -280,7 +277,7 @@ MVP 仅允许版本化、代码内置角色；不接受用户自由上传 prompt
 - provider 不可用且 deterministic planner 足够；
 - 安全策略禁止发送任何项目上下文；
 - 当前实例已有同一 task 的活跃 team；
-- 配置、预算或 capability review 未开启。
+- 真实 G0 未通过或项目/provider opt-in 未启用。
 
 Plan-only 可以使用 Team 做并行规划审查，但 `execution_performed=false`、无 approval/dry-run/ticket/run 的现有不变量保持不变。
 
@@ -840,7 +837,9 @@ MEDIMAGE_MULTI_AGENT_STORE_RAW_TRANSCRIPTS=0
 
 ---
 
-## 15. 分阶段实施计划与 Gate
+## 15. 历史分阶段实施计划（已被阶段十四当前顺序取代）
+
+本节 Phase 0—7 是 2026-07-22 的候选步骤，现不构成执行 Gate、额外审核或当前验收标准。当前开发直接从阶段十四 `07` 的 T1.1 开始；G0 只在真实数据/provider 评测与启用阶段使用。
 
 ### Phase 0：治理、冻结基线与 characterization
 
@@ -848,18 +847,16 @@ MEDIMAGE_MULTI_AGENT_STORE_RAW_TRANSCRIPTS=0
 
 任务：
 
-- maintainer 明确重新打开 multi-agent public API/capability review；
+- 记录当前受影响 lifecycle/approval/plan-only 合同（仅在对应代码切片需要时补 focused checks）；
 - 从当前 dirty Phase 10 源树形成单一、可追溯基线和能力分支；
 - 记录现有 create/answer/approve/cancel/plan-only/reconcile 行为；
 - 为 Execution Gateway 不可旁路、GET 无副作用、plan-only 零执行补 characterization；
-- 产出 ADR：为什么采用扁平只读 Team、为什么不直接复制 Claude 工具继承；
-- 确认与记忆系统方案的实施顺序和文件 owner。
+- 确认与记忆系统方案的实际接口影响（仅在相关切片实施时处理）。
 
 退出 Gate：
 
-- 基线 tests 通过且无持久用户 DB/workspace 写入；
-- capability review 批准；
-- 文件 owner、API 兼容策略、隐私/预算同意方式已确认。
+- 受影响的 focused checks 通过，使用隔离 store/workspace；
+- 无本切片所需的用户/法律授权缺失。真实数据/provider 授权只在对应外部评测前确认。
 
 ### Phase 1：Schema、配置与 SQLite 持久化
 
@@ -1189,11 +1186,13 @@ npm --prefix desktop/electron run check
 
 ---
 
-## 21. 完成标准
+## 21. 历史完成标准（不再作为当前验收门）
+
+以下列表记录旧方案拟定的完整能力验收范围；当前实施按阶段十四逐切片验证，真实评测/启用条件见 `00` §11.3。未实现的旧阶段条目不阻塞 T1.1。
 
 只有以下条件全部满足，才能声明多 Agent 能力完成：
 
-- capability review 已批准，实施不在当期已开启的 release 收敛冻结规则之外偷渡；
+- 真实 G0 和相应项目授权通过后才启用生产能力；
 - feature flag 默认关闭、single 路径兼容；
 - Team/Worker/Work Item/Message/Finding/Event 均版本化、project-scoped、可重载；
 - 扁平 DAG、lease/fencing、预算、取消、shutdown、restart 全部通过故障测试；

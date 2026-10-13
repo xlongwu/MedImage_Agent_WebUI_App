@@ -9,8 +9,8 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import uuid4
 
-from src.backend.app.core.exceptions import SafetyError, StateStoreError
 from src.backend.app.core.agent_logging import agent_log_context
+from src.backend.app.core.exceptions import SafetyError, StateStoreError
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.runtime.node_contract_registry import get_node_contract
 from src.backend.app.schemas.agent_lifecycle import (
@@ -35,7 +35,6 @@ from src.backend.app.services.observation_collector import ObservationCollector
 from src.backend.app.services.recovery_proposal_engine import RecoveryProposalEngine
 from src.backend.app.services.run_diagnosis_service import RunDiagnosisService
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +44,9 @@ class AgentLifecycleStore(Protocol):
     def create_agent_lifecycle_with_wake(self, record, event, wake): ...
     def get_agent_lifecycle(self, lifecycle_id: str): ...
     def list_agent_lifecycles(self, project_id: str): ...
+    def bind_agent_planning_team(
+        self, record, event, *, expected_team_id: str | None, expected_team_epoch: int
+    ): ...
     def transition_agent_lifecycle(self, record, event, *, expected_state: str): ...
     def transition_agent_lifecycle_with_wake(self, record, event, wake, *, expected_state: str): ...
     def add_agent_lifecycle_event(self, event): ...
@@ -115,6 +117,7 @@ class AgentOrchestrator:
         actor: str,
         goal_text: str | None = None,
         goal_hash: str | None = None,
+        command_context: dict[str, Any] | None = None,
         planning_wake_reason: str | None = None,
     ) -> AgentLifecycleRecord:
         if self.store.get_project(project_id) is None:
@@ -126,6 +129,7 @@ class AgentOrchestrator:
             goal_text=goal_text,
             goal_hash=goal_hash,
             created_actor=actor,
+            command_context=dict(command_context or {}),
             created_at=now,
             updated_at=now,
             last_command_id=command_id,
@@ -190,6 +194,57 @@ class AgentOrchestrator:
     def events(self, *, project_id: str, lifecycle_id: str) -> list[AgentLifecycleEvent]:
         self.get(project_id=project_id, lifecycle_id=lifecycle_id)
         return self.store.list_agent_lifecycle_events(lifecycle_id)
+
+    def bind_planning_team(
+        self,
+        *,
+        project_id: str,
+        lifecycle_id: str,
+        team_id: str,
+        expected_team_id: str | None,
+        expected_team_epoch: int,
+        command_id: str,
+        actor: str,
+    ) -> AgentLifecycleRecord:
+        current = self.get(project_id=project_id, lifecycle_id=lifecycle_id)
+        if (
+            current.planning_team_id != expected_team_id
+            or current.planning_team_epoch != expected_team_epoch
+            or not team_id
+        ):
+            raise SafetyError("TEAM_BINDING_INVALIDATED", code="TEAM_BINDING_INVALIDATED")
+        now = datetime.now(UTC)
+        updated = current.model_copy(
+            update={
+                "planning_mode": "multi_agent",
+                "planning_team_id": team_id,
+                "planning_team_epoch": expected_team_epoch + 1,
+                "updated_at": now,
+                "last_command_id": command_id,
+            }
+        )
+        event = self._event(
+            record=updated,
+            command_id=command_id,
+            actor=actor,
+            source_command="bind_planning_team",
+            from_state=current.state,
+            to_state=current.state,
+            details={
+                "team_id": team_id,
+                "previous_team_id": expected_team_id,
+                "team_epoch": expected_team_epoch + 1,
+            },
+        )
+        try:
+            return self.store.bind_agent_planning_team(
+                updated,
+                event,
+                expected_team_id=expected_team_id,
+                expected_team_epoch=expected_team_epoch,
+            )
+        except RuntimeError as exc:
+            raise SafetyError("TEAM_BINDING_INVALIDATED", code="TEAM_BINDING_INVALIDATED") from exc
 
     def record_event(
         self,
@@ -302,6 +357,8 @@ class AgentOrchestrator:
                 code="LIFECYCLE_TRANSITION_INVALID",
             )
         changes = dict(updates or {})
+        if {"planning_mode", "planning_team_id", "planning_team_epoch"} & changes.keys():
+            raise SafetyError("TEAM_BINDING_INVALIDATED", code="TEAM_BINDING_INVALIDATED")
         for field in (
             "reviewed_plan_id",
             "execution_ticket_id",

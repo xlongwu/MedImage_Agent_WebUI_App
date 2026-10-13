@@ -8,18 +8,18 @@ from typing import Protocol
 
 from src.backend.app.agent_skills.schemas import SkillContextRef
 from src.backend.app.core.config_schema import AgentModelRuntimeConfig
-from src.backend.app.schemas.agent_model import build_agent_model_profile
 from src.backend.app.schemas.agent_harness import (
     ActionEnvelope,
     CanonicalModelRequest,
     DraftPlanAction,
     action_envelope_json_schema,
-    parse_action_envelope_json,
 )
+from src.backend.app.schemas.agent_model import build_agent_model_profile
 
-CONTEXT_V3_SECTION_ORDER = (
+CONTEXT_V4_SECTION_ORDER = (
     "goal", "policy", "project_evidence", "decision_state", "plan_state",
     "execution_state", "latest_observation", "last_action_result", "memory_context", "budget",
+    "team_advisory",
 )
 
 
@@ -31,13 +31,13 @@ def _canonical_value(value: object) -> object:
     return value
 
 
-def serialize_context_v3(snapshot: dict) -> dict:
-    """Validate and serialize Context v3 in a provider-cache-stable order.
+def serialize_context_v4(snapshot: dict) -> dict:
+    """Validate and serialize Context v4 in a provider-cache-stable order.
 
     This is intentionally the sole adapter boundary.  It accepts no legacy
     flat snapshot, so a stored v1 row cannot silently reach a model provider.
     """
-    if not isinstance(snapshot, dict) or snapshot.get("schema_version") != 3:
+    if not isinstance(snapshot, dict) or snapshot.get("schema_version") != 4:
         raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
     if snapshot.get("complete") is not True:
         raise ValueError("AGENT_CONTEXT_INCOMPLETE")
@@ -48,13 +48,16 @@ def serialize_context_v3(snapshot: dict) -> dict:
     included = snapshot.get("included_sections")
     if not isinstance(required, list) or not isinstance(included, list):
         raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
-    if not set(required).issubset(included) or not set(included).issubset(CONTEXT_V3_SECTION_ORDER):
+    if not set(required).issubset(included) or not set(included).issubset(CONTEXT_V4_SECTION_ORDER):
         raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
     sections = snapshot.get("sections")
-    if not isinstance(sections, dict) or set(sections) != set(included):
+    included_base_sections = [name for name in included if name != "team_advisory"]
+    if not isinstance(sections, dict) or set(sections) != set(included_base_sections):
         raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
     fixed_sections: dict[str, object] = {}
-    for name in CONTEXT_V3_SECTION_ORDER:
+    for name in CONTEXT_V4_SECTION_ORDER:
+        if name == "team_advisory":
+            continue
         if name not in sections:
             continue
         section = sections[name]
@@ -73,11 +76,22 @@ def serialize_context_v3(snapshot: dict) -> dict:
         fixed_sections = {
             name: section for name, section in fixed_sections.items() if name in allowed_sections
         }
+    advisory = snapshot.get("team_advisory")
+    if "team_advisory" in included:
+        if not isinstance(advisory, dict):
+            raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
+        from src.backend.app.schemas.agent_team import AgentTeamAdvisory
+
+        advisory = AgentTeamAdvisory.model_validate(advisory).model_dump(mode="json")
+        if advisory["decision"] != "accepted":
+            raise ValueError("AGENT_CONTEXT_TEAM_ADVISORY_REQUIRED")
+    elif advisory is not None:
+        raise ValueError("AGENT_CONTEXT_SCHEMA_INVALID")
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "purpose": purpose,
         "required_sections": list(required),
-        "included_sections": [name for name in CONTEXT_V3_SECTION_ORDER if name in included],
+        "included_sections": [name for name in CONTEXT_V4_SECTION_ORDER if name in included],
         "omitted_sections": sorted(str(item) for item in snapshot.get("omitted_sections", []) if isinstance(item, str)),
         "evidence_refs": sorted(
             [item for item in snapshot.get("evidence_refs", []) if isinstance(item, dict)],
@@ -96,6 +110,7 @@ def serialize_context_v3(snapshot: dict) -> dict:
             str(item) for item in snapshot.get("skill_error_codes", []) if isinstance(item, str)
         ),
         "sections": fixed_sections,
+        "team_advisory": advisory,
     }
 
 
@@ -146,7 +161,7 @@ class AgentModelAdapter(Protocol):
     def propose_action(self, *, request: CanonicalModelRequest) -> ActionProposal: ...
 
 
-REQUEST_BUILDER_VERSION = "agent-harness-request-v1"
+REQUEST_BUILDER_VERSION = "agent-harness-request-v2"
 MAX_COMPLETE_REQUEST_BYTES = 64 * 1024
 # The provider receives an output-token reservation in addition to the JSON
 # request body.  Four bytes per token is deliberately conservative for this
@@ -206,7 +221,7 @@ def build_canonical_model_request(
     *, snapshot: dict, config: AgentModelRuntimeConfig, repair: bool,
 ) -> CanonicalModelRequest:
     """Build the sole object from which a provider request may be sent."""
-    serialized = serialize_context_v3(snapshot)
+    serialized = serialize_context_v4(snapshot)
     refs = tuple(SkillContextRef.model_validate(item) for item in serialized["skill_refs"])
     from src.backend.app.agent_skills.loader import AgentSkillLoader
 
@@ -308,25 +323,49 @@ class DefaultAgentModelAdapter:
                     network_called=False,
                 ),
             )
-        from src.backend.app.planner.audit_record import stable_hash
-        from src.backend.app.planner.llm_provider import call_openai_compatible_action_provider
-
-        result = call_openai_compatible_action_provider(request=request, config=self.config)
-        metadata = ActionCallMetadata(
-            provider="openai_compatible", model=result.model,
-            endpoint_class=result.endpoint_class, response_hash=(stable_hash(result.content) if result.content else None),
-            input_tokens=result.input_tokens, output_tokens=result.output_tokens,
-            cached_input_tokens=result.cached_input_tokens, latency_ms=result.latency_ms,
-            provider_request_id=result.provider_request_id, network_called=result.network_called,
+        from src.backend.app.services.structured_agent_model_adapter import (
+            OpenAICompatibleStructuredProvider,
+            StructuredAgentModelAdapter,
+            StructuredModelCallError,
         )
-        if not result.ok:
-            code = result.errors[0] if result.errors else "AGENT_HARNESS_MODEL_FAILED"
-            error_type = AgentModelInvalidOutputError if code == "AGENT_HARNESS_MODEL_OUTPUT_INVALID" else AgentModelProviderError
-            raise error_type(code, metadata)
+
+        adapter = StructuredAgentModelAdapter(OpenAICompatibleStructuredProvider(self.config))
         try:
-            return ActionProposal(envelope=parse_action_envelope_json(result.content), metadata=metadata)
-        except (ValueError, TypeError) as exc:
-            raise AgentModelInvalidOutputError("AGENT_HARNESS_MODEL_OUTPUT_INVALID", metadata) from exc
+            envelope, result = adapter.propose_action(request=request)
+        except StructuredModelCallError as exc:
+            metadata = ActionCallMetadata(
+                provider=exc.metadata.provider_id,
+                model=exc.metadata.model_id,
+                endpoint_class=exc.metadata.endpoint_class,
+                response_hash=exc.metadata.response_hash,
+                input_tokens=exc.metadata.input_tokens,
+                output_tokens=exc.metadata.output_tokens,
+                cached_input_tokens=exc.metadata.cached_input_tokens,
+                latency_ms=exc.metadata.latency_ms,
+                provider_request_id=exc.metadata.provider_request_id,
+                network_called=exc.metadata.network_called,
+            )
+            error_type = (
+                AgentModelInvalidOutputError
+                if exc.code == "AGENT_HARNESS_MODEL_OUTPUT_INVALID"
+                else AgentModelProviderError
+            )
+            raise error_type(exc.code, metadata) from exc
+        return ActionProposal(
+            envelope=envelope,
+            metadata=ActionCallMetadata(
+                provider=result.provider_id,
+                model=result.model_id,
+                endpoint_class=result.endpoint_class,
+                response_hash=result.response_hash,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                cached_input_tokens=result.cached_input_tokens,
+                latency_ms=result.latency_ms,
+                provider_request_id=result.provider_request_id,
+                network_called=result.network_called,
+            ),
+        )
 
 
 def action_schema() -> dict[str, object]:
@@ -336,11 +375,6 @@ def action_schema() -> dict[str, object]:
 
 def build_action_prompt(request: CanonicalModelRequest) -> str:
     """Serialize only fields already present in the canonical request."""
-    return (
-        json.dumps(
-            {"context_payload": request.context_payload, "action_schema": request.action_schema},
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-    )
+    from src.backend.app.services.structured_agent_model_adapter import build_structured_prompt
+
+    return build_structured_prompt(request)

@@ -348,6 +348,50 @@ def test_gateway_rejects_before_executor_on_mismatch(tmp_path):
     assert called is False
 
 
+def test_gateway_rechecks_team_policy_before_ticket_consumption(tmp_path):
+    service = _service(tmp_path)
+    ticket = _issue(service, tmp_path)
+    called = False
+
+    class RevokedTeamPolicy:
+        def verify_ticket(self, _ticket):
+            raise SafetyError(
+                "MULTI_AGENT_CONSENT_INVALIDATED",
+                code="MULTI_AGENT_CONSENT_INVALIDATED",
+            )
+
+    def executor(**_kwargs):
+        nonlocal called
+        called = True
+        return {"status": "SUCCESS"}
+
+    with pytest.raises(SafetyError, match="MULTI_AGENT_CONSENT_INVALIDATED"):
+        ExecutionGateway(
+            service, team_policy_verifier=RevokedTeamPolicy()
+        ).dispatch(
+            execution_ticket_id=ticket.execution_ticket_id,
+            project_id=ticket.project_id,
+            reviewed_plan_id=ticket.reviewed_plan_id,
+            plan_hash=ticket.plan_hash,
+            approval_summary_hash=ticket.approval_summary_hash,
+            memory_context_hash=ticket.memory_context_hash,
+            scope_hash=ticket.scope_hash,
+            normalized_params_hash=ticket.normalized_params_hash,
+            contract_versions=ticket.contract_versions,
+            project_config_path=ticket.project_config_path,
+            pipeline_path=ticket.pipeline_path,
+            command_id="team-policy-drift",
+            run_id="run-team-policy-drift",
+            executor=executor,
+        )
+
+    assert called is False
+    assert service.store.get_execution_ticket(ticket.execution_ticket_id).status == "issued"
+    assert service.store.list_execution_ticket_events(ticket.execution_ticket_id)[-1].reason == (
+        "MULTI_AGENT_CONSENT_INVALIDATED"
+    )
+
+
 def test_gateway_rejects_changed_environment_before_ticket_consumption(tmp_path):
     config = {"matlab_command": "matlab-a", "spm_dir": str(tmp_path / "spm-a")}
     environment_service = ExecutionEnvironmentService(

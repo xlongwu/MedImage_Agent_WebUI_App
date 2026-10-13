@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.backend.app.schemas.agent_team import Sha256
+
 ExecutionTicketStatus = Literal["issued", "consumed", "revoked", "expired"]
 ExecutionTicketKind = Literal["reviewed_execution", "recovery_child"]
 
@@ -48,6 +50,7 @@ class ExecutionTicket(BaseModel):
     sandbox_policies_hash: str = "2fa91d28b8039d17bb1463c12c1d7823b8e474ae7d9c7d0109b36f17283f04bb"
     sandbox_provider: Literal["windows_restricted_process"] = "windows_restricted_process"
     memory_context_hash: str | None = None
+    team_binding_hash: Sha256 | None = None
     approved_actor: str
     approved_node_ids: tuple[str, ...]
     approved_backend_ids: tuple[str, ...]

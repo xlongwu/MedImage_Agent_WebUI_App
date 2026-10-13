@@ -165,6 +165,53 @@ class AgentHarnessConfig(BaseModel):
         )
 
 
+class AgentMultiAgentConfig(BaseModel):
+    """Installation-wide limits for the optional read-only planning team."""
+
+    enabled: bool = False
+    max_roles: Literal[3] = 3
+    max_model_calls: int = Field(default=6, ge=3, le=6)
+    max_repairs_per_role: Literal[1] = 1
+    max_input_tokens: int = Field(default=16384, ge=1, le=65536)
+    max_output_tokens_per_call: int = Field(default=1024, ge=128, le=4096)
+    max_role_deadline_seconds: int = Field(default=60, ge=1, le=120)
+    max_team_deadline_seconds: int = Field(default=180, ge=1, le=300)
+
+    @classmethod
+    def from_env(cls) -> AgentMultiAgentConfig:
+        def bounded(name: str, default: int, minimum: int, maximum: int) -> int:
+            try:
+                value = int(os.environ.get(name, str(default)))
+            except ValueError:
+                return default
+            return value if minimum <= value <= maximum else default
+
+        return cls(
+            enabled=_env_bool("MEDIMAGE_MULTI_AGENT_ENABLED"),
+            max_model_calls=bounded("MEDIMAGE_MULTI_AGENT_MAX_MODEL_CALLS", 6, 3, 6),
+            max_input_tokens=bounded("MEDIMAGE_MULTI_AGENT_MAX_INPUT_TOKENS", 16384, 1, 65536),
+            max_output_tokens_per_call=bounded(
+                "MEDIMAGE_MULTI_AGENT_MAX_OUTPUT_TOKENS_PER_CALL", 1024, 128, 4096
+            ),
+            max_role_deadline_seconds=bounded(
+                "MEDIMAGE_MULTI_AGENT_MAX_ROLE_DEADLINE_SECONDS", 60, 1, 120
+            ),
+            max_team_deadline_seconds=bounded(
+                "MEDIMAGE_MULTI_AGENT_MAX_TEAM_DEADLINE_SECONDS", 180, 1, 300
+            ),
+        )
+
+
+def multi_agent_policy_hash(config: AgentMultiAgentConfig) -> str:
+    """Bind multi-agent enablement and every installation-wide limit."""
+    from src.backend.app.schemas.agent_team import canonical_hash
+
+    return canonical_hash({
+        "policy_version": "multi-agent-policy-v1",
+        "config": config.model_dump(mode="json"),
+    })
+
+
 class AgentModelRuntimeConfig(BaseModel):
     """The one private configuration source for Agent model calls."""
 
@@ -241,6 +288,7 @@ class AppConfig(BaseModel):
     server: ServerConfig
     memory: MemoryConfig
     harness: AgentHarnessConfig = Field(default_factory=AgentHarnessConfig)
+    multi_agent: AgentMultiAgentConfig = Field(default_factory=AgentMultiAgentConfig)
     model: AgentModelPublicConfig
     project: dict[str, Any] | None = None
     project_config_path: str | None = None

@@ -20,13 +20,15 @@ class AgentOperationalAttention(BaseModel):
 class AgentOperationalSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     project_id: str
     window_started_at: datetime
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     truncated: bool = False
     task_counts: dict[str, int]
     model_call_counts: dict[str, int]
+    team_model_call_counts: dict[str, int]
+    team_status_counts: dict[str, int]
     provider_failure_counts: dict[str, int]
     scheduler_counts: dict[str, int]
     approval_counts: dict[str, int]

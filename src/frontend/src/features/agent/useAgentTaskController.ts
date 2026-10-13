@@ -41,7 +41,7 @@ export type AgentTaskController = {
   errorCode?: string | null;
   errorDetails?: Record<string, unknown>;
   harnessActivity: AgentHarnessActivityPage | null;
-  create: (goal: string) => Promise<void>;
+  create: (goal: string, teamMode?: "single" | "team") => Promise<void>;
   answer: (batchId: string, answers: { item_id: string; value: string }[]) => Promise<void>;
   registerTemplate: (
     batchId: string,
@@ -301,13 +301,13 @@ export function useAgentTaskController({
   );
 
   const create = useCallback(
-    async (goal: string) => {
+    async (goal: string, teamMode: "single" | "team" = "single") => {
       if (!projectId) return;
       await applyCommand((signal) =>
         createAgentTask(
           baseUrl,
           projectId,
-          { actor, command_id: commandId("create"), goal: goal.trim() },
+          { actor, command_id: commandId("create"), goal: goal.trim(), team_mode: teamMode },
           { signal },
         ),
       );

@@ -30,7 +30,7 @@ function task(
   state: AgentTaskResponse["state"],
 ): AgentTaskResponse {
   return {
-    schema_version: 3,
+    schema_version: 4,
     task_id: taskId,
     project_id: projectId,
     state,
@@ -102,7 +102,7 @@ describe("useAgentTaskController", () => {
     const projectBTask = task("project-b", "task-b", "waiting_for_user");
     vi.mocked(listAgentTasks).mockImplementation((_baseUrl, projectId) => {
       if (projectId === "project-a") return oldResponse.promise;
-      return Promise.resolve({ schema_version: 3, items: [projectBTask], total: 1 });
+      return Promise.resolve({ schema_version: 4, items: [projectBTask], total: 1 });
     });
 
     const { result, rerender } = renderHook(
@@ -117,7 +117,7 @@ describe("useAgentTaskController", () => {
 
     await act(async () => {
       oldResponse.resolve({
-        schema_version: 3,
+        schema_version: 4,
         items: [task("project-a", "task-a", "running")],
         total: 1,
       });
@@ -150,7 +150,7 @@ describe("useAgentTaskController", () => {
       },
     };
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 3,
+      schema_version: 4,
       items: [approvalTask],
       total: 1,
     });
@@ -186,7 +186,7 @@ describe("useAgentTaskController", () => {
   it("polls only active tasks and resumes event pagination without duplicates", async () => {
     const runningTask = task("project-a", "task-a", "running");
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 3,
+      schema_version: 4,
       items: [runningTask],
       total: 1,
     });
@@ -255,7 +255,7 @@ describe("useAgentTaskController", () => {
 
   it("does not poll while a task is waiting for a user decision", async () => {
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 3,
+      schema_version: 4,
       items: [task("project-a", "task-a", "waiting_for_user")],
       total: 1,
     });
@@ -272,7 +272,7 @@ describe("useAgentTaskController", () => {
   it("loads only the redacted Harness activity for the selected task on demand", async () => {
     const waitingTask = task("project-a", "task-a", "waiting_for_user");
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 3,
+      schema_version: 4,
       items: [waitingTask],
       total: 1,
     });
@@ -308,7 +308,7 @@ describe("useAgentTaskController", () => {
       execution_performed: true,
     };
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 3,
+      schema_version: 4,
       items: [runningTask],
       total: 1,
     });
@@ -344,7 +344,7 @@ describe("useAgentTaskController", () => {
       },
     };
     vi.mocked(listAgentTasks).mockResolvedValue({
-      schema_version: 3,
+      schema_version: 4,
       items: [recoveryTask],
       total: 1,
     });

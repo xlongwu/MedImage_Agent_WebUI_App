@@ -31,9 +31,13 @@ class AgentTaskCommandService:
         self.approval_execution_service = approval_execution_service
         self.recovery_command_service = recovery_command_service
 
-    def create(self, *, project_id: str, goal: str, command_id: str, actor: str):
+    def create(
+        self, *, project_id: str, goal: str, command_id: str, actor: str,
+        team_mode: str = "single",
+    ):
         return self.planning_service.create(
-            project_id=project_id, goal=goal, command_id=command_id, actor=actor
+            project_id=project_id, goal=goal, command_id=command_id, actor=actor,
+            team_mode=team_mode,
         )
 
     def answer(

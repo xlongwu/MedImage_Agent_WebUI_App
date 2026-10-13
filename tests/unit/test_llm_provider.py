@@ -6,14 +6,19 @@ import json
 
 import pytest
 
+from src.backend.app.core.config_schema import AgentModelRuntimeConfig
+from src.backend.app.planner.agent_model_adapter import build_canonical_model_request
 from src.backend.app.planner.llm_planner import PlannerResponse, generate_plan_from_goal
 from src.backend.app.planner.llm_provider import (
     build_planner_prompt,
-    call_openai_compatible_action_provider,
     call_openai_compatible_provider,
     parse_llm_plan_json,
 )
-from src.backend.app.core.config_schema import AgentModelRuntimeConfig
+from src.backend.app.services.structured_agent_model_adapter import (
+    OpenAICompatibleStructuredProvider,
+    StructuredAgentModelAdapter,
+    StructuredModelCallError,
+)
 
 
 def _model_config(
@@ -208,7 +213,7 @@ def test_provider_uses_configured_timeout_and_stable_transport_errors():
     assert "secret-value" not in json.dumps(failed.errors)
 
 
-def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata():
+def test_shared_structured_adapter_extracts_usage_and_provider_metadata():
     response = {
         "id": "chatcmpl-secret-looking-id",
         "model": "gpt-test-1",
@@ -223,7 +228,7 @@ def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata()
     }
 
     snapshot = {
-            "schema_version": 3, "purpose": "plan_draft", "complete": True,
+            "schema_version": 4, "purpose": "plan_draft", "complete": True,
             "required_sections": ["goal", "policy"], "included_sections": ["goal", "policy"],
             "omitted_sections": [], "evidence_refs": [], "evidence_snapshot_hash": "evidence",
             "projection_policy_version": "projection",
@@ -236,42 +241,49 @@ def test_action_provider_extracts_nullable_usage_and_redacted_request_metadata()
                 for name in ("goal", "policy")
             },
         }
-    from src.backend.app.planner.agent_model_adapter import build_canonical_model_request
-    result = call_openai_compatible_action_provider(
-        request=build_canonical_model_request(snapshot=snapshot, config=_model_config(), repair=False),
-        config=_model_config(),
-        http_post=lambda *_args: FakeResponse(response, {"x-request-id": "req_123"}),
-    )
+    request = build_canonical_model_request(snapshot=snapshot, config=_model_config(), repair=False)
+    action, metadata = StructuredAgentModelAdapter(
+        OpenAICompatibleStructuredProvider(
+            _model_config(),
+            http_post=lambda *_args: FakeResponse(response, {"x-request-id": "req_123"}),
+        )
+    ).propose_action(request=request)
 
-    assert result.ok is True
-    assert result.model == "gpt-test-1"
-    assert (result.input_tokens, result.output_tokens, result.cached_input_tokens) == (12, 5, 3)
-    assert result.provider_request_id == "req_123"
-    assert result.network_called is True
+    assert action.kind == "draft_plan"
+    assert metadata.model_id == "gpt-test-1"
+    assert (metadata.input_tokens, metadata.output_tokens, metadata.cached_input_tokens) == (12, 5, 3)
+    assert metadata.provider_request_id == "req_123"
+    assert metadata.provider_id == "openai_compatible"
+    assert metadata.response_hash is not None
+    assert metadata.network_called is True
 
 
-def test_action_provider_keeps_missing_usage_nullable_and_sanitizes_errors():
+def test_shared_structured_adapter_keeps_usage_nullable_and_sanitizes_output_errors():
     snapshot = {
-            "schema_version": 3, "purpose": "plan_draft", "complete": True,
-            "required_sections": ["goal", "policy"], "included_sections": ["goal", "policy"],
-            "omitted_sections": [], "evidence_refs": [], "evidence_snapshot_hash": "evidence",
-            "projection_policy_version": "projection", "policy_version": "p", "redaction_policy_version": "r",
-            "prompt_template_version": "t", "skill_refs": [],
-            "sections": {
-                name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {}}
-                for name in ("goal", "policy")
-            },
-        }
-    from src.backend.app.planner.agent_model_adapter import build_canonical_model_request
-    result = call_openai_compatible_action_provider(
-        request=build_canonical_model_request(snapshot=snapshot, config=_model_config(), repair=False),
-        config=_model_config(),
-        http_post=lambda *_args: FakeResponse({"choices": [{"message": {"content": "not json sk-test-key"}}]}),
+        "schema_version": 4, "purpose": "plan_draft", "complete": True,
+        "required_sections": ["goal", "policy"], "included_sections": ["goal", "policy"],
+        "omitted_sections": [], "evidence_refs": [], "evidence_snapshot_hash": "evidence",
+        "projection_policy_version": "projection", "policy_version": "p", "redaction_policy_version": "r",
+        "prompt_template_version": "t", "skill_refs": [],
+        "sections": {
+            name: {"schema_version": 1, "source_hash": name, "source_refs": [], "data": {}}
+            for name in ("goal", "policy")
+        },
+    }
+    request = build_canonical_model_request(snapshot=snapshot, config=_model_config(), repair=False)
+    adapter = StructuredAgentModelAdapter(
+        OpenAICompatibleStructuredProvider(
+            _model_config(),
+            http_post=lambda *_args: FakeResponse({"choices": [{"message": {"content": "not json sk-test-key"}}]}),
+        )
     )
+    with pytest.raises(StructuredModelCallError) as exc_info:
+        adapter.propose_action(request=request)
 
-    assert result.ok is False
-    assert result.input_tokens is None
-    assert "sk-test-key" not in " ".join(result.errors)
+    assert exc_info.value.code == "AGENT_HARNESS_MODEL_OUTPUT_INVALID"
+    assert exc_info.value.metadata.input_tokens is None
+    assert exc_info.value.metadata.network_called is True
+    assert "sk-test-key" not in str(exc_info.value)
 
 
 def test_fake_http_invalid_json_returns_error():

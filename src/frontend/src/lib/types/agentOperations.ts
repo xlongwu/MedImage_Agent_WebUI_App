@@ -6,13 +6,15 @@ export type AgentOperationalAttention = {
 };
 
 export type AgentOperationalSummary = {
-  schema_version: 1;
+  schema_version: 2;
   project_id: string;
   window_started_at: string;
   generated_at: string;
   truncated: boolean;
   task_counts: Record<string, number>;
   model_call_counts: Record<string, number>;
+  team_model_call_counts: Record<string, number>;
+  team_status_counts: Record<string, number>;
   provider_failure_counts: Record<string, number>;
   scheduler_counts: Record<string, number>;
   approval_counts: Record<string, number>;

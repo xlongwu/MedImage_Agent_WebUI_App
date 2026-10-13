@@ -425,7 +425,7 @@ export type AgentPlanEvidence = {
 };
 
 export type AgentTaskResponse = {
-  schema_version: 3;
+  schema_version: 4;
   task_id: string;
   project_id: string;
   state: AgentTaskPublicState;
@@ -445,12 +445,14 @@ export type AgentTaskResponse = {
   evidence_links: AgentTaskEvidenceLink[];
   technical_details: AgentTaskTechnicalDetails | null;
   harness_summary?: AgentHarnessSummary | null;
+  team?: AgentTaskTeamSummary | null;
+  team_fallback_code?: string | null;
   created_at: string;
   updated_at: string;
 };
 
 export type AgentTaskListResponse = {
-  schema_version: 3;
+  schema_version: 4;
   items: AgentTaskResponse[];
   total: number;
 };
@@ -477,6 +479,89 @@ export type CreateAgentTaskRequest = {
   goal: string;
   command_id: string;
   actor: string;
+  team_mode: "single" | "team";
+};
+
+export type AgentTaskTeamStatus =
+  | "READY"
+  | "RUNNING"
+  | "AGGREGATING"
+  | "COMPLETED"
+  | "NEEDS_ATTENTION"
+  | "CANCELED"
+  | "FAILED";
+
+export type AgentTaskTeamWorkItemStatus =
+  | "PENDING"
+  | "CLAIMED"
+  | "MODEL_STARTED"
+  | "VALIDATING"
+  | "RETRY_READY"
+  | "COMPLETED"
+  | "FAILED"
+  | "INDETERMINATE"
+  | "CANCELED";
+
+export type AgentTaskTeamRole = {
+  reviewer_kind: "science" | "safety" | "completeness";
+  role_id: string;
+  status: AgentTaskTeamWorkItemStatus;
+  error_code: string | null;
+};
+
+export type AgentTaskTeamSummary = {
+  schema_version: 1;
+  team_id: string;
+  team_epoch: number;
+  status: AgentTaskTeamStatus;
+  roles: AgentTaskTeamRole[];
+  required_roles: AgentTaskTeamRole["reviewer_kind"][];
+  completed_roles: AgentTaskTeamRole["reviewer_kind"][];
+  failed_roles: AgentTaskTeamRole["reviewer_kind"][];
+  blocking_finding_count: number;
+  warning_finding_count: number;
+  conflict_count: number;
+  model_call_count: number;
+  budget_used: number;
+  budget_limit: number;
+  input_tokens: number;
+  output_tokens: number;
+  latency_ms: number;
+  started_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  advisory_hash: string | null;
+  attention_code: string | null;
+};
+
+export type AgentTaskTeamFinding = {
+  finding_id: string;
+  reviewer_kind: AgentTaskTeamRole["reviewer_kind"];
+  severity: "warning" | "blocking";
+  code: string;
+  message_key: string;
+  input_refs: string[];
+};
+
+export type AgentTaskTeamFindingPage = {
+  schema_version: 1;
+  items: AgentTaskTeamFinding[];
+  next_cursor: string | null;
+};
+
+export type AgentTaskTeamEvent = {
+  event_id: string;
+  team_id: string;
+  event_type: string;
+  occurred_at: string;
+  source: "user" | "coordinator" | "scheduler" | "worker" | "system";
+  message: SystemMessage;
+};
+
+export type AgentTaskTeamEventPage = {
+  schema_version: 1;
+  items: AgentTaskTeamEvent[];
+  next_cursor: string | null;
 };
 
 export type AnswerAgentTaskRequest = {

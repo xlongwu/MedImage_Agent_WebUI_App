@@ -4,6 +4,9 @@ import type {
   AgentHarnessActivityPage,
   AgentTaskListResponse,
   AgentTaskResponse,
+  AgentTaskTeamEventPage,
+  AgentTaskTeamFindingPage,
+  AgentTaskTeamSummary,
   AnswerAgentTaskRequest,
   ApproveAgentTaskRequest,
   ApproveAgentTaskRecoveryRequest,
@@ -69,6 +72,50 @@ export function listAgentTaskEvents(
       baseUrl,
       signal: controls.signal,
     },
+  );
+}
+
+export function getAgentTaskTeam(
+  baseUrl: string,
+  projectId: string,
+  taskId: string,
+  controls: RequestControls = {},
+): Promise<AgentTaskTeamSummary> {
+  return getJson<AgentTaskTeamSummary>(`${taskPath(projectId, taskId)}/team`, {
+    baseUrl,
+    signal: controls.signal,
+  });
+}
+
+export function listAgentTaskTeamFindings(
+  baseUrl: string,
+  projectId: string,
+  taskId: string,
+  controls: EventRequestControls = {},
+): Promise<AgentTaskTeamFindingPage> {
+  const params = new URLSearchParams();
+  if (controls.after) params.set("after", controls.after);
+  if (controls.limit !== undefined) params.set("limit", String(controls.limit));
+  const query = params.toString();
+  return getJson<AgentTaskTeamFindingPage>(
+    `${taskPath(projectId, taskId)}/team/findings${query ? `?${query}` : ""}`,
+    { baseUrl, signal: controls.signal },
+  );
+}
+
+export function listAgentTaskTeamEvents(
+  baseUrl: string,
+  projectId: string,
+  taskId: string,
+  controls: EventRequestControls = {},
+): Promise<AgentTaskTeamEventPage> {
+  const params = new URLSearchParams();
+  if (controls.after) params.set("after", controls.after);
+  if (controls.limit !== undefined) params.set("limit", String(controls.limit));
+  const query = params.toString();
+  return getJson<AgentTaskTeamEventPage>(
+    `${taskPath(projectId, taskId)}/team/events${query ? `?${query}` : ""}`,
+    { baseUrl, signal: controls.signal },
   );
 }
 

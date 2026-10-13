@@ -4,19 +4,21 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from src.backend.app.core.exceptions import NotFoundError
+from src.backend.app.core.exceptions import NotFoundError, SafetyError
 from src.backend.app.planner.audit_record import stable_hash
 from src.backend.app.schemas.agent_trace import (
+    AgentTraceActionProjection,
     AgentTraceBudget,
     AgentTraceBundle,
     AgentTraceContextProjection,
     AgentTraceEntry,
+    AgentTraceEvidenceFact,
     AgentTraceLifecycleEvent,
     AgentTracePage,
     AgentTraceReference,
-    AgentTraceActionProjection,
-    AgentTraceEvidenceFact,
+    AgentTraceTeamProjection,
 )
+from src.backend.app.services.agent_team_read_model import AgentTeamReadModel
 
 
 def calculate_trace_integrity_hash(bundle: AgentTraceBundle) -> str:
@@ -46,6 +48,7 @@ class AgentTraceService:
         attempt = self._attempt(lifecycle, issues)
         entries = self._entries(attempt, project_id, lifecycle_id, issues)
         events = self._events(lifecycle, project_id, issues)
+        team = self._team_projection(lifecycle, project_id, references, issues)
         self._append_authority_references(lifecycle, project_id, references, issues)
         status = "conflict" if any(issue.endswith("_CONFLICT") for issue in issues) else (
             "incomplete" if issues else "complete"
@@ -55,6 +58,8 @@ class AgentTraceService:
             trace_id=f"agent_trace:{lifecycle_id}",
             project_id=project_id,
             lifecycle_id=lifecycle_id,
+            planning_mode=lifecycle.planning_mode,
+            team=team,
             attempt_id=getattr(attempt, "attempt_id", None),
             policy_version=getattr(context, "policy_version", None),
             prompt_template_version=getattr(context, "prompt_template_version", None),
@@ -85,12 +90,231 @@ class AgentTraceService:
             trace_id=bundle.trace_id,
             project_id=bundle.project_id,
             lifecycle_id=bundle.lifecycle_id,
+            planning_mode=bundle.planning_mode,
+            team=bundle.team,
             integrity_status=bundle.integrity_status,
             integrity_hash=bundle.integrity_hash,
             final_state=bundle.final_state,
             stop_reason=bundle.stop_reason,
             entries=entries,
             next_cursor=next_cursor if next_cursor < len(bundle.entries) else None,
+        )
+
+    def _team_projection(
+        self,
+        lifecycle,
+        project_id: str,
+        references: list[AgentTraceReference],
+        issues: list[str],
+    ) -> AgentTraceTeamProjection | None:
+        if lifecycle.planning_mode != "multi_agent" or not lifecycle.planning_team_id:
+            return None
+        team_id = lifecycle.planning_team_id
+        team = self.store.get_agent_team(project_id, team_id)
+        if team is None:
+            issues.append("TEAM_RECORD_MISSING")
+            references.append(
+                AgentTraceReference(ref_type="team", ref_id=team_id, status="missing")
+            )
+            return AgentTraceTeamProjection(
+                team_id=team_id,
+                team_epoch=lifecycle.planning_team_epoch,
+                status="missing",
+                binding_status="incomplete",
+            )
+        if (
+            team.project_id != project_id
+            or team.lifecycle_id != lifecycle.lifecycle_id
+            or team.team_id != team_id
+            or team.team_epoch != lifecycle.planning_team_epoch
+        ):
+            issues.append("TEAM_BINDING_CONFLICT")
+            references.append(
+                AgentTraceReference(
+                    ref_type="team", ref_id=team_id, status="conflict"
+                )
+            )
+            return AgentTraceTeamProjection(
+                team_id=team_id,
+                team_epoch=lifecycle.planning_team_epoch,
+                status=str(team.status),
+                binding_status="conflict",
+            )
+
+        binding_status = "valid"
+        context_pair = self.store.get_agent_team_context(project_id, team_id)
+        base = None
+        advisory = self.store.get_agent_team_advisory(project_id, team_id)
+        calls = self.store.list_agent_team_model_calls(project_id, team_id)
+        findings = self.store.list_agent_team_findings(project_id, team_id)
+        snapshot = None
+        role_contexts = {}
+        if context_pair is None:
+            binding_status = "incomplete"
+            issues.append("TEAM_CONTEXT_MISSING")
+            references.append(
+                AgentTraceReference(ref_type="team_context", ref_id=team_id, status="missing")
+            )
+        else:
+            snapshot, role_contexts = context_pair
+            base = self.store.get_agent_planning_base_context(
+                project_id, snapshot.base_context_hash
+            )
+            context_matches = (
+                snapshot.project_id == project_id
+                and snapshot.lifecycle_id == lifecycle.lifecycle_id
+                and snapshot.team_id == team_id
+                and snapshot.team_epoch == team.team_epoch
+                and snapshot.snapshot_hash == team.snapshot_hash
+                and snapshot.role_registry_hash == team.role_registry_hash
+                and snapshot.context_projector_hash == team.context_projector_hash
+                and snapshot.consent_epoch == team.consent_epoch
+                and snapshot.consent_hash == team.consent_hash
+                and base is not None
+                and base.project_id == project_id
+                and base.lifecycle_id == lifecycle.lifecycle_id
+                and base.base_context_hash == snapshot.base_context_hash
+                and set(role_contexts) == {"science", "safety", "completeness"}
+            )
+            for kind, role_context in role_contexts.items():
+                context_matches = context_matches and (
+                    role_context.project_id == project_id
+                    and role_context.lifecycle_id == lifecycle.lifecycle_id
+                    and role_context.team_id == team_id
+                    and role_context.team_epoch == team.team_epoch
+                    and role_context.base_context_hash == snapshot.base_context_hash
+                    and role_context.role_context_hash
+                    == snapshot.role_context_hashes.get(kind)
+                    and role_context.consent_epoch == team.consent_epoch
+                    and role_context.consent_hash == team.consent_hash
+                )
+            references.append(
+                AgentTraceReference(
+                    ref_type="team_context",
+                    ref_id=snapshot.snapshot_hash,
+                    content_hash=snapshot.base_context_hash,
+                    status="present" if context_matches else "conflict",
+                )
+            )
+            if not context_matches:
+                binding_status = "conflict"
+                issues.append("TEAM_CONTEXT_CONFLICT")
+
+        if advisory is not None:
+            advisory_matches = (
+                advisory.project_id == project_id
+                and advisory.lifecycle_id == lifecycle.lifecycle_id
+                and advisory.team_id == team_id
+                and advisory.team_epoch == team.team_epoch
+                and advisory.context_snapshot_hash == team.snapshot_hash
+                and advisory.context_projector_hash == team.context_projector_hash
+                and advisory.role_registry_hash == team.role_registry_hash
+                and advisory.aggregation_policy_hash == team.aggregation_policy_hash
+                and advisory.model_profile_hash == team.model_profile_hash
+                and advisory.consent_epoch == team.consent_epoch
+                and advisory.consent_hash == team.consent_hash
+                and advisory.advisory_id == team.advisory_id
+            )
+            references.append(
+                AgentTraceReference(
+                    ref_type="team_advisory",
+                    ref_id=advisory.advisory_id,
+                    content_hash=advisory.advisory_hash,
+                    status="present" if advisory_matches else "conflict",
+                )
+            )
+            if not advisory_matches:
+                binding_status = "conflict"
+                issues.append("TEAM_ADVISORY_CONFLICT")
+        elif team.status == "COMPLETED":
+            binding_status = "incomplete"
+            issues.append("TEAM_ADVISORY_MISSING")
+
+        call_by_id = {call.model_call_id: call for call in calls}
+        for call in calls:
+            role_context = role_contexts.get(call.reviewer_kind)
+            call_matches = (
+                call.project_id == project_id
+                and call.lifecycle_id == lifecycle.lifecycle_id
+                and call.team_id == team_id
+                and call.team_epoch == team.team_epoch
+                and call.role_registry_hash == team.role_registry_hash
+                and call.model_profile_hash == team.model_profile_hash
+                and call.consent_epoch == team.consent_epoch
+                and call.consent_hash == team.consent_hash
+                and role_context is not None
+                and call.role_context_hash == role_context.role_context_hash
+            )
+            references.append(
+                AgentTraceReference(
+                    ref_type="team_model_call",
+                    ref_id=call.model_call_id,
+                    content_hash=call.request_hash,
+                    status="present" if call_matches else "conflict",
+                )
+            )
+            if not call_matches:
+                binding_status = "conflict"
+                issues.append("TEAM_MODEL_CALL_CONFLICT")
+        for finding in findings:
+            call = call_by_id.get(finding.model_call_id)
+            finding_matches = (
+                finding.project_id == project_id
+                and finding.lifecycle_id == lifecycle.lifecycle_id
+                and finding.team_id == team_id
+                and finding.team_epoch == team.team_epoch
+                and call is not None
+                and call.status == "completed"
+                and finding.model_response_hash == call.response_hash
+                and finding.role_context_hash == call.role_context_hash
+                and finding.work_item_id == call.work_item_id
+            )
+            references.append(
+                AgentTraceReference(
+                    ref_type="team_finding",
+                    ref_id=finding.finding_id,
+                    content_hash=finding.finding_hash,
+                    status="present" if finding_matches else "conflict",
+                )
+            )
+            if not finding_matches:
+                binding_status = "conflict"
+                issues.append("TEAM_FINDING_CONFLICT")
+        try:
+            summary = AgentTeamReadModel(self.store).summary_for_lifecycle(lifecycle)
+        except SafetyError:
+            summary = None
+            binding_status = "conflict"
+            issues.append("TEAM_BINDING_CONFLICT")
+        if summary is None:
+            binding_status = "conflict"
+            issues.append("TEAM_BINDING_CONFLICT")
+
+        references.append(
+            AgentTraceReference(
+                ref_type="team",
+                ref_id=team_id,
+                content_hash=team.snapshot_hash,
+                status="conflict" if binding_status == "conflict" else "present",
+            )
+        )
+        return AgentTraceTeamProjection(
+            team_id=team_id,
+            team_epoch=team.team_epoch,
+            status=team.status,
+            binding_status=binding_status,
+            snapshot_hash=team.snapshot_hash,
+            base_context_hash=snapshot.base_context_hash if snapshot is not None else None,
+            role_registry_hash=team.role_registry_hash,
+            context_projector_hash=team.context_projector_hash,
+            aggregation_policy_hash=team.aggregation_policy_hash,
+            model_profile_hash=team.model_profile_hash,
+            global_policy_hash=team.global_policy_hash,
+            consent_epoch=team.consent_epoch,
+            consent_hash=team.consent_hash,
+            advisory_hash=advisory.advisory_hash if advisory is not None else None,
+            model_call_count=sum(call.network_called for call in calls),
+            finding_count=len(findings),
         )
 
     def _attempt(self, lifecycle, issues: list[str]):
@@ -159,7 +383,6 @@ class AgentTraceService:
 
     def _evidence_content(self, references):
         """Only known typed facts from the actual consumed Context projection."""
-        from src.backend.app.services.agent_plan_evidence_service import safe_record_identifier
         numeric_keys = {"subject_count", "bold_sidecar_count", "registered_atlas_count", "unfinished_run_count",
                         "dataset_subject_count", "registered_input_count", "reviewed_plan_count", "run_count",
                         "observation_count", "goal_evaluation_count", "memory_suggestion_count"}

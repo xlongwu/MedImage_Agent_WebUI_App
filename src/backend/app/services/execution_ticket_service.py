@@ -67,6 +67,7 @@ _IMMUTABLE_FIELDS = (
     "sandbox_policies_hash",
     "sandbox_provider",
     "memory_context_hash",
+    "team_binding_hash",
     "approved_actor",
     "approved_node_ids",
     "approved_backend_ids",
@@ -122,7 +123,12 @@ def _expected_recovery_output_roots(
 
 
 def _canonical_ticket_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return {field: payload[field] for field in _IMMUTABLE_FIELDS}
+    identity = {field: payload[field] for field in _IMMUTABLE_FIELDS}
+    # Keep existing single-Agent ticket hashes stable when the optional field
+    # is absent or null.
+    if identity.get("team_binding_hash") is None:
+        identity.pop("team_binding_hash")
+    return identity
 
 
 def calculate_ticket_hash(ticket: ExecutionTicket | dict[str, Any]) -> str:
@@ -242,6 +248,7 @@ class ExecutionTicketService:
         audit_id: str,
         goal_contract_hash: str,
         evaluation_policy_version: str,
+        team_binding_hash: str | None = None,
         max_retry_count: int = 0,
         max_lifecycle_recovery_attempts: int | None = None,
         max_node_attempts: int | None = None,
@@ -262,6 +269,27 @@ class ExecutionTicketService:
             raise SafetyError(
                 "EXECUTION_TICKET_BINDING_REQUIRED",
                 code="EXECUTION_TICKET_BINDING_REQUIRED",
+            )
+        get_reviewed_plan = getattr(self.store, "get_reviewed_plan", None)
+        if callable(get_reviewed_plan):
+            reviewed_plan = get_reviewed_plan(reviewed_plan_id)
+            if reviewed_plan is not None:
+                from src.backend.app.services.team_ticket_policy_verifier import (
+                    TeamTicketPolicyVerifier,
+                )
+
+                current_team_binding = TeamTicketPolicyVerifier(
+                    self.store
+                ).verify_reviewed_plan(reviewed_plan)
+                if current_team_binding != team_binding_hash:
+                    raise SafetyError(
+                        "TEAM_TICKET_BINDING_MISMATCH",
+                        code="TEAM_TICKET_BINDING_MISMATCH",
+                    )
+        elif team_binding_hash is not None:
+            raise SafetyError(
+                "TEAM_TICKET_PLANNING_IDENTITY_INVALID",
+                code="TEAM_TICKET_PLANNING_IDENTITY_INVALID",
             )
         from src.backend.app.schemas.sandbox import SandboxPolicySet
         from src.backend.app.services.sandbox_policy_service import SandboxPolicyService, empty_policy_set
@@ -290,6 +318,7 @@ class ExecutionTicketService:
             "sandbox_policies_hash": policy_set.policies_hash,
             "sandbox_provider": "windows_restricted_process",
             "memory_context_hash": memory_context_hash,
+            "team_binding_hash": team_binding_hash,
             "approved_actor": approved_actor,
             "approved_node_ids": tuple(sorted(set(approved_node_ids))),
             "approved_backend_ids": tuple(sorted(set(approved_backend_ids))),
@@ -559,6 +588,7 @@ class ExecutionTicketService:
             "sandbox_policies_hash": parent.sandbox_policies_hash,
             "sandbox_provider": parent.sandbox_provider,
             "memory_context_hash": parent.memory_context_hash,
+            "team_binding_hash": parent.team_binding_hash,
             "approved_actor": approval.approved_actor,
             "approved_node_ids": tuple(sorted(candidate.target_node_ids)),
             "approved_backend_ids": parent.approved_backend_ids,

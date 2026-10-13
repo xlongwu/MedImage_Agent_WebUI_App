@@ -16,6 +16,7 @@ import { TaskResultPanel } from "./components/TaskResultPanel";
 import { TaskRecoveryPanel } from "./components/TaskRecoveryPanel";
 import { TaskDetails } from "./components/TaskDetails";
 import { ExecutionGraphTaskSummary } from "./components/ExecutionGraphTaskSummary";
+import { AgentTeamActivityCard } from "./components/AgentTeamActivityCard";
 import type { AgentTaskController } from "./useAgentTaskController";
 
 type LocalizedAgentError = {
@@ -401,6 +402,21 @@ export function AgentWorkspaceView({
               title={t("agent.resultUnavailable")}
               description={t("agent.resultUnavailableDescription")}
             />
+          ) : null}
+          {task.team ? (
+            <AgentTeamActivityCard
+              baseUrl={controller.baseUrl ?? ""}
+              mutating={controller.mutating}
+              onContinueSingle={() => controller.create(task.goal_summary, "single")}
+              projectId={controller.projectId ?? ""}
+              summary={task.team}
+              taskId={task.task_id}
+            />
+          ) : null}
+          {task.team_fallback_code ? (
+            <Card className={styles.teamActivity} role="status">
+              <p>{t("agent.team.fallback", { code: task.team_fallback_code })}</p>
+            </Card>
           ) : null}
           <TaskDetails
             advancedMode={advancedMode}

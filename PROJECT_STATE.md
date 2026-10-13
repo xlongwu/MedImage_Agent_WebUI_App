@@ -1,6 +1,6 @@
 # Project State
 
-Current as of 2026-10-04 (Asia/Shanghai).
+Current as of 2026-10-13 (Asia/Shanghai).
 
 ## Version and source status
 
@@ -39,22 +39,25 @@ The local Windows focused regression suite passed: 105 passed, 1 warning, exit 0
 
 The only retained Electron output is the unpacked application at `desktop/electron/dist/win-unpacked/`. Keep its executable together with its resources and Electron runtime files.
 
-- The last recorded package provenance is 2026-10-04 02:54 UTC, application version 0.6.0-rc1, source HEAD `c79dcaacb773ad29757a8a82f2e938dfbc161fbd`, and `clean=false`.
-- That package predates the current backend runtime self-test change. Its previous packaged smoke evidence is stale for this source state. This task did not rebuild the package, produce an installer/portable package, or verify a new packaged launch.
-- No installer or portable executable is retained. The package is diagnostic, not a release candidate.
+- On 2026-10-07, a clean isolated build from source SHA `b03e40e06af1992aa04e0ed7772d9ebf168af126` rebuilt the Windows `win-unpacked` application (0.6.0-rc1). The exact artifact hashes are in `desktop/packaging/dist/release_metadata/release-artifacts.json`; the packaged provenance has `clean=true`.
+- The full Python suite passed (3225 passed, 23 skipped); the packaging-focused suite passed (152 passed); the frontend typecheck/build and desktop package check passed. The packaged backend runtime probe reported CuPy/GPU and native DICOM conversion available. PyInstaller also warned that optional `cuTENSOR.dll` and `cudnn64_8.dll` were not resolved; GPU availability does not replace stage-specific scientific validation.
+- Visible BIDS/FC and recovery GUI smoke evidence is under `desktop/packaging/dist/smoke_evidence/canonical-bids/` and `canonical-recovery/`. Both automated smoke checks passed and verified unchanged synthetic rawdata, but both lifecycles ended `partial`/`needs_attention`; they do not establish full bilingual readability. DICOM GUI, Chinese-locale GUI, and the single P-03 release walkthrough remain unverified.
+- The clean exact-SHA package is a diagnostic GUI candidate, not a formally accepted release candidate. A separate capability-review gate is not required for code work; a single bilingual readability walkthrough remains for release candidate P-03, and explicit authorization is required before publication. These packaging smokes do not establish scientific validation. This build produced only the unpacked directory; no installer or portable executable was built.
 - The previously recorded extraction directory `desktop/packaging/build/production-launch/workspace/_MEI242642` was inaccessible to cleanup after no owning process was found. This task did not retry removal, change ACLs, take ownership, or delete its parent.
-- A clean exact-SHA candidate and current release evidence are still required. Build, sidecar health, packaged launch, renderer smoke, visible GUI workflows, and scientific execution are separate evidence levels.
+
+## Completed human review
+
+- D-03 was accepted by the maintainer on 2026-10-07 after reviewing the SDK layout/constants, fail-closed launch order, and three host-versus-sandbox network probes. The decision covers source/provider evidence only. Evidence and the local-SDK/header-revision limitation are recorded in [Stage 16 §0.6](specs/阶段记录/阶段十六/借鉴Muse设计架构进行优化改进.md), with hashes in the linked artifact manifests; this does not establish packaged, GUI, scientific, or other-OS validation.
+- On 2026-10-07, the maintainer confirmed review coverage of D-01 through D-10 under the then-current checklist. This historical record grants no new authorization or acceptance; the 2026-10-13 active boundaries are in the [manual review checklist](specs/待人工审核校验清单.md).
 
 ## Open work and limitations
 
-1. Complete the human interpretation and SDK review of Windows AppContainer network hardening (D-03).
-2. Complete the scoped capability review required before opening the v0.7.0-rc1 release line (D-09).
-3. After applicable approval, build a clean exact-SHA candidate and capture current provenance, sidecar, packaged-launch, and visible-workflow evidence.
-4. Run the packaged restart workflow against that approved candidate; P-01/P-04 have not been closed for the existing diagnostic package.
-5. Visible Electron GUI workflows, independent scientific references, real-data visible-UI validation, and other human-owned evidence remain open where listed in the capability matrix and manual checklist.
-6. The old PyInstaller extraction directory above needs an environment-owner cleanup decision. Do not modify ACLs or ownership to force removal.
+1. **Next implementation:** complete the remaining Phase 14 G5.3 invariant/Trace validation and focused G6 failure/security checks. Default-off Team storage, fixed-role worker, durable Coordinator/Scheduler, deterministic aggregation, single-planner handoff, approval/ticket/Gateway binding, Team task read/API/UI, and Team Trace/Replay/Operations projections are integrated in source. Focused checks passed for the Team read model (19 tests), the current trace/operations/read-model set (29 tests, 1 long truncation case deselected), frontend TypeScript, and four affected frontend test files (39 tests). Real G0 data/provider evaluation remains unrun and is still required before real provider evaluation or project enablement; G0 does not block offline code work. See [07_逐文件实施台账.md](specs/阶段记录/阶段十四/生产多Agent架构/07_逐文件实施台账.md).
+2. If preparing a release, capture exact-SHA build/package evidence for P-01 and run the packaged restart workflow for P-04 against that candidate.
+3. Before accepting a public release candidate, complete the single bilingual, multi-state readability walkthrough for P-03; obtain explicit authorization before tag/publication (P-05).
+4. Independent scientific references and other real-data validation remain separate from code implementation, as listed in the capability matrix and manual checklist.
 
-Production multi-Agent execution is not implemented. Phase 14 was deferred before its G0 gate and is not queued work. Resume requires its recorded data, authorization, and implementation prerequisites to be met first.
+Production multi-Agent planning review is integrated in source and remains default-off. Explicit Team requests use three read-only reviewer roles and return to the existing planner; the Team cannot approve or execute. Task summary, findings, events, frontend activity, fallback reporting, and Team Trace/Replay/Operations projections are integrated. Broader invariant and G6 fault/security coverage, G7 packaged/gray rollout, and real G0 evaluation remain outstanding. Real provider evaluation and project enablement remain deferred until Phase 14 data, privacy, and provider conditions are met.
 
 ## References
 
@@ -65,4 +68,4 @@ Production multi-Agent execution is not implemented. Phase 14 was deferred befor
 - Agent lifecycle: docs/安全与审批/真实项目运行生命周期.md
 - Desktop packaging: docs/桌面与前端/桌面应用打包.md
 - Human review and release gates: specs/待人工审核校验清单.md
-- Current task evidence and continuation: TASK_HANDOFF.md
+- Historical CI repair handoff: TASK_HANDOFF.md

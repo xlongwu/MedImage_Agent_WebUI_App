@@ -1,4 +1,4 @@
-"""Build immutable, purpose-scoped, redacted Context v3 snapshots for Harness."""
+"""Build immutable Base v1 and purpose-scoped Harness Context v4 snapshots."""
 
 from __future__ import annotations
 
@@ -14,7 +14,12 @@ from src.backend.app.schemas.agent_harness import (
     AgentHarnessContext,
     AgentHarnessContextSection,
     AgentHarnessContextSections,
+    AgentHarnessContextV3Projection,
+    AgentPlanningBaseContext,
+    agent_harness_context_v4_hash,
+    agent_planning_base_context_hash,
 )
+from src.backend.app.schemas.agent_team import AgentTeamAdvisory, canonical_hash
 
 
 class AgentContextIncompleteError(ValueError):
@@ -60,7 +65,7 @@ class AgentContextProjectionPolicy:
 
 @dataclass(frozen=True)
 class HarnessContextSources:
-    """Explicit, already-read inputs to the sole Context v3 builder."""
+    """Explicit, already-read inputs to the sole Base/Context builder."""
 
     lifecycle: object
     project: object | None
@@ -74,6 +79,8 @@ class HarnessContextSources:
     last_step: object | None = None
     attempt: object | None = None
     purpose: AgentContextPurpose | None = None
+    planning_epoch: int = 0
+    team_advisory: AgentTeamAdvisory | None = None
     prompt_template_version: str = "agent-harness-prompt-v3"
     skill_refs: tuple[SkillContextRef, ...] = ()
     skill_error_codes: tuple[str, ...] = ()
@@ -132,6 +139,105 @@ class HarnessContextBuilder:
         return "plan_draft"
 
     def build(self, *, sources: HarnessContextSources) -> AgentHarnessContext:
+        return self.build_with_base(sources=sources)[1]
+
+    def build_with_base(
+        self, *, sources: HarnessContextSources
+    ) -> tuple[AgentPlanningBaseContext, AgentHarnessContext]:
+        projection = self._build_projection(sources=sources)
+        section_hashes = {
+            name: canonical_hash(getattr(projection.sections, name))
+            for name in AgentHarnessContextSections.model_fields
+        }
+        base_payload = {
+            "schema_version": 1,
+            "planning_epoch": sources.planning_epoch,
+            "lifecycle_id": projection.lifecycle_id,
+            "project_id": projection.project_id,
+            "sections": projection.sections.model_dump(mode="json"),
+            "section_hashes": section_hashes,
+            "evidence_refs": projection.evidence_refs,
+            "evidence_snapshot_hash": projection.evidence_snapshot_hash,
+            "projection_policy_version": projection.projection_policy_version,
+            "complete": projection.complete,
+            "incomplete_reason": projection.incomplete_reason,
+            "project_snapshot_hash": projection.project_snapshot_hash,
+            "policy_version": projection.policy_version,
+            "redaction_policy_version": projection.redaction_policy_version,
+        }
+        base = AgentPlanningBaseContext(
+            base_context_hash=agent_planning_base_context_hash(base_payload),
+            **{key: value for key, value in base_payload.items() if key != "schema_version"},
+        )
+
+        lifecycle = sources.lifecycle
+        planning_mode = getattr(lifecycle, "planning_mode", "single_agent")
+        advisory = sources.team_advisory
+        team_id = None
+        team_epoch = None
+        included_sections = list(projection.included_sections)
+        final_section_hashes = {
+            name: canonical_hash(getattr(projection.sections, name))
+            for name in projection.included_sections
+        }
+        if planning_mode == "single_agent":
+            if advisory is not None:
+                raise AgentContextIncompleteError("AGENT_CONTEXT_TEAM_BINDING_INVALID")
+        else:
+            if advisory is None or advisory.decision != "accepted":
+                raise AgentContextIncompleteError("AGENT_CONTEXT_TEAM_ADVISORY_REQUIRED")
+            if (
+                advisory.project_id != projection.project_id
+                or advisory.lifecycle_id != projection.lifecycle_id
+                or advisory.base_context_hash != base.base_context_hash
+                or advisory.team_id != getattr(lifecycle, "planning_team_id", None)
+                or advisory.team_epoch != getattr(lifecycle, "planning_team_epoch", None)
+            ):
+                raise AgentContextIncompleteError("AGENT_CONTEXT_TEAM_BINDING_INVALID")
+            team_id = advisory.team_id
+            team_epoch = advisory.team_epoch
+            included_sections.append("team_advisory")
+            final_section_hashes["team_advisory"] = advisory.advisory_hash
+
+        context_payload = {
+            "schema_version": 4,
+            "base_context_hash": base.base_context_hash,
+            "planning_epoch": base.planning_epoch,
+            "lifecycle_id": base.lifecycle_id,
+            "project_id": base.project_id,
+            "purpose": projection.purpose,
+            "planning_mode": planning_mode,
+            "team_id": team_id,
+            "team_epoch": team_epoch,
+            "team_advisory": advisory,
+            "sections": projection.sections.model_dump(mode="json"),
+            "section_hashes": final_section_hashes,
+            "required_sections": projection.required_sections,
+            "included_sections": tuple(included_sections),
+            "omitted_sections": projection.omitted_sections,
+            "evidence_refs": projection.evidence_refs,
+            "evidence_snapshot_hash": projection.evidence_snapshot_hash,
+            "projection_policy_version": projection.projection_policy_version,
+            "complete": projection.complete,
+            "incomplete_reason": projection.incomplete_reason,
+            "memory_context_hash": projection.memory_context_hash,
+            "project_snapshot_hash": projection.project_snapshot_hash,
+            "policy_version": projection.policy_version,
+            "redaction_policy_version": projection.redaction_policy_version,
+            "prompt_template_version": projection.prompt_template_version,
+            "skill_refs": projection.skill_refs,
+            "skill_error_codes": projection.skill_error_codes,
+            "created_at": projection.created_at,
+        }
+        context = AgentHarnessContext(
+            context_hash=agent_harness_context_v4_hash(context_payload),
+            **{key: value for key, value in context_payload.items() if key != "schema_version"},
+        )
+        return base, context
+
+    def _build_projection(
+        self, *, sources: HarnessContextSources
+    ) -> AgentHarnessContextV3Projection:
         lifecycle = sources.lifecycle
         purpose = sources.purpose or self.purpose_for(lifecycle)
         metadata = getattr(sources.project, "metadata", {}) if sources.project is not None else {}
@@ -186,7 +292,7 @@ class HarnessContextBuilder:
             "skill_refs": [reference.model_dump(mode="json") for reference in sorted(set(sources.skill_refs), key=lambda item: item.skill_id)],
             "skill_error_codes": sorted(set(sources.skill_error_codes)),
         })
-        return AgentHarnessContext(
+        return AgentHarnessContextV3Projection(
             context_hash=context_hash, lifecycle_id=getattr(lifecycle, "lifecycle_id"),
             project_id=getattr(lifecycle, "project_id"), purpose=purpose, sections=sections,
             section_hashes=section_hashes, required_sections=required, included_sections=included,
