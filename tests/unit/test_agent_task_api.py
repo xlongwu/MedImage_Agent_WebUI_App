@@ -128,6 +128,7 @@ def test_agent_task_create_command_is_project_scoped_and_returns_projection(monk
         "goal": "Compute FC",
         "command_id": "create-api-1",
         "actor": "local-user",
+        "team_mode": "single",
     }
 
 

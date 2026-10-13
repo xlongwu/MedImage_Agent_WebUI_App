@@ -73,6 +73,9 @@ export function AgentDefaultsPanel({ baseUrl, projectId }: { baseUrl: string; pr
         default_template: resourcePayload(template),
         cpu_policy: settings.cpu_policy,
         compute_policy: settings.compute_policy,
+        multi_agent_consent_enabled: settings.multi_agent_consent.enabled,
+        multi_agent_max_model_calls: settings.multi_agent_consent.max_model_calls,
+        multi_agent_max_input_tokens: settings.multi_agent_consent.max_input_tokens,
       };
       const next = await updateProjectAgentSettings(baseUrl, projectId, payload);
       setSettings(next);
@@ -161,6 +164,63 @@ export function AgentDefaultsPanel({ baseUrl, projectId }: { baseUrl: string; pr
         </select>
       </label>
       <p>{t("settings.agentDefaults.approvalNote")}</p>
+      <fieldset>
+        <legend>{t("settings.agentDefaults.multiAgentConsent")}</legend>
+        <label>
+          <input
+            type="checkbox"
+            checked={settings.multi_agent_consent.enabled}
+            onChange={(event) =>
+              setSettings({
+                ...settings,
+                multi_agent_consent: {
+                  ...settings.multi_agent_consent,
+                  enabled: event.target.checked,
+                },
+              })
+            }
+          />
+          {t("settings.agentDefaults.multiAgentConsentEnabled")}
+        </label>
+        <p>{t("settings.agentDefaults.multiAgentConsentData")}</p>
+        <label>
+          {t("settings.agentDefaults.multiAgentMaxCalls")}
+          <input
+            type="number"
+            min={3}
+            max={6}
+            value={settings.multi_agent_consent.max_model_calls}
+            onChange={(event) =>
+              setSettings({
+                ...settings,
+                multi_agent_consent: {
+                  ...settings.multi_agent_consent,
+                  max_model_calls: Number(event.target.value),
+                },
+              })
+            }
+          />
+        </label>
+        <label>
+          {t("settings.agentDefaults.multiAgentMaxInputTokens")}
+          <input
+            type="number"
+            min={1}
+            max={65536}
+            value={settings.multi_agent_consent.max_input_tokens}
+            onChange={(event) =>
+              setSettings({
+                ...settings,
+                multi_agent_consent: {
+                  ...settings.multi_agent_consent,
+                  max_input_tokens: Number(event.target.value),
+                },
+              })
+            }
+          />
+        </label>
+        <p>{t("settings.agentDefaults.multiAgentConsentGateNote")}</p>
+      </fieldset>
       <Button disabled={saving} onClick={() => void save()}>
         {saving ? t("common.loading") : t("settings.desktop.save")}
       </Button>
