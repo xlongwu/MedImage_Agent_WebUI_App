@@ -47,7 +47,7 @@ The only retained Electron output is the unpacked application at `desktop/electr
 
 ## Completed human review
 
-- D-03 was accepted by the maintainer on 2026-10-07 after reviewing the SDK layout/constants, fail-closed launch order, and three host-versus-sandbox network probes. The decision covers source/provider evidence only. Evidence and the local-SDK/header-revision limitation are recorded in [Stage 16 §0.6](specs/阶段记录/阶段十六/借鉴Muse设计架构进行优化改进.md), with hashes in the linked artifact manifests; this does not establish packaged, GUI, scientific, or other-OS validation.
+- D-03 was accepted by the maintainer on 2026-10-07 after reviewing the SDK layout/constants, fail-closed launch order, and three host-versus-sandbox network probes. The decision covers source/provider evidence only. Evidence and the local-SDK/header-revision limitation are recorded in [Stage 16 §0.6](specs/阶段记录/已完成实施方案/阶段十六/借鉴Muse设计架构进行优化改进.md), with hashes in the linked artifact manifests; this does not establish packaged, GUI, scientific, or other-OS validation.
 - On 2026-10-07, the maintainer confirmed review coverage of D-01 through D-10 under the then-current checklist. This historical record grants no new authorization or acceptance; the 2026-10-13 active boundaries are in the [manual review checklist](specs/待人工审核校验清单.md).
 
 ## Open work and limitations

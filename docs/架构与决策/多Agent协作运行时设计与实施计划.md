@@ -20,7 +20,7 @@
 >
 > 最新状态（2026-10-13）：阶段十四设计已批准，离线默认关闭实现已开放；真实 G0 仍受六项外部评测条件约束，
 > 见其 `00_阶段规格与实施总览.md` §11.1/§11.3。本文件仍只是调研背景：既没有生产多 Agent，也没有可运行的真实 G0 评估。多 Agent 角色集合的唯一权威是阶段十四 `02`
-> （science/safety/completeness 三个只读 reviewer）；`specs/阶段记录/阶段十六/` §12 的
+> （science/safety/completeness 三个只读 reviewer）；`specs/阶段记录/已完成实施方案/阶段十六/` §12 的
 > 两 reviewer 口径已被其取代。
 >
 > 已被阶段十四替换的旧候选选择包括：`goal_scope/project_evidence/safety_science` 角色命名、

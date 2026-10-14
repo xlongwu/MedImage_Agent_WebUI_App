@@ -37,6 +37,10 @@
 
 [阶段5上下文与请求预算](Harness优化/05_上下文完整性与请求预算.md)的源码/自动化范围已通过审核并单份归档；2026-10-04 按 `test_goal_projection_preserves_tail_constraints_and_reviewed_contract`、`test_complete_request_budget_includes_output_reservation`、`test_oversized_complete_request_stops_before_provider_call` 与 `test_strict_token_caps_without_trusted_provider_profile_stop_before_provider` 的正式回归，将 A-05 技术事项从人工清单移除。此结论不外推到 packaged/联网/独立科学；原审核报告/manifest/证据保持冻结，Harness其余范围和D-03人工责任未关闭，不整体归档。
 
+## 2026-10-14 阶段十六 Muse 方案归档
+
+[阶段十六方案](阶段十六/借鉴Muse设计架构进行优化改进.md)的唯一获批 §17 实施与 D-03 人工判读已闭环，按原方案 §0.4-D4 整体归档。本次核对当前 AppContainer/token/Job、实现指纹、审批/Ticket 与持久消费者链；没有重启正文历史 Phase 1～8。当前行为以源码、测试与 `PROJECT_STATE.md` 为准；packaged/GUI/独立科学验证仍按当前人工清单独立承接。
+
 ## 未归档范围
 
 - Harness优化：已通过正文已清理，阶段5记录归档；同证据模型重复提问、跨批续扫、冲突/forget实际消费者、03/04文书仍按[修复计划](../审核计划/审核问题修复实施计划.md)执行。三臂联网保持未授权；人工责任只在原清单。H05不重开，旧阶段6报告manifest不同不作同冻结数据因果比较。
@@ -46,7 +50,6 @@
   不再是当前待办与实现授权来源，整目录移入会使 G0 门槛失去权威位置。延期不等于多 Agent 被实证否决，
   也不构成任何能力升级；重启条件见 `../阶段十四/生产多Agent架构/00_阶段规格与实施总览.md` §11.3，
   待人工事项见 `specs/待人工审核校验清单.md`（L-01…L-04、D-01、A-14、A-15）。
-- 阶段十六：唯一获批 §17 已按本轮用户批准的 AppContainer 机制落地并通过 provider/消费者阶段回归，最终验证见当前方案 §0.6。D-03 的 SDK 人工核对与实测判读待确认，在闭环前保留活跃路径；其余动作扩展、读工具与策略抽象仍跳过，多 Agent 仍延期。源码回归不外推到 packaged/GUI/科学能力。
 
 ## 归档规则
 

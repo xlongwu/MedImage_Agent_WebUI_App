@@ -9,6 +9,12 @@
 
 ---
 
+> **归档结论（2026-10-14，Asia/Shanghai）**：本方案当前获批实施范围已完成。§17 的 AppContainer 网络隔离、真实 token 检查、Job 绑定、实现内容指纹及审批/Ticket/持久状态/API/前端消费者已存在；D-03 的 2026-10-07 人工结论保留于 §0.6。本次核实未发现新增代码待办，按 §0.4-D4 与 `specs/索引.md` 生命周期规则归档。
+> §1～§29 的原始目标、优先级、Phase 1～8 和 2026-10-02 多 Agent 延期描述均为历史记录，不构成新实施授权；阶段十四当前默认关闭的离线实现及未完成项以其活跃方案与 `PROJECT_STATE.md` 为准。
+> **证据边界**：归档仅覆盖源码/provider 与自动化合同；packaged、双语 GUI、独立科学参考与其他 OS 未由本次工作验证。发布候选与 GUI 责任按当前人工清单 P-01/P-03/P-04 承接，不再沿用历史 A-13 作为独立待办。
+
+> **本次复核**：后端 provider/请求/策略/环境/Ticket/持久状态/Harness 67 项通过，API 与 Ticket 查询 5 项通过（宿主环境），前端沙箱面板 4 项通过。受限环境 API socketpair 阻塞与 Vitest 临时目录 rename 拒绝均属工具环境问题；前者在宿主重跑、后者改用任务临时目录后通过。原生 IPv4 回环、IPv6 回环、本机非回环网络对照 3 项通过（`tests/integration/test_windows_process_sandbox.py -k network`，宿主环境）；本次没有构建或运行 packaged/GUI/科学验证。
+
 # 0. 实施裁定（2026-10-02，权威）
 
 本节是本文件唯一的实施范围权威。下方 §1～§29 保留为**设计推理与目标形态记录**，其中的现状描述若与本节冲突，以本节及其 `file:line` 证据为准。本节由 2026-10-02 的逐节源码复核和维护者对 §0.4 四项决策的批准产生；未获批准的条目不构成待办、实现授权或当前行为描述。
@@ -38,7 +44,7 @@
 | §14 优化十一 | 统一 Human Attention Policy | **未实现-建议跳过**（与阶段十五已批准决策冲突） | 阶段十五 `00` §D1/Phase B **明确批准**把 attention 协调器保持为“仅浏览器内的 action-key/dismissal hook”，理由是不落库、不改审批哈希；当前实现即 `src/frontend/src/features/agent/attentionAction.ts:3-6`（`decision｜approval｜recovery`，注释第 18-19 行）。§14.1 的 `EXPORT_APPROVAL`/`SECURITY_WARNING` **没有生产者**（导出动作不存在；`EXECUTION_ENVIRONMENT_CHANGED` 只是错误码，见 `services/execution_environment_service.py:102,159`）。`schemas/agent_attention.py`、`services/agent_attention_service.py` 0 命中。 |
 | §15 优化十二 | Memory Taxonomy | **部分实现**，且 §15.1 **实质已实现** | §15.1 九个字段全部有对应实现，只是命名不同：`memory_type`→`schemas/memory.py:77` `kind`、`scope`→`:76` `scope_type: Literal["project"]`、`source_ref`→`:82` `source: MemorySource`、`confidence`→`:88`、`sensitivity`→`:89`、`requires_confirmation`→`:91` `requires_review` + `MemoryRevision:113` `confirmation_status`/`:118` `confirmation_event_id`，`MemoryItem` 另有 `:137-138` `valid_from`/`valid_until`。§15 提议的 6 个类型名与现存 `:10-16` 六类（`user_preference`/`project_decision`/`environment_fact`/`workflow_lesson`/`error_lesson`/`presentation_preference`）**语义重叠但不得并列为第二套分类**（`AGENTS.md` §3.6：独立 memory SQLite 是唯一长期记忆权威）。 |
 | §16 优化十三 | Medical Data Taint Policy | **部分实现**；§16.3 部分**未实现-随 §0.4-D2 跳过** | 记忆侧外发门**已实现**：`schemas/memory.py:19` `MemorySensitivity = public｜project_internal｜restricted｜rejected`，`services/memory_repository.py:575,606,641` 在检索/投影处以 SQL + 读时二次校验阻止 `restricted`/`rejected` 离开仓库。模型侧的同等控制是**字段白名单**而非 taint 标签：`agent_harness_context_service.py:105-112` 逐节允许字段、`agent_evidence.py` 全文无 `data_class`。§16.3 的 `data_class` 只在**新增读工具**上才有挂载点，因此其剩余量完全依赖被跳过的 §5。 |
-| §17 优化十四 | Windows Sandbox 网络隔离 | **已实现（①源码、② provider 自动化实测；最终回归见 §0.6）** | `WindowsProcessSandbox.run()` 以 suspended 创建无 capability AppContainer 子进程，经 `_verify_network_token()` 和 Job 绑定后恢复；`SandboxPolicy.network_isolation` 表达要求，`SandboxAttemptRecord.network_isolation` 为 `unverified/enforced`。`sandbox_runtime_fingerprint()` 哈希实际实现内容，环境复验阻止旧审批跨实现漂移；所有当前消费者已同步，外部科学契约保持 `executable=false`。用户已批准机制，D-03 人工判读尚待确认。 |
+| §17 优化十四 | Windows Sandbox 网络隔离 | **已实现（①源码、② provider 自动化实测；最终回归见 §0.6）** | `WindowsProcessSandbox.run()` 以 suspended 创建无 capability AppContainer 子进程，经 `_verify_network_token()` 和 Job 绑定后恢复；`SandboxPolicy.network_isolation` 表达要求，`SandboxAttemptRecord.network_isolation` 为 `unverified/enforced`。`sandbox_runtime_fingerprint()` 哈希实际实现内容，环境复验阻止旧审批跨实现漂移；所有当前消费者已同步，外部科学契约保持 `executable=false`。用户已批准机制，D-03 人工判读于2026-10-07通过（限 source/provider，证据与边界见 §0.6）。 |
 | §18 优化十五 | Trace → 用户可读 Explainability | **部分实现** | 后端已实现且已对外：`services/agent_trace_service.py:20` `calculate_trace_integrity_hash()`、`:37/74` `get()`/`page()`，端点 `api/agent_task_routes.py:176-184` `GET /{task_id}/trace`（docstring 明示“paginated, redacted … advanced review only”）。§18.2 的高级字段**前端已在展示**：`features/agent/components/TechnicalEvidence.tsx:12-38` 逐行输出 `plan_hash`/`evidence_snapshot_hash`/`goal_hash`/`planning_inputs_hash`/`ticket_id`/`run_id`/`memory_context_hash` 等。剩余量是 §18.1 的**叙事式分层展示**与默认折叠策略，属前端信息层级工作，与阶段十二 简洁方案 §5.2「单一 `TaskCard` 信息层级」为**同一条改造线**；该线已于 2026-10-02 按清单 D-06 的拍板落到源码（`components/TaskCard.tsx` 为唯一视觉卡片、Harness 投影移入 Level-3 `TaskDetails`，见简洁方案标头），本节的剩余差异只在 ③ 层可见 GUI 走查（清单 A-13），不得另立第二条改造线，也不得把它写成 ① ② 层未闭合。 |
 
 ## 0.3 结构性章节与 Phase 归属
@@ -87,13 +93,15 @@
 - **SDK 证据。** 常量和 ctypes 布局核对 [微软 WinBase.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/WinBase.h)（`ProcThreadAttributeSecurityCapabilities=9`、输入位 `0x20000`、`STARTUPINFOEX`）及 [微软 winnt.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/winnt.h)（`SECURITY_CAPABILITIES`、Token information class、`WRITE_RESTRICTED`）；启动流程参考 [AppContainer 官方文档](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)。指针宽度/字段偏移已有正式回归；资料核对不替代清单 D-03 的人工确认。
 - **历史机制探测。** 先前对 Job 网络速率候选 class 13/14/15 与尺寸 37/38/40 的九次失败，只是本机探测结果，既不证明 SDK 正确布局，也不外推到其他 Windows。该路径未被采用，不留 fallback。
 
-## 0.6 审核后剩余责任（2026-10-03）
+## 0.6 审核结论（2026-10-07）
 
-已通过的§17实现、消费者切换和自动化验证不再保留为活跃实施任务或重复验收流水。当前技术复核、精确命令、普通/受限桌面token对照与证据见[审核执行报告](../审核计划/审核执行报告.md)阶段1和D-03；原实现内容保留在源码、测试及专项文档。
+已通过的§17实现、消费者切换和自动化验证不再保留为活跃实施任务或重复验收流水。当前技术复核、精确命令、普通/受限桌面token对照与证据见[审核执行报告](../../审核计划/审核执行报告.md)阶段1和D-03；原实现内容保留在源码、测试及专项文档。
 
-唯一本阶段人工剩余为[待人工清单](../../待人工审核校验清单.md)D-03：SDK布局/资料和“沙箱内无到达、沙箱外前后可达”对照判读，继续“保留待人工复核”。suspended → Job绑定 → 实际无capability AppContainer token核验 → resume，任一前置失败阻断；不为纠正文档而重排生产路径。
+**D-03 人工结论（2026-10-07，Asia/Shanghai）：通过。** 维护者已按审核步骤复核 SDK 布局/常量、启动顺序和 IPv4 回环、IPv6 回环、本机非回环三类网络对照，并确认当前 source/provider 范围满足验收标准（本会话明确确认；未提供姓名）。证据为 artifacts/technical-audit/20261003-092043-c79dcaac/sdk-review.json、d03-unit.json、d03-desktop.json、d03-source.json，以及 artifacts/technical-audit-fixes/20261003-r02-r11/backend-current-fresh.json；对应 SHA256 见各自 manifest.json / evidence-manifest.json。当前源码顺序为 suspended → Job 绑定 → 实际 token 核验 → resume，任一前置失败均阻断恢复；不为纠正文档而重排生产路径。
 
-packaged/GUI/独立科学证据仍分别由P/S/A条目承接，不能从source通过推导。没有生产科学消费者，外部契约不可执行，动作扩展/读工具/独立policy/event权威仍按§0.4跳过，multi仍归阶段十四Deferred。D-03未人工闭环前不整体归档本文件。
+d03-desktop.json 记录 14 passed / 1 warning，三类探测均断言宿主机前后可达、沙箱请求未到达服务端且隔离状态为 enforced。后续全量回归记录 3189 passed / 31 skipped / 3 warnings，并包含当前 Windows AppContainer 集成测试。旧 d03-source.json 的 10 项失败发生在受限工具环境创建 AppContainer profile 阶段（0x80070002），没有子进程恢复；该结果作为环境受阻历史证据保留，不解释为网络隔离测试结果。sdk-review.json 未确认本机安装的 SDK 版本，且引用的仓库头文件使用未固定提交的 main；本次人工结论针对记录的微软官方文档/头文件布局，不声明本机 SDK 版本或提交身份。
+
+packaged/GUI/独立科学证据仍分别由P/S/A条目承接，不能从source通过推导。没有生产科学消费者，外部契约不可执行，动作扩展/读工具/独立policy/event权威仍按§0.4跳过，multi仍归阶段十四Deferred。D-03闭环不改变这些范围，也不代表packaged、GUI、科学执行或其他OS已验证。
 
 # 1. 方案摘要
 
@@ -1913,7 +1921,7 @@ Context Egress Policy
 
 # 17. 优化十四：Windows Sandbox 网络隔离（技术范围已通过）
 
-已通过的实施任务退出活跃正文；当前机制与安全不变量保留于§0.5及专项安全文档，技术复核/证据见§0.6。仅D-03人工判读仍未闭环；新packaged/GUI/科学验收按原清单独立取证，不启用生产外部科学节点。
+已通过的实施任务退出活跃正文；当前机制与安全不变量保留于§0.5及专项安全文档，技术复核/证据见§0.6。D-03人工判读已于2026-10-07闭环（见§0.6）；新packaged/GUI/科学验收按原清单独立取证，不启用生产外部科学节点。
 
 ---
 
@@ -2541,7 +2549,7 @@ shell(cmd)
 > Observation Tools）经 §0.4-D2 拒绝；第二件（AgentPolicyService）经 §0.4-D3 跳过；第三件（Scientific
 > Skills + Skill Router）的 Skill 部分归阶段十二-`09`、Router 部分判定不需要（§0.2 §8 行）；第四件的
 > deterministic truth 部分**已经是当前行为**（§0.2 §10 行），只有模型 Reflect 动作未获批。
-> 本阶段真实的“下一件事”只有一项：**§17 Windows Sandbox 网络隔离硬化**，范围与验收见 §0.5。
+> 本阶段当时唯一获批实施项为 **§17 Windows Sandbox 网络隔离硬化**，现已完成，范围与验收见 §0.5/§0.6；不是当前待办。
 
 如果下一阶段只做四件事，建议严格按以下顺序：
 
@@ -2737,4 +2745,3 @@ Muse 架构中值得迁移的思想主要包括：
 - reproducibility；
 - artifact truth；
 - recovery constraints。
-
