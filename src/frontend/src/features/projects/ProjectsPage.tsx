@@ -383,7 +383,6 @@ export function ProjectsPage({
                   </button>
                   <div className={styles.rowActions}>
                     <Button
-                      aria-label={t("projects.openProject", { name: project.name })}
                       onClick={() => selectProject(project.id)}
                       size="sm"
                       variant={project.id === selectedProjectId ? "primary" : "secondary"}

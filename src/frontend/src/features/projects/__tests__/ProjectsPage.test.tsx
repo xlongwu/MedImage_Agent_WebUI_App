@@ -177,7 +177,7 @@ describe("ProjectsPage", () => {
     const props = renderPage();
     const row = screen.getByRole("heading", { name: /raw study/i }).closest("article");
 
-    await user.click(within(row as HTMLElement).getByRole("button", { name: "Remove" }));
+    await user.click(within(row as HTMLElement).getByRole("button", { name: "Remove Raw Study" }));
 
     expect(screen.getByRole("dialog", { name: "Remove project" })).toHaveTextContent(
       "Data on disk is preserved",

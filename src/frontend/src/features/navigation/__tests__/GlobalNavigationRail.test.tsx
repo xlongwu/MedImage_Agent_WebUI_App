@@ -26,7 +26,11 @@ describe("GlobalNavigationRail", () => {
 
     expect(screen.queryByRole("button", { name: /execute/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button")).toHaveLength(4);
+    const navigationItems = screen
+      .getByRole("navigation", { name: "Primary navigation" })
+      .querySelector("#primary-navigation-items");
+    expect(navigationItems).not.toBeNull();
+    expect(navigationItems?.querySelectorAll("button")).toHaveLength(4);
   });
 
   it("keeps project workspaces disabled until a project is selected", () => {
