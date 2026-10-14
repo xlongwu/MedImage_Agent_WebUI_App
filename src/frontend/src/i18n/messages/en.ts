@@ -1556,7 +1556,8 @@ export const messagesEn = {
   "projects.filters.modality": "Imaging modality",
   "projects.modalityAll": "All modalities",
   "projects.refreshing": "Refreshing projects…",
-  "projects.refreshFailed": "The project list could not be refreshed. Showing the latest loaded data.",
+  "projects.refreshFailed":
+    "The project list could not be refreshed. Showing the latest loaded data.",
   "projects.noMatchesDescription": "Try a different search or clear the current filters.",
   "projects.clearFilters": "Clear filters",
   "projects.results": "Your projects",

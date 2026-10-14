@@ -54,11 +54,7 @@ export function GlobalNavigationRail({
   }, [expanded]);
 
   return (
-    <nav
-      aria-label={t("nav.primary")}
-      className={styles.rail}
-      data-expanded={expanded}
-    >
+    <nav aria-label={t("nav.primary")} className={styles.rail} data-expanded={expanded}>
       <div className={styles.brandRow}>
         <span className={styles.brandMark} aria-hidden="true">
           <Icon height={18} name="spark" width={18} />

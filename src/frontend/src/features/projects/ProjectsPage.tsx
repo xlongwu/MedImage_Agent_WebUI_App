@@ -241,7 +241,12 @@ export function ProjectsPage({
         <AlertBanner
           action={
             onRetry ? (
-              <Button disabled={loading} onClick={() => void onRetry()} size="sm" variant="secondary">
+              <Button
+                disabled={loading}
+                onClick={() => void onRetry()}
+                size="sm"
+                variant="secondary"
+              >
                 {t("common.retry")}
               </Button>
             ) : undefined
@@ -440,7 +445,7 @@ export function ProjectsPage({
 function requiresAttention(task: ProjectSummary["latest_agent_task"]): boolean {
   return Boolean(
     task &&
-      (task.requires_user || task.state === "needs_attention" || task.state === "waiting_for_user"),
+    (task.requires_user || task.state === "needs_attention" || task.state === "waiting_for_user"),
   );
 }
 
@@ -481,9 +486,7 @@ function formatProjectDate(
   locale: string,
   t: ReturnType<typeof useI18n>["t"],
 ): string {
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
-    ? new Date(`${value}T12:00:00`)
-    : new Date(value);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00`) : new Date(value);
   if (!value || Number.isNaN(date.getTime())) return value || t("common.unavailable");
   const hasTime = /[T ]\d{2}:\d{2}/.test(value);
   return new Intl.DateTimeFormat(locale, {

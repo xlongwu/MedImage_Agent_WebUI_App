@@ -43,11 +43,7 @@ export function AppShell({
         <div className={styles.contentStack}>
           {lifecycle ? <div className={styles.lifecycleSlot}>{lifecycle}</div> : null}
           {systemMessages ? (
-            <div
-              aria-label={t("system.messages")}
-              className={styles.systemMessages}
-              role="region"
-            >
+            <div aria-label={t("system.messages")} className={styles.systemMessages} role="region">
               {systemMessages}
             </div>
           ) : null}
@@ -59,9 +55,7 @@ export function AppShell({
             {contextSidebar ? (
               <div className={styles.contextSidebarSlot}>{contextSidebar}</div>
             ) : null}
-            <main
-              className={`${styles.mainSlot} ${mainClassName ?? ""}`}
-            >
+            <main className={`${styles.mainSlot} ${mainClassName ?? ""}`}>
               <div className={styles.mainContent} id="main-content" tabIndex={-1}>
                 {children}
               </div>

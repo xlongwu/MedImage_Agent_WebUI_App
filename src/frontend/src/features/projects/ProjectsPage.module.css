@@ -56,7 +56,11 @@
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-card);
   background:
-    radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent 58%),
+    radial-gradient(
+      ellipse at 100% 0%,
+      color-mix(in srgb, var(--color-accent) 8%, transparent),
+      transparent 58%
+    ),
     var(--color-surface-primary);
   box-shadow: var(--shadow-soft);
 }
@@ -280,7 +284,9 @@
 .row[data-selected="true"] {
   border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-divider));
   background: color-mix(in srgb, var(--color-selection) 40%, var(--color-surface-primary));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 14%, transparent), var(--shadow-card);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 14%, transparent),
+    var(--shadow-card);
 }
 
 .rowMain {
@@ -507,7 +513,12 @@
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-card);
   background:
-    linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-text-primary) 5%, transparent), transparent),
+    linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--color-text-primary) 5%, transparent),
+      transparent
+    ),
     var(--color-surface-secondary);
   background-size: 220% 100%;
   animation: cardSkeleton 1.35s linear infinite;
