@@ -373,7 +373,7 @@
 
 .searchField input:focus {
   border-color: var(--color-focus-ring);
-  outline: 3px solid rgba(0, 122, 255, 0.14);
+  outline: 3px solid var(--color-focus-ring);
 }
 
 .runName,
@@ -431,6 +431,29 @@
   display: grid;
   gap: 14px;
   min-width: 0;
+}
+
+.detailSectionSwitch {
+  position: relative;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.detailSectionSwitch :global(button:nth-child(3)) {
+  position: relative;
+  margin-left: 10px;
+}
+
+.detailSectionSwitch :global(button:nth-child(3))::before {
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: -7px;
+  width: 1px;
+  background: var(--color-divider-strong);
+  content: "";
 }
 
 .detailSummary {
@@ -730,7 +753,7 @@
 }
 
 .diagnosticItem[data-tone="info"] {
-  border-color: rgba(0, 122, 255, 0.22);
+  border-color: color-mix(in srgb, var(--color-info) 28%, var(--color-divider));
 }
 
 .diagnosticItem span {

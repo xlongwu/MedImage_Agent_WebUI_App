@@ -11,6 +11,7 @@ import type { LocalePreference } from "../../hooks/useAppState";
 import type { ProjectInventory } from "../../lib/projectWorkflow";
 import type { WorkspaceSelectionContext } from "../../lib/workspaceSelection";
 import { TopBar, WorkspaceSuspenseFallback } from "../dashboard/DashboardChrome";
+import { AlertBanner, Button } from "../../components/ui";
 import { ProjectCreateSheet } from "../projects/ProjectCreateSheet";
 import { ProjectsPage } from "../projects/ProjectsPage";
 import { ProjectSidebar } from "../projects/ProjectSidebar";
@@ -60,6 +61,10 @@ export type AppShellViewProps = {
     | "projects"
     | "projectsLoading"
     | "projectsError"
+    | "reloadProjects"
+    | "deletingProjectId"
+    | "projectDeleteError"
+    | "setProjectDeleteError"
     | "handleDeleteProject"
     | "selectProjectDirectory"
     | "createProjectFromDirectoryPath"
@@ -185,6 +190,7 @@ export function AppShellView({
     projectController.projectCreateResult ||
     projectController.projectCreateLoading ||
     projectController.projectCreateError ||
+    projectController.projectDeleteError ||
     taskStream.error,
   );
   const assistantDocked = wideWorkspace && activeWorkspace === "agent";
@@ -253,10 +259,13 @@ export function AppShellView({
         hasSystemMessages ? (
           <>
             {app.notice ? (
-              <div className={styles.toastLine}>
+              <AlertBanner
+                dismissLabel={t("common.dismiss")}
+                onDismiss={() => app.setNotice("")}
+                tone="info"
+              >
                 {app.notice}
-                <button onClick={() => app.setNotice("")}>{t("common.dismiss")}</button>
-              </div>
+              </AlertBanner>
             ) : null}
             <ProjectCreateResultPanel
               result={projectController.projectCreateResult}
@@ -267,11 +276,27 @@ export function AppShellView({
                 projectController.setProjectCreateError("");
               }}
             />
+            {projectController.projectDeleteError ? (
+              <AlertBanner
+                dismissLabel={t("common.dismiss")}
+                onDismiss={() => projectController.setProjectDeleteError("")}
+                title={t("projects.deleteFailed")}
+                tone="error"
+              >
+                {projectController.projectDeleteError}
+              </AlertBanner>
+            ) : null}
             {taskStream.error ? (
-              <div className={styles.streamBanner}>
+              <AlertBanner
+                action={
+                  <Button onClick={handleReconnectTaskStream} size="sm" variant="secondary">
+                    {t("shell.reconnect")}
+                  </Button>
+                }
+                tone="warning"
+              >
                 {t("shell.taskStreamDisconnected", { error: taskStream.error })}
-                <button onClick={handleReconnectTaskStream}>{t("shell.reconnect")}</button>
-              </div>
+              </AlertBanner>
             ) : null}
           </>
         ) : undefined
@@ -353,12 +378,13 @@ export function AppShellView({
 
       {navigation.location.kind === "projects" ? (
         <ProjectsPage
-          deletingProjectId={null}
+          deletingProjectId={projectController.deletingProjectId}
           error={projectController.projectsError}
           loading={projectController.projectsLoading}
           onClose={() => undefined}
           onCreateProject={() => setProjectCreateOpen(true)}
           onDeleteProject={projectController.handleDeleteProject}
+          onRetry={() => void projectController.reloadProjects()}
           onSelectProject={onSelectProject}
           projects={projectController.projects.data}
           selectedProjectId={selectedProjectId}
@@ -369,7 +395,7 @@ export function AppShellView({
           viewer={undefined}
           workspaceLabel={`${activePageLabel} workspace`}
         >
-          <Suspense fallback={<WorkspaceSuspenseFallback label="Loading workspace..." />}>
+          <Suspense fallback={<WorkspaceSuspenseFallback label={t("workspace.loading")} />}>
             {activeWorkspace === "agent" ? (
               <AgentWorkspace
                 advancedMode={appState.advancedMode}

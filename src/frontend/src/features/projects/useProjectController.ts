@@ -18,6 +18,9 @@ export interface ProjectController {
   projectCreateLoading: boolean;
   projectCreateError: string;
   projectCreateResult: ProjectCreateResponse | null;
+  deletingProjectId: string | null;
+  projectDeleteError: string;
+  setProjectDeleteError: (error: string) => void;
   setProjectCreateResult: (result: ProjectCreateResponse | null) => void;
   setProjectCreateError: (error: string) => void;
   selectProjectDirectory: () => Promise<string | null>;
@@ -35,6 +38,8 @@ export function useProjectController(
   const projects = useProjects();
   const [projectCreateLoading, setProjectCreateLoading] = useState(false);
   const [projectCreateError, setProjectCreateError] = useState("");
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+  const [projectDeleteError, setProjectDeleteError] = useState("");
   const [projectCreateResult, setProjectCreateResult] = useState<ProjectCreateResponse | null>(
     null,
   );
@@ -107,8 +112,9 @@ export function useProjectController(
 
   const handleDeleteProject = useCallback(
     async (projectId: string) => {
-      if (projectCreateLoading) return;
-      setProjectCreateLoading(true);
+      if (projectCreateLoading || deletingProjectId) return;
+      setProjectDeleteError("");
+      setDeletingProjectId(projectId);
       try {
         await deleteProject(projectId);
         const remaining = projects.data.filter((item) => item.id !== projectId);
@@ -121,11 +127,13 @@ export function useProjectController(
         const latest = (refreshed ?? remaining).filter((item) => item.id !== projectId);
         projects.setData(latest);
         if (selectedProjectId === projectId) setSelectedProjectId?.(latest[0]?.id ?? null);
+      } catch (error) {
+        setProjectDeleteError(error instanceof Error ? error.message : String(error));
       } finally {
-        setProjectCreateLoading(false);
+        setDeletingProjectId(null);
       }
     },
-    [projectCreateLoading, projects, selectedProjectId, setSelectedProjectId],
+    [deletingProjectId, projectCreateLoading, projects, selectedProjectId, setSelectedProjectId],
   );
 
   return {
@@ -136,6 +144,9 @@ export function useProjectController(
     projectCreateLoading,
     projectCreateError,
     projectCreateResult,
+    deletingProjectId,
+    projectDeleteError,
+    setProjectDeleteError,
     setProjectCreateResult,
     setProjectCreateError,
     selectProjectDirectory,

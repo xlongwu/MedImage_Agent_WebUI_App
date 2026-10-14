@@ -133,6 +133,45 @@ describe("ProjectsPage", () => {
     expect(screen.getByRole("heading", { name: /canceled cohort/i })).toBeInTheDocument();
   });
 
+  it("combines task status and modality filters", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Completed" }));
+    await user.click(
+      within(screen.getByRole("group", { name: "Imaging modality" })).getByRole("button", {
+        name: "MRI",
+      }),
+    );
+
+    expect(screen.getByRole("heading", { name: /qc cohort/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /raw study/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps rs-fMRI separate from the MRI modality filter", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const modalityFilters = screen.getByRole("group", { name: "Imaging modality" });
+
+    await user.click(within(modalityFilters).getByRole("button", { name: "MRI" }));
+
+    expect(screen.getByRole("heading", { name: /qc cohort/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /raw study/i })).not.toBeInTheDocument();
+
+    await user.click(within(modalityFilters).getByRole("button", { name: "rs-fMRI" }));
+
+    expect(screen.getByRole("heading", { name: /raw study/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /qc cohort/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps loaded project rows visible while refreshing", () => {
+    renderPage({ loading: true });
+
+    expect(screen.getByText("Refreshing projects…")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /raw study/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading projects")).not.toBeInTheDocument();
+  });
+
   it("requires confirmation before removing a project listing", async () => {
     const user = userEvent.setup();
     const props = renderPage();

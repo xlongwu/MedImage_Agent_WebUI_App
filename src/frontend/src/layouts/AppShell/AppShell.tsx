@@ -34,13 +34,20 @@ export function AppShell({
   const { t } = useI18n();
   return (
     <div className={styles.shell} data-preset={preset}>
+      <a className={styles.skipLink} href="#main-content">
+        {t("common.skipToContent")}
+      </a>
       <div className={styles.topBarSlot}>{topBar}</div>
       <div className={styles.workspace}>
         {rail ? <div className={styles.railSlot}>{rail}</div> : null}
         <div className={styles.contentStack}>
           {lifecycle ? <div className={styles.lifecycleSlot}>{lifecycle}</div> : null}
           {systemMessages ? (
-            <div className={styles.systemMessages} aria-label={t("system.messages")}>
+            <div
+              aria-label={t("system.messages")}
+              className={styles.systemMessages}
+              role="region"
+            >
               {systemMessages}
             </div>
           ) : null}
@@ -52,7 +59,13 @@ export function AppShell({
             {contextSidebar ? (
               <div className={styles.contextSidebarSlot}>{contextSidebar}</div>
             ) : null}
-            <main className={`${styles.mainSlot} ${mainClassName ?? ""}`}>{children}</main>
+            <main
+              className={`${styles.mainSlot} ${mainClassName ?? ""}`}
+            >
+              <div className={styles.mainContent} id="main-content" tabIndex={-1}>
+                {children}
+              </div>
+            </main>
             {inspector ? <div className={styles.inspectorSlot}>{inspector}</div> : null}
           </div>
           {runActivity ? <div className={styles.runActivitySlot}>{runActivity}</div> : null}

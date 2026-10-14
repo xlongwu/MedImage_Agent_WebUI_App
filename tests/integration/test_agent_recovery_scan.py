@@ -210,6 +210,7 @@ def test_unsupported_persisted_contract_cannot_block_current_recovery(tmp_path):
         conn.execute("UPDATE agent_lifecycles SET payload=? WHERE lifecycle_id=?", (raw, old.lifecycle_id))
     page = store.scan_agent_recovery_page(consumer="planning", now=datetime.now(UTC))
     assert page.lifecycle_ids == ("scan-0001",)
+    assert [item.lifecycle_id for item in store.list_agent_lifecycles("project-1")] == ["scan-0001"]
     with pytest.raises(SafetyError, match="AGENT_LIFECYCLE_VERSION_UNSUPPORTED"):
         store.get_agent_lifecycle(old.lifecycle_id)
     with store._connect() as conn:

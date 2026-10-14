@@ -257,9 +257,23 @@
     padding-inline: 12px;
   }
 
-  .caption strong,
-  .context small,
+  .context {
+    gap: 6px;
+  }
+
+  .actions {
+    gap: 2px;
+  }
+
   .healthButton {
-    display: none;
+    display: inline-flex;
+    gap: 6px;
+    padding-inline: 8px;
+    font-size: 11px;
+  }
+
+  .healthLabel {
+    display: block;
+    max-width: 76px;
   }
 }

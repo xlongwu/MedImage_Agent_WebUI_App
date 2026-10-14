@@ -37,10 +37,10 @@
 
 .modeNote {
   padding: 12px;
-  border: 1px solid rgba(10, 132, 255, 0.18);
+  border: 1px solid color-mix(in srgb, var(--color-info) 20%, var(--color-divider));
   border-radius: var(--radius);
-  background: rgba(239, 246, 255, 0.82);
-  color: #1557a5;
+  background: var(--color-info-surface);
+  color: var(--color-info);
   font-size: 12px;
   font-weight: 700;
 }

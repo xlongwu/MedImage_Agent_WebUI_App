@@ -7,7 +7,7 @@
 
 .domainNav {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
   gap: 10px;
   min-width: 0;
 }
@@ -159,8 +159,7 @@
 }
 
 @media (max-width: 1120px) {
-  .settingsGrid,
-  .domainNav {
+  .settingsGrid {
     grid-template-columns: 1fr;
   }
 }

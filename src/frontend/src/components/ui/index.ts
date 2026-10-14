@@ -1,4 +1,5 @@
 export {
+  AlertBanner,
   Badge,
   Button,
   Card,
@@ -7,6 +8,7 @@ export {
   Progress,
   Skeleton,
   Tooltip,
+  type AlertBannerProps,
   type BadgeProps,
   type ButtonProps,
   type CardProps,

@@ -50,7 +50,7 @@ textarea:disabled {
 }
 
 ::selection {
-  background: rgba(0, 122, 255, 0.18);
+  background: var(--color-selection-strong);
 }
 
 button {

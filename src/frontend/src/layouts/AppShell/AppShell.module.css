@@ -2,29 +2,52 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   overflow: hidden;
   background: var(--color-bg-app);
+}
+
+.skipLink {
+  position: fixed;
+  z-index: 40;
+  top: 8px;
+  left: 8px;
+  padding: 9px 12px;
+  transform: translateY(calc(-100% - 12px));
+  border: 1px solid var(--color-divider-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-primary);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-strong);
+  text-decoration: none;
+  transition: transform var(--motion-duration-fast) var(--ease-standard);
+}
+
+.skipLink:focus {
+  transform: translateY(0);
 }
 
 .workspace {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
 }
 
 .railSlot {
-  width: var(--shell-global-rail-width);
-  min-width: var(--shell-global-rail-width);
+  width: max-content;
+  min-width: 0;
   min-height: 0;
 }
 
 .contentStack {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 
 .topBarSlot,
@@ -35,11 +58,19 @@
   min-width: 0;
 }
 
+.topBarSlot,
+.lifecycleSlot,
+.systemMessages,
+.runActivitySlot {
+  flex: 0 0 auto;
+}
+
 .body {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-height: 0;
+  flex: 1 1 0%;
   overflow: hidden;
   background: var(--color-bg-app);
 }
@@ -59,10 +90,13 @@
 }
 
 .systemMessages {
+  display: grid;
+  gap: 8px;
   padding: 8px clamp(16px, 3vw, 48px) 0;
 }
 
 .mainSlot,
+.mainContent,
 .contextSidebarSlot,
 .inspectorSlot {
   min-width: 0;
@@ -70,9 +104,34 @@
 }
 
 .mainSlot {
-  padding: 24px clamp(22px, 3.5vw, 56px) 76px;
+  padding: 24px clamp(22px, 3.5vw, 56px) 28px;
   overflow: auto;
   overscroll-behavior: contain;
+  scrollbar-color: color-mix(in srgb, var(--color-text-tertiary) 44%, transparent) transparent;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 18px;
+}
+
+.mainSlot::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.mainSlot::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-text-tertiary) 44%, transparent);
+  background-clip: content-box;
+}
+
+.mainSlot::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-accent) 60%, transparent);
+  background-clip: content-box;
+}
+
+.mainContent {
+  min-width: 0;
 }
 
 .contextSidebarSlot,
@@ -94,7 +153,7 @@
 
 .shell[data-preset="image-workspace"] .mainSlot,
 .shell[data-preset="task-workspace"] .mainSlot {
-  padding: 14px 14px 72px;
+  padding: 14px;
 }
 
 .shell[data-preset="project-library"] .mainSlot {

@@ -1,6 +1,7 @@
 .fallback {
   display: grid;
-  min-height: 320px;
+  min-height: min(460px, 58vh);
+  align-content: start;
   gap: 16px;
   padding: 20px;
   border: 1px dashed rgba(137, 150, 171, 0.32);
@@ -23,7 +24,7 @@
   height: 10px;
   border-radius: 999px;
   background: var(--blue);
-  box-shadow: 0 0 0 6px rgba(10, 132, 255, 0.12);
+  box-shadow: 0 0 0 6px var(--color-selection);
 }
 
 .skeletonHeader,

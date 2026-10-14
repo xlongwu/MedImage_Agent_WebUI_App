@@ -1,10 +1,14 @@
 import type { SVGProps } from "react";
 
 type IconName =
+  | "arrow-up-right"
   | "arrow-left"
   | "chevron-down"
+  | "chevron-left"
+  | "chevron-right"
   | "circle-alert"
   | "circle-check"
+  | "circle-info"
   | "data"
   | "folder"
   | "inspector"
@@ -21,10 +25,14 @@ type IconName =
   | "x";
 
 const paths: Record<IconName, string[]> = {
+  "arrow-up-right": ["M4.5 11.5 11.5 4.5", "M5 4.5h6.5V11"],
   "arrow-left": ["M13 8H3", "m7-5-5 5 5 5"],
   "chevron-down": ["m4 6 4 4 4-4"],
+  "chevron-left": ["m10 3-5 5 5 5"],
+  "chevron-right": ["m6 3 5 5-5 5"],
   "circle-alert": ["M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z", "M8 5v4", "M8 11.5h.01"],
   "circle-check": ["M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z", "m5.5 8 1.6 1.6 3.5-3.8"],
+  "circle-info": ["M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z", "M8 7v4", "M8 5h.01"],
   data: [
     "M2.5 4c0-1 2.5-1.8 5.5-1.8S13.5 3 13.5 4 11 5.8 8 5.8 2.5 5 2.5 4Z",
     "M2.5 4v4c0 1 2.5 1.8 5.5 1.8S13.5 9 13.5 8V4",

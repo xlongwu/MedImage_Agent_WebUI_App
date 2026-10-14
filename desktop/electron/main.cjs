@@ -1035,7 +1035,7 @@ async function verifyAgentFirstNavigation(win, attempts = 60) {
   for (let index = 0; index < attempts; index += 1) {
     const ready = await win.webContents.executeJavaScript(`(() => {
       const projectRow = document.querySelector('article[role="listitem"] button');
-      const buttons = Array.from(document.querySelectorAll('nav button'));
+      const buttons = Array.from(document.querySelectorAll('#primary-navigation-items button'));
       return { hasProjectRow: Boolean(projectRow), navigationCount: buttons.length };
     })()`, true);
     if (ready.hasProjectRow && ready.navigationCount === 4) {
@@ -1055,7 +1055,7 @@ async function verifyAgentFirstNavigation(win, attempts = 60) {
   const visited = [];
   for (const targetIndex of [0, 1, 2, 3]) {
     const step = await win.webContents.executeJavaScript(`(() => {
-      const buttons = Array.from(document.querySelectorAll('nav button'));
+      const buttons = Array.from(document.querySelectorAll('#primary-navigation-items button'));
       const target = buttons[${targetIndex}];
       if (!target || target.disabled) {
         return { clicked: false };
@@ -1068,14 +1068,14 @@ async function verifyAgentFirstNavigation(win, attempts = 60) {
     }
     await delay(350);
     const selected = await win.webContents.executeJavaScript(`(() => {
-      const buttons = Array.from(document.querySelectorAll('nav button'));
+      const buttons = Array.from(document.querySelectorAll('#primary-navigation-items button'));
       return buttons.findIndex((button) => button.getAttribute('aria-current') === 'page');
     })()`, true);
     visited.push({ index: targetIndex, label: step.label, selectedIndex: selected });
   }
 
   const snapshot = await win.webContents.executeJavaScript(`(() => {
-    const buttons = Array.from(document.querySelectorAll('nav button'));
+    const buttons = Array.from(document.querySelectorAll('#primary-navigation-items button'));
     return {
       labels: buttons.map((button) => button.getAttribute('aria-label') || ''),
       navigationCount: buttons.length,
@@ -1373,7 +1373,7 @@ async function verifyBidsToFcWorkflow(win, project, attempts = 360) {
           if (reopen) {
             reopen.click();
           } else {
-            const navigation = Array.from(document.querySelectorAll('nav button'));
+            const navigation = Array.from(document.querySelectorAll('#primary-navigation-items button'));
             navigation[0]?.click();
             await new Promise((resolve) => setTimeout(resolve, 100));
             navigation[1]?.click();
@@ -1567,7 +1567,7 @@ async function verifyBidsToFcWorkflow(win, project, attempts = 360) {
 async function navigateToAgentWorkspace(win, attempts = 50) {
   for (let index = 0; index < attempts; index += 1) {
     const navigation = await win.webContents.executeJavaScript(`(() => {
-      const target = Array.from(document.querySelectorAll('nav button'))[1];
+      const target = Array.from(document.querySelectorAll('#primary-navigation-items button'))[1];
       if (!target || target.disabled) return false;
       target.click();
       return true;

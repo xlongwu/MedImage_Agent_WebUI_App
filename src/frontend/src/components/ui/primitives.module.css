@@ -17,7 +17,12 @@
     background var(--motion-duration-fast) var(--ease-standard),
     border-color var(--motion-duration-fast) var(--ease-standard),
     opacity var(--motion-duration-fast) var(--ease-standard),
-    box-shadow var(--motion-duration-fast) var(--ease-standard);
+    box-shadow var(--motion-duration-fast) var(--ease-standard),
+    transform var(--motion-duration-fast) var(--ease-standard);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.99);
 }
 
 .progress {
@@ -92,7 +97,7 @@
 
 .variantPrimary:hover:not(:disabled) {
   background: var(--color-accent-hover);
-  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.16);
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 
 .variantSecondary {
@@ -193,27 +198,27 @@
 
 .badgeNeutral {
   border-color: var(--color-divider);
-  background: rgba(110, 110, 115, 0.08);
+  background: var(--color-surface-secondary);
   color: var(--color-text-secondary);
 }
 
 .badgeInfo {
-  background: rgba(0, 122, 255, 0.1);
-  color: #0066cc;
+  background: var(--color-info-surface);
+  color: var(--color-info);
 }
 
 .badgeSuccess {
-  background: rgba(52, 199, 89, 0.12);
+  background: var(--color-success-surface);
   color: var(--color-success);
 }
 
 .badgeWarning {
-  background: rgba(255, 159, 10, 0.12);
+  background: var(--color-warning-surface);
   color: var(--color-warning);
 }
 
 .badgeDanger {
-  background: rgba(255, 59, 48, 0.1);
+  background: var(--color-danger-surface);
   color: var(--color-danger);
 }
 
@@ -278,6 +283,104 @@
 .emptyStateAction {
   display: flex;
   justify-content: center;
+}
+
+.alertBanner {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--alert-color) 24%, var(--color-divider));
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--alert-color) 8%, var(--color-surface-primary));
+  color: var(--color-text-primary);
+}
+
+.alertBanner[data-tone="success"] {
+  --alert-color: var(--color-success);
+}
+
+.alertBanner[data-tone="info"] {
+  --alert-color: var(--color-info);
+}
+
+.alertBanner[data-tone="warning"] {
+  --alert-color: var(--color-warning);
+}
+
+.alertBanner[data-tone="error"] {
+  --alert-color: var(--color-danger);
+}
+
+.alertIcon {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  color: var(--alert-color);
+}
+
+.alertContent {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  line-height: 1.4;
+}
+
+.alertTitle {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-secondary);
+  font-weight: var(--font-weight-strong);
+}
+
+.alertDescription {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-caption);
+  overflow-wrap: anywhere;
+}
+
+.alertAction {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.alertDismiss {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  transition:
+    background var(--motion-duration-fast) var(--ease-standard),
+    color var(--motion-duration-fast) var(--ease-standard),
+    transform var(--motion-duration-fast) var(--ease-standard);
+}
+
+.alertDismiss:hover {
+  background: color-mix(in srgb, var(--alert-color) 10%, transparent);
+  color: var(--alert-color);
+}
+
+.alertDismiss:active {
+  transform: scale(0.94);
+}
+
+@media (max-width: 760px) {
+  .alertBanner {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+
+  .alertAction {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+  }
 }
 
 .skeleton {

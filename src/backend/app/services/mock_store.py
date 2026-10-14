@@ -3509,13 +3509,15 @@ class SQLiteDesktopStore:
         return AgentRecoveryScanPage(lifecycle_ids=tuple(scheduled), has_more=has_more)
 
     def list_agent_lifecycles(self, project_id: str) -> list[AgentLifecycleRecord]:
+        schema_version = AgentLifecycleRecord.model_fields["schema_version"].default
         with self._lock, self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT payload FROM agent_lifecycles
-                WHERE project_id = ? ORDER BY updated_at DESC, lifecycle_id DESC
+                WHERE project_id = ? AND json_extract(payload, '$.schema_version') = ?
+                ORDER BY updated_at DESC, lifecycle_id DESC
                 """,
-                (project_id,),
+                (project_id, schema_version),
             ).fetchall()
         return [_decode_agent_lifecycle(row["payload"]) for row in rows]
 

@@ -8,11 +8,13 @@ import {
 } from "react";
 
 import styles from "./primitives.module.css";
+import { Icon } from "./icons";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md";
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
 type CardTone = "default" | "muted" | "elevated";
+type AlertTone = "success" | "info" | "warning" | "error";
 
 function cx(...values: Array<string | false | null | undefined>): string {
   return values.filter(Boolean).join(" ");
@@ -154,6 +156,61 @@ export function EmptyState({
         {description ? <p>{description}</p> : null}
       </div>
       {action ? <div className={styles.emptyStateAction}>{action}</div> : null}
+    </div>
+  );
+}
+
+export type AlertBannerProps = HTMLAttributes<HTMLDivElement> & {
+  action?: ReactNode;
+  dismissLabel?: string;
+  onDismiss?: () => void;
+  title?: ReactNode;
+  tone?: AlertTone;
+};
+
+const alertIcon: Record<AlertTone, "circle-check" | "circle-info" | "circle-alert"> = {
+  success: "circle-check",
+  info: "circle-info",
+  warning: "circle-alert",
+  error: "circle-alert",
+};
+
+export function AlertBanner({
+  action,
+  children,
+  className,
+  dismissLabel,
+  onDismiss,
+  title,
+  tone = "info",
+  ...props
+}: AlertBannerProps) {
+  return (
+    <div
+      {...props}
+      aria-live={tone === "error" ? "assertive" : "polite"}
+      className={cx(styles.alertBanner, className)}
+      data-tone={tone}
+      role={tone === "error" ? "alert" : "status"}
+    >
+      <span aria-hidden="true" className={styles.alertIcon}>
+        <Icon height={20} name={alertIcon[tone]} width={20} />
+      </span>
+      <span className={styles.alertContent}>
+        {title ? <strong className={styles.alertTitle}>{title}</strong> : null}
+        {children ? <span className={styles.alertDescription}>{children}</span> : null}
+      </span>
+      {action ? <span className={styles.alertAction}>{action}</span> : null}
+      {onDismiss ? (
+        <button
+          aria-label={dismissLabel ?? "Dismiss"}
+          className={styles.alertDismiss}
+          onClick={onDismiss}
+          type="button"
+        >
+          <Icon height={16} name="x" width={16} />
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -888,6 +888,7 @@ function RunDetailPanel({
 
       <SegmentedControl
         aria-label={t("runs.sections")}
+        className={styles.detailSectionSwitch}
         value={activeTab}
         onChange={(value) => onTabChange(value as RunDetailTab)}
         options={[

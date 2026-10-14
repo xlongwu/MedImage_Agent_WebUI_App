@@ -327,7 +327,7 @@
 }
 
 .apple-metric-tile.tone-blue {
-  border-color: rgba(10, 132, 255, 0.2);
+  border-color: color-mix(in srgb, var(--color-accent) 22%, var(--color-divider));
 }
 
 .apple-metric-tile.tone-green {
@@ -352,9 +352,9 @@
 }
 
 .apple-safety-banner.tone-info {
-  border-color: rgba(10, 132, 255, 0.18);
-  background: rgba(239, 246, 255, 0.82);
-  color: #1557a5;
+  border-color: color-mix(in srgb, var(--color-info) 22%, var(--color-divider));
+  background: var(--color-info-surface);
+  color: var(--color-info);
 }
 
 .apple-safety-banner.tone-warning {
@@ -413,9 +413,9 @@
   gap: 9px;
   align-items: start;
   padding: 8px 10px;
-  border: 1px solid rgba(10, 132, 255, 0.16);
+  border: 1px solid color-mix(in srgb, var(--color-info) 20%, var(--color-divider));
   border-radius: var(--radius);
-  background: rgba(245, 250, 255, 0.9);
+  background: color-mix(in srgb, var(--color-info-surface) 58%, var(--color-surface-primary));
 }
 
 .apple-action-item span {
@@ -424,8 +424,8 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: rgba(10, 132, 255, 0.12);
-  color: var(--blue);
+  background: var(--color-info-surface);
+  color: var(--color-info);
   font-size: 11px;
   font-weight: 900;
 }
