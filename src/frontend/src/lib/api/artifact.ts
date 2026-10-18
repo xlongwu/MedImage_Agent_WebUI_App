@@ -1,4 +1,4 @@
-import { requestJson } from "./legacyCore";
+import { requestJson } from "./client";
 
 export async function createBundle(
   baseUrl: string,
@@ -10,36 +10,38 @@ export async function createBundle(
     max_file_size_bytes?: number;
   },
 ) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/bundles/create", {
+  return requestJson<Record<string, unknown>>("/api/bundles/create", {
     method: "POST",
     body: JSON.stringify(payload),
+    baseUrl,
   });
 }
 
 export async function getArtifacts(baseUrl: string) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/artifacts");
+  return requestJson<Record<string, unknown>>("/api/artifacts", { baseUrl });
 }
 
 export async function inspectBundle(baseUrl: string, bundleId: string) {
-  return requestJson<Record<string, unknown>>(
+  return requestJson<Record<string, unknown>>(`/api/bundles/${encodeURIComponent(bundleId)}`, {
     baseUrl,
-    `/api/bundles/${encodeURIComponent(bundleId)}`,
-  );
+  });
 }
 
 export async function listBundles(baseUrl: string) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/bundles");
+  return requestJson<Record<string, unknown>>("/api/bundles", { baseUrl });
 }
 
 export async function previewArtifact(baseUrl: string, path: string) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/artifacts/preview", {
+  return requestJson<Record<string, unknown>>("/api/artifacts/preview", {
     method: "POST",
     body: JSON.stringify({ path }),
+    baseUrl,
   });
 }
 
 export async function refreshArtifacts(baseUrl: string) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/artifacts/refresh", {
+  return requestJson<Record<string, unknown>>("/api/artifacts/refresh", {
     method: "POST",
+    baseUrl,
   });
 }

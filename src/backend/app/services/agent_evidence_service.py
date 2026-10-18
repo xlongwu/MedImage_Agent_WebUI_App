@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
 from src.backend.app.core.exceptions import SafetyError
 from src.backend.app.planner.audit_record import stable_hash

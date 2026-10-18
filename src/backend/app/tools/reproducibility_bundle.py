@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import platform
 import shutil
-import subprocess
 import sys
 import zipfile
 from datetime import UTC, datetime

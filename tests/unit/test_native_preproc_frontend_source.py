@@ -11,15 +11,12 @@ def _read(path: str) -> str:
 
 def test_native_preproc_frontend_exposes_read_only_evidence_without_execution() -> None:
     preprocessing_api = _read("src/frontend/src/lib/api/preprocessing.ts")
-    re_exports = _read("src/frontend/src/lib/api/legacy_re_exports.ts")
-    combined = preprocessing_api + re_exports
-
-    assert "getLatestNativeFullPreprocessingRun" in combined
+    assert "getLatestNativeFullPreprocessingRun" in preprocessing_api
 
     assert "/preprocessing/native/runs/latest" in preprocessing_api
-    assert "executeNativeFullPreprocessing" not in combined
-    assert "submitNativeFullPreprocessing" not in combined
-    assert "executeReviewedPreprocessingPipeline" not in combined
+    assert "executeNativeFullPreprocessing" not in preprocessing_api
+    assert "submitNativeFullPreprocessing" not in preprocessing_api
+    assert "executeReviewedPreprocessingPipeline" not in preprocessing_api
     assert "/preprocessing/native/full/execute" not in preprocessing_api
     assert "/execute-reviewed" not in preprocessing_api
 

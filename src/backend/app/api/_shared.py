@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from src.backend.app.core.exceptions import ConfigError
 
 
@@ -33,7 +35,16 @@ def _read_text_if_exists(path: str | Path) -> str | None:
 
 
 def _load_project_config(path: str) -> dict[str, Any]:
-    import yaml
+    """Load and validate a project config YAML file."""
+    from src.backend.app.config import ProjectSettings
+
+    try:
+        ProjectSettings.from_yaml(path)
+    except FileNotFoundError as exc:
+        raise ConfigError(str(exc)) from exc
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+
     p = Path(path)
     if not p.exists():
         raise ConfigError(f"Project config not found: {path}")

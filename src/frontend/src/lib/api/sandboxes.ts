@@ -1,5 +1,5 @@
 import type { SandboxAttempt, SandboxAttemptsResponse } from "../types/sandbox";
-import { requestJson } from "./legacyCore";
+import { requestJson } from "./client";
 
 export async function listSandboxAttempts(
   baseUrl: string,
@@ -7,8 +7,8 @@ export async function listSandboxAttempts(
   runId: string,
 ): Promise<SandboxAttemptsResponse> {
   return requestJson<SandboxAttemptsResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/sandbox-attempts`,
+    { baseUrl },
   );
 }
 
@@ -19,7 +19,7 @@ export async function getSandboxAttempt(
   sandboxId: string,
 ): Promise<{ ok: boolean; project_id: string; run_id: string; sandbox_attempt: SandboxAttempt }> {
   return requestJson(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/sandbox-attempts/${encodeURIComponent(sandboxId)}`,
+    { baseUrl },
   );
 }

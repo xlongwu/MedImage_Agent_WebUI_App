@@ -1,4 +1,4 @@
-import { requestJson } from "./legacyCore";
+import { requestJson } from "./client";
 
 export async function createSchedulerPlan(
   baseUrl: string,
@@ -7,8 +7,9 @@ export async function createSchedulerPlan(
     pipeline_path: string;
   },
 ) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/scheduler/plan", {
+  return requestJson<Record<string, unknown>>("/api/scheduler/plan", {
     method: "POST",
     body: JSON.stringify(payload),
+    baseUrl,
   });
 }

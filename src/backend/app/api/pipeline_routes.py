@@ -2,37 +2,17 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from src.backend.app.api._errors import raise_api_error
+from src.backend.app.api._shared import _read_json_if_exists, _read_text_if_exists
 from src.backend.app.runtime.path_safety import PathSafetyError, read_safe_text_file
 from src.backend.app.schemas.pipeline_schema import load_pipeline_yaml
 
 router = APIRouter()
-
-
-def _read_json_if_exists(path: str | Path) -> dict[str, Any] | None:
-    p = Path(path)
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-
-def _read_text_if_exists(path: str | Path) -> str | None:
-    p = Path(path)
-    if not p.exists():
-        return None
-    try:
-        return p.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return None
 
 
 @router.get("/api/pipelines")

@@ -4,13 +4,17 @@ Endpoint paths and handler bodies are preserved for compatibility.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
 from src.backend.app.api._errors import raise_api_error
+from src.backend.app.api._shared import (
+    _load_project_config,
+    _read_json_if_exists,
+    _read_text_if_exists,
+)
 from src.backend.app.api.execution_contract import reject_execution_contract
 from src.backend.app.api.models import (
     DpabiCapabilityRequest,
@@ -26,7 +30,6 @@ from src.backend.app.api.models import (
     DpabiTemplateWizardRequest,
     DpabiWrapperValidationRequest,
 )
-from src.backend.app.core.exceptions import ConfigError
 from src.backend.app.tools.dpabi_adapter import build_dpabi_input_manifest
 from src.backend.app.tools.dpabi_config import write_dpabi_wrapper_scaffold
 from src.backend.app.tools.dpabi_contract_registry import write_dpabi_wrapper_contracts
@@ -47,51 +50,6 @@ from src.backend.app.tools.dpabi_wrapper_validation import write_dpabi_wrapper_v
 
 router = APIRouter()
 
-
-def _read_json_if_exists(path: str | Path) -> dict[str, Any] | None:
-    p = Path(path)
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-def _read_text_if_exists(path: str | Path) -> str | None:
-    p = Path(path)
-    if not p.exists():
-        return None
-    try:
-        return p.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return None
-
-def _load_project_config(path: str) -> dict[str, Any]:
-    """Load and validate a project config YAML file.
-
-    Uses ProjectSettings.from_yaml() to validate critical fields (work_dir,
-    log_dir, spm_dir, dpabi_dir) before returning the raw dict.  Validation
-    errors are wrapped as ConfigError(400) to match the structured API model.
-    """
-    # ── structural validation (M1-T003 / M1-T005c) ──
-    from src.backend.app.config import ProjectSettings  # noqa: E402
-
-    try:
-        ProjectSettings.from_yaml(path)
-    except FileNotFoundError as exc:
-        raise ConfigError(str(exc)) from exc
-    except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
-
-    # ── return raw dict for backward compat ──
-    import yaml
-    p = Path(path)
-    if not p.exists():
-        raise ConfigError(f"Project config not found: {path}")
-    try:
-        return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    except Exception as exc:
-        raise ConfigError(f"Failed to parse project config: {exc}") from exc
 
 @router.post("/api/dpabi/capability")
 def api_dpabi_capability(payload: DpabiCapabilityRequest) -> dict[str, Any]:

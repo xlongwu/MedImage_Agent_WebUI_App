@@ -1,5 +1,5 @@
 import type { ExecuteReviewedResponse, ReviewedPlanRecord } from "../../types";
-import { requestJson } from "./legacyCore";
+import { requestJson } from "./client";
 
 export async function checkApprovalGate(
   baseUrl: string,
@@ -9,9 +9,10 @@ export async function checkApprovalGate(
     approval: Record<string, unknown> | null;
   },
 ) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/approval/check", {
+  return requestJson<Record<string, unknown>>("/api/approval/check", {
     method: "POST",
     body: JSON.stringify(payload),
+    baseUrl,
   });
 }
 
@@ -27,9 +28,10 @@ export async function executeReviewedDryRun(
     actor?: string;
   },
 ) {
-  return requestJson<ExecuteReviewedResponse>(baseUrl, "/api/plans/execute-reviewed", {
+  return requestJson<ExecuteReviewedResponse>("/api/plans/execute-reviewed", {
     method: "POST",
     body: JSON.stringify({ ...payload, dry_run: true }),
+    baseUrl,
   });
 }
 
@@ -44,7 +46,7 @@ export async function executeReviewedPlan(
     actor?: string;
   },
 ) {
-  return requestJson<ExecuteReviewedResponse>(baseUrl, "/api/plans/execute-reviewed", {
+  return requestJson<ExecuteReviewedResponse>("/api/plans/execute-reviewed", {
     method: "POST",
     body: JSON.stringify({
       plan: payload.plan,
@@ -58,29 +60,29 @@ export async function executeReviewedPlan(
       write_pipeline_yaml: true,
       actor: payload.actor ?? "frontend-user",
     }),
+    baseUrl,
   });
 }
 
 export async function fetchAuditRecord(baseUrl: string, auditId: string) {
-  return requestJson<Record<string, unknown>>(
+  return requestJson<Record<string, unknown>>(`/api/audit/records/${encodeURIComponent(auditId)}`, {
     baseUrl,
-    `/api/audit/records/${encodeURIComponent(auditId)}`,
-  );
+  });
 }
 
 // === Execute Reviewed ===
 
 export async function fetchToolCatalog(baseUrl: string) {
   return requestJson<{ ok: boolean; count: number; items: Array<Record<string, unknown>> }>(
-    baseUrl,
     "/api/tools/catalog",
+    { baseUrl },
   );
 }
 
 export async function getPipeline(baseUrl: string, pipelineName: string) {
   return requestJson<Record<string, unknown>>(
-    baseUrl,
     `/api/pipelines/${encodeURIComponent(pipelineName)}`,
+    { baseUrl },
   );
 }
 
@@ -90,13 +92,13 @@ export async function getProjectReviewedPlan(
   reviewedPlanId: string,
 ) {
   return requestJson<{ ok: boolean; reviewed_plan: ReviewedPlanRecord }>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(reviewedPlanId)}`,
+    { baseUrl },
   );
 }
 
 export async function listPipelines(baseUrl: string) {
-  return requestJson<{ ok: boolean; pipelines: string[] }>(baseUrl, "/api/pipelines");
+  return requestJson<{ ok: boolean; pipelines: string[] }>("/api/pipelines", { baseUrl });
 }
 
 export async function listProjectReviewedPlans(baseUrl: string, projectId: string) {
@@ -104,7 +106,7 @@ export async function listProjectReviewedPlans(baseUrl: string, projectId: strin
     ok: boolean;
     project_id: string;
     reviewed_plans: ReviewedPlanRecord[];
-  }>(baseUrl, `/api/projects/${encodeURIComponent(projectId)}/plans`);
+  }>(`/api/projects/${encodeURIComponent(projectId)}/plans`, { baseUrl });
 }
 
 export async function saveReviewedPlan(
@@ -125,16 +127,16 @@ export async function saveReviewedPlan(
   },
 ) {
   return requestJson<{ ok: boolean; reviewed_plan: ReviewedPlanRecord }>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/plans`,
-    { method: "POST", body: JSON.stringify(payload) },
+    { method: "POST", body: JSON.stringify(payload), baseUrl },
   );
 }
 
 export async function validatePlan(baseUrl: string, plan: Record<string, unknown>) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/plans/validate", {
+  return requestJson<Record<string, unknown>>("/api/plans/validate", {
     method: "POST",
     body: JSON.stringify({ plan }),
+    baseUrl,
   });
 }
 

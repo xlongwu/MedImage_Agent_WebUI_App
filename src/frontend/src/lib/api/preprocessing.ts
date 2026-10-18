@@ -4,33 +4,33 @@ import type {
   NiftiQcSnapshotResponse,
   NiftiThumbnailResponse,
 } from "../../types";
-import { requestJson } from "./legacyCore";
+import { requestJson } from "./client";
 
 export async function getLatestNativeFullPreprocessingRun(baseUrl: string, projectId: string) {
   return requestJson<import("../../types").NativeFullPreprocResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/preprocessing/native/runs/latest`,
+    { baseUrl },
   );
 }
 
 export async function getProjectBoldReferenceReadiness(baseUrl: string, projectId: string) {
   return requestJson<BoldReferenceReadinessResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/bold-reference/readiness`,
+    { baseUrl },
   );
 }
 
 export async function getProjectMotionQcReadiness(baseUrl: string, projectId: string) {
   return requestJson<MotionQcReadinessResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/motion-qc/readiness`,
+    { baseUrl },
   );
 }
 
 export async function getProjectNiftiQcSnapshot(baseUrl: string, projectId: string) {
   return requestJson<NiftiQcSnapshotResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/nifti-qc/snapshot`,
+    { baseUrl },
   );
 }
 
@@ -50,7 +50,7 @@ export async function getProjectNiftiThumbnail(
   if (options?.size !== undefined) params.set("size", String(options.size));
   const qs = params.toString();
   return requestJson<NiftiThumbnailResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/nifti-qc/images/${encodeURIComponent(imageId)}/thumbnail${qs ? "?" + qs : ""}`,
+    { baseUrl },
   );
 }

@@ -9,22 +9,23 @@ import type {
   RunLinkRecord,
   ProjectRunStateTimelineResponse,
 } from "../../types";
-import { requestJson } from "./legacyCore";
+import { requestJson } from "./client";
 
 export async function createProjectFromDirectory(
   baseUrl: string,
   payload: ProjectCreateRequest,
 ): Promise<ProjectCreateResponse> {
-  return requestJson<ProjectCreateResponse>(baseUrl, "/api/projects/create", {
+  return requestJson<ProjectCreateResponse>("/api/projects/create", {
     method: "POST",
     body: JSON.stringify(payload),
+    baseUrl,
   });
 }
 
 export async function getProjectRun(baseUrl: string, projectId: string, runId: string) {
   return requestJson<ProjectRunDetailResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}`,
+    { baseUrl },
   );
 }
 
@@ -35,8 +36,8 @@ export async function getProjectRunArtifact(
   artifactId: string,
 ) {
   return requestJson<RunArtifactPreviewResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}`,
+    { baseUrl },
   );
 }
 
@@ -46,22 +47,22 @@ export async function getProjectRunStateTimeline(
   runId: string,
 ) {
   return requestJson<ProjectRunStateTimelineResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/state-timeline`,
+    { baseUrl },
   );
 }
 
 export async function listProjectRunArtifacts(baseUrl: string, projectId: string, runId: string) {
   return requestJson<ProjectRunArtifactsResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/artifacts`,
+    { baseUrl },
   );
 }
 
 export async function listProjectRunEvents(baseUrl: string, projectId: string, runId: string) {
   return requestJson<ProjectRunEventsResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/events`,
+    { baseUrl },
   );
 }
 
@@ -72,8 +73,8 @@ export async function listProjectRunLinks(
 ) {
   const query = reviewedPlanId ? `?reviewed_plan_id=${encodeURIComponent(reviewedPlanId)}` : "";
   return requestJson<{ ok: boolean; project_id: string; runs: RunLinkRecord[] }>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/runs${query}`,
+    { baseUrl },
   );
 }
 
@@ -92,8 +93,8 @@ export async function listProjectRunLogs(
   }
   const query = params.size ? `?${params.toString()}` : "";
   return requestJson<ProjectRunLogsResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/logs${query}`,
+    { baseUrl },
   );
 }
 

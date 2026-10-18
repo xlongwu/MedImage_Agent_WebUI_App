@@ -1,27 +1,27 @@
 import type { QcDashboardReportResponse, DatasetEvaluationReport } from "../../types";
-import { requestJson } from "./legacyCore";
+import { requestJson } from "./client";
 
 export async function getDatasetEvaluationReport(baseUrl: string) {
-  return requestJson<DatasetEvaluationReport>(baseUrl, "/api/reports/dataset-evaluation");
+  return requestJson<DatasetEvaluationReport>("/api/reports/dataset-evaluation", { baseUrl });
 }
 
 export async function getImageManifestReport(baseUrl: string, projectId: string) {
   return requestJson<Record<string, unknown>>(
-    baseUrl,
     `/api/images/manifest?project_id=${encodeURIComponent(projectId)}`,
+    { baseUrl },
   );
 }
 
 export async function getImageValidationReport(baseUrl: string, projectId: string) {
   return requestJson<Record<string, unknown>>(
-    baseUrl,
     `/api/images/validation?project_id=${encodeURIComponent(projectId)}`,
+    { baseUrl },
   );
 }
 
 export async function getLatestQcDashboardReport(baseUrl: string, projectId: string) {
   return requestJson<QcDashboardReportResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/qc-dashboard/report/latest`,
+    { baseUrl },
   );
 }

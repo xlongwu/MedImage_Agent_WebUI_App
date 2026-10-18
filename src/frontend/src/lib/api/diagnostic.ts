@@ -1,33 +1,33 @@
 import type { RunInspection } from "../../types";
-import { requestJson } from "./legacyCore";
+import { requestJson } from "./client";
 
 export async function diagnoseRun(baseUrl: string, runId: string) {
-  return requestJson<Record<string, unknown>>(
+  return requestJson<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/diagnosis`, {
     baseUrl,
-    `/api/runs/${encodeURIComponent(runId)}/diagnosis`,
-  );
+  });
 }
 
 export async function getDatasetImportHistory(baseUrl: string, projectId: string) {
   return requestJson<Record<string, unknown>>(
-    baseUrl,
     `/api/datasets/imports?project_id=${encodeURIComponent(projectId)}`,
+    { baseUrl },
   );
 }
 
 export async function getRetryRun(baseUrl: string, retryRunId: string) {
-  return requestJson<Record<string, unknown>>(
+  return requestJson<Record<string, unknown>>(`/api/retry-runs/${encodeURIComponent(retryRunId)}`, {
     baseUrl,
-    `/api/retry-runs/${encodeURIComponent(retryRunId)}`,
-  );
+  });
 }
 
 export async function inspectRun(baseUrl: string, runId: string) {
-  return requestJson<RunInspection>(baseUrl, `/api/runs/${encodeURIComponent(runId)}`);
+  return requestJson<RunInspection>(`/api/runs/${encodeURIComponent(runId)}`, { baseUrl });
 }
 
 export async function listRuns(baseUrl: string) {
-  return requestJson<{ ok: boolean; runs: Array<Record<string, unknown>> }>(baseUrl, "/api/runs");
+  return requestJson<{ ok: boolean; runs: Array<Record<string, unknown>> }>("/api/runs", {
+    baseUrl,
+  });
 }
 
 export async function readLog(baseUrl: string, path: string) {
@@ -37,13 +37,14 @@ export async function readLog(baseUrl: string, path: string) {
     relative_path: string;
     content: string;
     size_bytes: number;
-  }>(baseUrl, `/api/logs/read?path=${encodeURIComponent(path)}`);
+  }>(`/api/logs/read?path=${encodeURIComponent(path)}`, { baseUrl });
 }
 
 export async function retryDryRun(baseUrl: string, runId: string, retryRunId?: string) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/retry/dry-run", {
+  return requestJson<Record<string, unknown>>("/api/retry/dry-run", {
     method: "POST",
     body: JSON.stringify({ run_id: runId, retry_run_id: retryRunId }),
+    baseUrl,
   });
 }
 
@@ -54,7 +55,7 @@ export async function retryExecute(
   retryRunId?: string,
   approved = false,
 ) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/retry/execute", {
+  return requestJson<Record<string, unknown>>("/api/retry/execute", {
     method: "POST",
     body: JSON.stringify({
       run_id: runId,
@@ -62,5 +63,6 @@ export async function retryExecute(
       retry_run_id: retryRunId,
       approved,
     }),
+    baseUrl,
   });
 }

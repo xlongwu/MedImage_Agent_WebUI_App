@@ -25,7 +25,7 @@ from src.backend.app.runtime.desktop_config import (
 )
 from src.backend.app.schemas.desktop import ProjectDetail
 from src.backend.app.services.funraw_t1raw_detector import detect_funraw_t1raw_layout
-from src.backend.app.services.mock_store import mock_store
+from src.backend.app.services.mock_store import mock_store as mock_store
 from src.backend.app.services.recovery_policy_service import (
     default_project_recovery_policy,
 )

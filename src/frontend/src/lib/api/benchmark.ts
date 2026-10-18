@@ -1,7 +1,7 @@
-import { requestJson } from "./legacyCore";
+import { requestJson } from "./client";
 
 export async function detectGpu(baseUrl: string) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/gpu/detect");
+  return requestJson<Record<string, unknown>>("/api/gpu/detect", { baseUrl });
 }
 
 export async function runGpuBenchmark(
@@ -17,8 +17,9 @@ export async function runGpuBenchmark(
     benchmark_compare_cpu_gpu?: boolean;
   },
 ) {
-  return requestJson<Record<string, unknown>>(baseUrl, "/api/gpu/benchmark", {
+  return requestJson<Record<string, unknown>>("/api/gpu/benchmark", {
     method: "POST",
     body: JSON.stringify(payload),
+    baseUrl,
   });
 }

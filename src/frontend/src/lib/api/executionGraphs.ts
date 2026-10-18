@@ -1,5 +1,5 @@
 import type { ExecutionGraphResponse } from "../types/executionGraph";
-import { requestJson } from "./legacyCore";
+import { requestJson } from "./client";
 
 export function previewExecutionGraph(
   baseUrl: string,
@@ -8,9 +8,8 @@ export function previewExecutionGraph(
   signal?: AbortSignal,
 ) {
   return requestJson<ExecutionGraphResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/plan-graph-preview`,
-    { method: "POST", body: JSON.stringify({ plan }), signal },
+    { method: "POST", body: JSON.stringify({ plan }), signal, baseUrl },
   );
 }
 
@@ -21,9 +20,8 @@ export function getPlanExecutionGraph(
   signal?: AbortSignal,
 ) {
   return requestJson<ExecutionGraphResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(reviewedPlanId)}/graph`,
-    { signal },
+    { signal, baseUrl },
   );
 }
 
@@ -34,8 +32,7 @@ export function getRunExecutionGraph(
   signal?: AbortSignal,
 ) {
   return requestJson<ExecutionGraphResponse>(
-    baseUrl,
     `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/graph`,
-    { signal },
+    { signal, baseUrl },
   );
 }

@@ -11,7 +11,11 @@ from typing import Any
 
 from src.backend.app.schemas.desktop import ProjectDetail, RunLinkRecord
 from src.backend.app.services.run_artifact_preview import json_preview_summary
-from src.backend.app.services.run_summary_preview import recovery_run_output_roots
+from src.backend.app.services.run_summary_preview import (
+    _dedupe_paths,
+    _node_results,
+    recovery_run_output_roots,
+)
 from src.backend.app.tools.artifact_utils import read_json_artifact
 
 SUMMARY_WARNING_LIMIT = 50
@@ -87,19 +91,6 @@ def _project_artifact_roots(project: ProjectDetail, record: RunLinkRecord) -> li
         except Exception:
             pass
     return _dedupe_paths(roots)
-
-
-def _dedupe_paths(paths: list[Path]) -> list[Path]:
-    seen: set[str] = set()
-    deduped: list[Path] = []
-    for path in paths:
-        resolved = path.resolve()
-        key = str(resolved).casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(resolved)
-    return deduped
 
 
 def _rawdata_roots(project: ProjectDetail) -> list[Path]:
@@ -200,16 +191,6 @@ def _resolve_summary_path(
     if not target.is_file():
         return None, [f"SUMMARY_PATH_NOT_FILE: {target}"]
     return target, []
-
-
-def _node_results(raw: dict[str, Any]) -> list[dict[str, Any]]:
-    node_results = raw.get("node_results")
-    if isinstance(node_results, list):
-        return [item for item in node_results if isinstance(item, dict)]
-    nodes = raw.get("nodes")
-    if isinstance(nodes, list):
-        return [item for item in nodes if isinstance(item, dict)]
-    return []
 
 
 def _load_summary_raw(

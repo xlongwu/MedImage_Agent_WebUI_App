@@ -7,7 +7,6 @@ import hashlib
 import importlib.util
 import marshal
 from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
 
 from src.backend.app.core.exceptions import SafetyError

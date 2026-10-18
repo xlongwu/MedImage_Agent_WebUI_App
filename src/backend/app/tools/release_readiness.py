@@ -178,7 +178,7 @@ def build_release_readiness(*, output_dir: str | Path | None = None):
         chk(
             "frontend",
             "desktop settings panel",
-            Path("src/frontend/src/components/DesktopSettingsPanel.tsx").is_file(),
+            Path("src/frontend/src/features/workspaces/SettingsEnvironmentWorkspace.tsx").is_file(),
         )
         chk(
             "frontend",

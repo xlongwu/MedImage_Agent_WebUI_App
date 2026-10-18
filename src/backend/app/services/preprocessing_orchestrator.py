@@ -33,7 +33,6 @@ from src.backend.app.schemas.preprocessing_stage_catalog import (
     SPM_STAGE_ENV_FLAGS,
     PreprocessingStageSpec,
     get_preprocessing_stage_spec,
-    initial_stage_execution_status,
     iter_preprocessing_stage_specs,
     normalize_stage_execution_status,
 )
@@ -42,6 +41,7 @@ from src.backend.app.services.preprocessing_artifact_registry import (
     append_stage_output_artifacts,
     load_artifact_registry,
 )
+from src.backend.app.services.preprocessing_run import _stage_status_from_spec
 
 _FC_MINIMAL_STAGES = {
     "input_validation",
@@ -140,30 +140,6 @@ def _safety_flags(*, external_executed: bool = False) -> dict[str, bool]:
         "research_use_only": True,
         "clinical_use_prohibited": True,
     }
-
-
-def _stage_status_from_spec(spec: PreprocessingStageSpec) -> PreprocessingStageStatus:
-    return PreprocessingStageStatus(
-        stage_id=spec.stage_id,
-        name=spec.display_name,
-        status=initial_stage_execution_status(spec),
-        backend=spec.default_backend,
-        requires_external_tool=spec.requires_external_tool,
-        enabled=spec.default_enabled,
-        optional=spec.optional,
-        category=spec.category,
-        default_enabled=spec.default_enabled,
-        required_for_fc=spec.required_for_fc,
-        input_artifact_types=list(spec.input_artifact_types),
-        output_artifact_types=list(spec.output_artifact_types),
-        supported_backends=list(spec.supported_backends),
-        default_backend=spec.default_backend,
-        requires_approval=spec.requires_approval,
-        requires_env_flags=list(spec.requires_env_flags),
-        can_run_in_ci=spec.can_run_in_ci,
-        scientific_status=spec.scientific_status,
-        validation_status=spec.validation_status,
-    )
 
 
 def _build_stage_statuses(manifest: dict[str, Any]) -> list[PreprocessingStageStatus]:
